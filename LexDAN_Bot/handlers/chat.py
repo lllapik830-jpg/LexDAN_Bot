@@ -1,11 +1,8 @@
 from aiogram import Router, types
 from services.database import load_users, save_users, get_user
-from handlers.keyboards import main_menu
+from handlers.keyboards import main_menu, back_to_menu, profile_menu
 
 router = Router()
-
-# --- ХРАНИЛИЩЕ ПОСЛЕДНЕГО СООБЩЕНИЯ БОТА (ДЛЯ ПЕРЕВОДА) ---
-user_last_message = {}
 
 @router.message()
 async def chat_handler(m: types.Message):
@@ -39,7 +36,7 @@ async def chat_handler(m: types.Message):
         await m.reply(welcome_text, reply_markup=main_menu())
         return
 
-    # --- ШАГ 2: Обработка кнопок (ReplyKeyboard) ---
+    # --- ШАГ 2: Обработка кнопок ---
     if m.text == "🗣️ Общаться":
         await m.reply(
             "🗣️ Отправь мне голосовое или текстовое сообщение на английском, "
@@ -59,31 +56,27 @@ async def chat_handler(m: types.Message):
         return
 
     if m.text == "📊 Профиль":
-        # Формируем профиль
         name = user.get("name", "Не указано")
         lessons_done = user.get("lessons_done", 0)
         words_learned = user.get("words_learned", 0)
         level = user.get("level", "A1")
         
-        # Статус подписки
-        premium_until = user.get("premium_until", 0)
         import time
+        premium_until = user.get("premium_until", 0)
         if time.time() < premium_until:
-            # Проверяем, какая подписка (по умолчанию Золото)
-            # Позже добавим логику для Бриллианта
             subscription = "Золото"
         else:
             subscription = "Серебро"
 
         profile_text = (
-            f"📊 Твой профиль:\n\n"
+            f"📊 *Твой профиль:*\n\n"
             f"📛 Имя: {name}\n"
             f"📚 Пройдено уроков: {lessons_done}\n"
             f"📈 Уровень: {level}\n"
             f"📝 Слов выучено: {words_learned}\n"
             f"💎 Подписка: {subscription}"
         )
-        await m.reply(profile_text, reply_markup=profile_menu())
+        await m.reply(profile_text, parse_mode="Markdown", reply_markup=profile_menu())
         return
 
     if m.text == "🆘 Поддержка":
@@ -106,7 +99,8 @@ async def chat_handler(m: types.Message):
             "🥇 *Золото* — 399 ₽ (безлимит голосовые + текст)\n"
             "💎 *Бриллиант* — 799 ₽ (всё из Золота + уроки)\n\n"
             "Чтобы купить, напиши в поддержку: @твой_ник",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            reply_markup=profile_menu()
         )
         return
 
@@ -122,7 +116,7 @@ async def chat_handler(m: types.Message):
         )
         return
 
-    # --- ШАГ 4: Голосовые сообщения (пока заглушка) ---
+    # --- ШАГ 4: Голосовые сообщения (заглушка) ---
     if m.voice:
         await m.reply(
             "🎧 Голосовые сообщения пока в разработке.\n"
