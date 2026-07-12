@@ -13,7 +13,6 @@ import time
 
 router = Router()
 
-# --- ХРАНИЛИЩЕ СОСТОЯНИЙ (обязательно!) ---
 user_states = {}  # user_id: "chat" / "profile" / "lessons" / "menu"
 
 @router.message()
@@ -51,7 +50,6 @@ async def chat_handler(m: types.Message):
     # --- ШАГ 2: Обработка кнопок ---
     current_state = user_states.get(user_id, "menu")
     
-    # --- КНОПКА ПЕРЕВОДА ---
     if m.text == "🌍 Перевести":
         last_text = user_last_message.get(user_id)
         if last_text:
@@ -61,16 +59,12 @@ async def chat_handler(m: types.Message):
             else:
                 await m.reply("❌ Не удалось перевести.")
         else:
-            await m.reply("❌ Нет текста для перевода. Напиши что-нибудь!")
+            await m.reply("❌ Нет текста для перевода.")
         return
 
-    # --- КНОПКА ВЕРНУТЬСЯ В МЕНЮ ---
     if m.text == "🔙 Вернуться в меню":
         user_states[user_id] = "menu"
-        await m.reply(
-            "🏠 Ты в главном меню. Выбери, что хочешь делать.",
-            reply_markup=main_menu()
-        )
+        await m.reply("🏠 Главное меню.", reply_markup=main_menu())
         return
 
     # --- ШАГ 3: РЕЖИМ ОБЩЕНИЯ (только текст) ---
@@ -106,12 +100,7 @@ async def chat_handler(m: types.Message):
 
     if m.text == "📚 Уроки":
         user_states[user_id] = "lessons"
-        await m.reply(
-            "📚 Раздел «Уроки» сейчас в разработке.\n"
-            "Скоро здесь появятся интерактивные занятия!\n"
-            "Следи за обновлениями 🚀",
-            reply_markup=back_to_menu()
-        )
+        await m.reply("📚 Уроки в разработке.", reply_markup=back_to_menu())
         return
 
     if m.text == "📊 Профиль":
@@ -122,10 +111,7 @@ async def chat_handler(m: types.Message):
         level = user.get("level", "A1")
         
         premium_until = user.get("premium_until", 0)
-        if time.time() < premium_until:
-            subscription = "Золото"
-        else:
-            subscription = "Серебро"
+        subscription = "Золото" if time.time() < premium_until else "Серебро"
 
         profile_text = (
             f"📊 *Твой профиль:*\n\n"
@@ -139,31 +125,25 @@ async def chat_handler(m: types.Message):
         return
 
     if m.text == "🆘 Поддержка":
-        await m.reply(
-            "🆘 По всем вопросам работы бота, подписке и прочему — пиши сюда: @твой_ник"
-        )
+        await m.reply("🆘 По всем вопросам пиши: @твой_ник")
         return
 
     if m.text == "💎 Подписка":
         await m.reply(
             "💎 *Тарифы:*\n\n"
             "🆓 *Серебро* — бесплатно (20 голосовых/день)\n"
-            "🥇 *Золото* — 399 ₽ (безлимит голосовые + текст)\n"
-            "💎 *Бриллиант* — 799 ₽ (всё из Золота + уроки)\n\n"
-            "Чтобы купить, напиши в поддержку: @твой_ник",
+            "🥇 *Золото* — 399 ₽ (безлимит)\n"
+            "💎 *Бриллиант* — 799 ₽ (всё + уроки)\n\n"
+            "Для покупки пиши в поддержку: @твой_ник",
             parse_mode="Markdown",
             reply_markup=profile_menu()
         )
         return
 
-    # --- ШАГ 5: Если пользователь пишет текст без кнопки ---
+    # --- ШАГ 5: Текст без кнопки ---
     if m.text and not m.text.startswith('/'):
         await m.reply(
-            "Пожалуйста, выбери действие с помощью кнопок ниже.\n"
-            "Если хочешь пообщаться — нажми «🗣️ Общаться».\n"
-            "Если хочешь учиться — нажми «📚 Уроки».\n"
-            "Если хочешь посмотреть свой прогресс — открой «📊 Профиль».\n"
-            "Если возникли вопросы — жми «🆘 Поддержка».",
+            "Пожалуйста, выбери действие с помощью кнопок ниже.",
             reply_markup=main_menu()
         )
         return
