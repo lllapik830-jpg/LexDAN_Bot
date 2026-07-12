@@ -18,7 +18,7 @@ dp.include_routers(
     profile.router,
     lessons.router,
     subscription.router,
-    voice.router  # <-- голосовые обрабатываются в voice.py
+    voice.router  # <-- голосовые
 )
 
 # --- ВЕБ-СЕРВЕР ДЛЯ RENDER ---
