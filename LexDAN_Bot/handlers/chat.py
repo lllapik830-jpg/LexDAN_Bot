@@ -5,16 +5,13 @@ from services.gpt import ask_gpt
 from services.translation import translate_to_language
 from services.elevenlabs import elevenlabs_tts
 from aiogram.types import FSInputFile
+from handlers.voice import user_last_message  # <-- импорт из voice.py
 import tempfile
 import os
 import logging
 import time
 
 router = Router()
-
-# --- ХРАНИЛИЩЕ СОСТОЯНИЙ И ПОСЛЕДНИХ СООБЩЕНИЙ ---
-user_states = {}  # user_id: "chat" / "profile" / "lessons" / "menu"
-user_last_message = {}  # user_id: последний текст от бота
 
 @router.message()
 async def chat_handler(m: types.Message):
@@ -75,7 +72,6 @@ async def chat_handler(m: types.Message):
 
     # --- ШАГ 3: РЕЖИМ ОБЩЕНИЯ (только текст) ---
     if current_state == "chat":
-        # --- ТЕКСТОВЫЕ СООБЩЕНИЯ ---
         if m.text and not m.text.startswith('/'):
             answer_en = ask_gpt(m.text, user.get("name", "Student"))
             user_last_message[user_id] = answer_en
@@ -94,7 +90,7 @@ async def chat_handler(m: types.Message):
                     logging.error(f"TTS error: {e}")
             return
 
-    # --- ШАГ 4: Обработка кнопок (только если в меню) ---
+    # --- ШАГ 4: Обработка кнопок ---
     if m.text == "🗣️ Общаться":
         user_states[user_id] = "chat"
         await m.reply(
@@ -168,6 +164,3 @@ async def chat_handler(m: types.Message):
             reply_markup=main_menu()
         )
         return
-
-    # --- ШАГ 6: Голосовые (если не в чате) ---
-    # ГОЛОСОВЫЕ НЕ ОБРАБАТЫВАЮТСЯ В ЭТОМ ФАЙЛЕ (см. voice.py)
