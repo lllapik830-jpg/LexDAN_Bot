@@ -13,6 +13,9 @@ import time
 
 router = Router()
 
+# --- ХРАНИЛИЩЕ СОСТОЯНИЙ (обязательно!) ---
+user_states = {}  # user_id: "chat" / "profile" / "lessons" / "menu"
+
 @router.message()
 async def chat_handler(m: types.Message):
     user_id = str(m.from_user.id)
