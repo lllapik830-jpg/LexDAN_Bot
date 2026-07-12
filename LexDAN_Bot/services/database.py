@@ -1,6 +1,7 @@
 import json
 from datetime import date
-from config import USER_DATA_FILE
+
+USER_DATA_FILE = "users.json"
 
 def load_users():
     try:
@@ -17,13 +18,12 @@ def get_user(users, user_id):
     if user_id not in users:
         users[user_id] = {
             "name": None,
-            "language": None,
-            "step": "name",
+            "step": "start",
             "level": "A1",
+            "lessons_done": 0,
+            "words_learned": 0,
             "voice_count": 0,
             "voice_date": date.today().isoformat(),
-            "premium_until": 0,
-            "lessons_done": 0,
-            "words_learned": 0
+            "premium_until": 0
         }
     return users[user_id]
