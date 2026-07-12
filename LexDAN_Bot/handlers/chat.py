@@ -1,8 +1,12 @@
 from aiogram import Router, types
 from services.database import load_users, save_users, get_user
 from handlers.keyboards import main_menu, back_to_menu, profile_menu
+import logging
 
 router = Router()
+
+# --- ХРАНИЛИЩЕ СОСТОЯНИЙ ПОЛЬЗОВАТЕЛЕЙ ---
+user_states = {}  # user_id: "chat" / "profile" / "lessons" / "menu"
 
 @router.message()
 async def chat_handler(m: types.Message):
@@ -36,8 +40,19 @@ async def chat_handler(m: types.Message):
         await m.reply(welcome_text, reply_markup=main_menu())
         return
 
-    # --- ШАГ 2: Обработка кнопок ---
+    # --- ШАГ 2: Обработка кнопок (если пользователь в меню) ---
+    current_state = user_states.get(user_id, "menu")
+
+    # --- Если пользователь НЕ в меню, то кнопки не работают (кроме "Вернуться") ---
+    if current_state != "menu" and m.text != "🔙 Вернуться в меню":
+        await m.reply(
+            f"📍 Ты сейчас в разделе «{current_state}». Нажми «🔙 Вернуться в меню», чтобы перейти в главное меню."
+        )
+        return
+
+    # --- ОБРАБОТКА КНОПОК (только если в меню) ---
     if m.text == "🗣️ Общаться":
+        user_states[user_id] = "chat"
         await m.reply(
             "🗣️ Отправь мне голосовое или текстовое сообщение на английском, "
             "я отвечу и переведу, если нужно.\n\n"
@@ -47,6 +62,7 @@ async def chat_handler(m: types.Message):
         return
 
     if m.text == "📚 Уроки":
+        user_states[user_id] = "lessons"
         await m.reply(
             "📚 Раздел «Уроки» сейчас в разработке.\n"
             "Скоро здесь появятся интерактивные занятия!\n"
@@ -56,6 +72,7 @@ async def chat_handler(m: types.Message):
         return
 
     if m.text == "📊 Профиль":
+        user_states[user_id] = "profile"
         name = user.get("name", "Не указано")
         lessons_done = user.get("lessons_done", 0)
         words_learned = user.get("words_learned", 0)
@@ -80,12 +97,14 @@ async def chat_handler(m: types.Message):
         return
 
     if m.text == "🆘 Поддержка":
+        # Поддержка не меняет состояние
         await m.reply(
             "🆘 По всем вопросам работы бота, подписке и прочему — пиши сюда: @твой_ник"
         )
         return
 
     if m.text == "🔙 Вернуться в меню":
+        user_states[user_id] = "menu"
         await m.reply(
             "🏠 Ты в главном меню. Выбери, что хочешь делать.",
             reply_markup=main_menu()
@@ -93,18 +112,30 @@ async def chat_handler(m: types.Message):
         return
 
     if m.text == "💎 Подписка":
+        # Подписка доступна только из профиля, но если кто-то напишет — покажем
         await m.reply(
             "💎 *Тарифы:*\n\n"
             "🆓 *Серебро* — бесплатно (20 голосовых/день)\n"
             "🥇 *Золото* — 399 ₽ (безлимит голосовые + текст)\n"
             "💎 *Бриллиант* — 799 ₽ (всё из Золота + уроки)\n\n"
             "Чтобы купить, напиши в поддержку: @твой_ник",
-            parse_mode="Markdown",
-            reply_markup=profile_menu()
+            parse_mode="Markdown"
         )
         return
 
-    # --- ШАГ 3: Если пользователь пишет текст без кнопки ---
+    # --- ШАГ 3: РЕЖИМ ОБЩЕНИЯ ---
+    if current_state == "chat":
+        if m.text and not m.text.startswith('/'):
+            await m.reply(f"💬 Ты сказал: {m.text}\n\n(Пока это заглушка. Скоро здесь будет GPT!)")
+            return
+        if m.voice:
+            await m.reply(
+                "🎧 Голосовые сообщения пока в разработке.\n"
+                "Скоро я научусь их распознавать и отвечать голосом! 🚀"
+            )
+            return
+
+    # --- ШАГ 4: Если пользователь пишет текст без кнопки и не в разделе ---
     if m.text and not m.text.startswith('/'):
         await m.reply(
             "Пожалуйста, выбери действие с помощью кнопок ниже.\n"
@@ -116,11 +147,11 @@ async def chat_handler(m: types.Message):
         )
         return
 
-    # --- ШАГ 4: Голосовые сообщения (заглушка) ---
+    # --- ШАГ 5: Голосовые (если не в чате) ---
     if m.voice:
         await m.reply(
             "🎧 Голосовые сообщения пока в разработке.\n"
             "Скоро я научусь их распознавать и отвечать голосом! 🚀",
-            reply_markup=back_to_menu()
+            reply_markup=main_menu()
         )
         return
