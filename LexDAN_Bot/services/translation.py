@@ -3,7 +3,13 @@ import logging
 from config import OPENROUTER_API_KEY
 
 def translate_to_language(text, target_lang):
-    if not text or not target_lang or target_lang.lower() == "english":
+    """
+    Переводит текст на указанный язык (русский).
+    Возвращает перевод или None при ошибке.
+    """
+    if not text:
+        return None
+    if not target_lang or target_lang.lower() == "english":
         return None
 
     try:
@@ -19,7 +25,8 @@ def translate_to_language(text, target_lang):
                     {"role": "system", "content": f"Translate the following English text to NATURAL {target_lang}. Keep the meaning, but make it sound like a friendly tutor explaining to a student. Only output the {target_lang} translation, nothing else."},
                     {"role": "user", "content": text}
                 ],
-                "max_tokens": 800
+                "max_tokens": 800,
+                "temperature": 0.3
             },
             timeout=20
         )
