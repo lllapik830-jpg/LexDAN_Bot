@@ -1,7 +1,6 @@
 from aiogram import Router, types
 from aiogram.types import FSInputFile
 from services.gpt import ask_gpt
-from services.translation import translate_to_language
 from services.elevenlabs import elevenlabs_tts
 from handlers.keyboards import back_to_menu
 import speech_recognition as sr
