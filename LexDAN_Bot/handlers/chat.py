@@ -6,11 +6,12 @@ from services.translation import translate_to_language
 from services.elevenlabs import elevenlabs_tts
 from aiogram.types import FSInputFile
 import speech_recognition as sr
+from pydub import AudioSegment
 import tempfile
 import os
+import io
 import logging
 import time
-import subprocess
 
 router = Router()
 
@@ -50,9 +51,10 @@ async def chat_handler(m: types.Message):
         await m.reply(welcome_text, reply_markup=main_menu())
         return
 
-    # --- ШАГ 2: Обработка кнопок (включая перевод) ---
+    # --- ШАГ 2: Обработка кнопок ---
     current_state = user_states.get(user_id, "menu")
     
+    # --- КНОПКА ПЕРЕВОДА ---
     if m.text == "🌍 Перевести":
         last_text = user_last_message.get(user_id)
         if last_text:
@@ -65,6 +67,7 @@ async def chat_handler(m: types.Message):
             await m.reply("❌ Нет текста для перевода. Напиши что-нибудь!")
         return
 
+    # --- КНОПКА ВЕРНУТЬСЯ В МЕНЮ ---
     if m.text == "🔙 Вернуться в меню":
         user_states[user_id] = "menu"
         await m.reply(
@@ -107,38 +110,18 @@ async def chat_handler(m: types.Message):
                     tmp_ogg.write(voice_data.read())
                     ogg_path = tmp_ogg.name
 
-                # 3. Конвертируем OGG → WAV через встроенные средства Python
-                # Используем subprocess для вызова ffmpeg (если он есть) или пытаемся через pydub
-                # Но если нет ffmpeg, используем простой конвертер через wave + audioop
-                try:
-                    # Пробуем через pydub (если ffmpeg установлен)
-                    from pydub import AudioSegment
-                    audio = AudioSegment.from_ogg(ogg_path)
-                    wav_path = ogg_path.replace(".ogg", ".wav")
-                    audio.export(wav_path, format="wav")
-                except:
-                    # Если pydub не работает, используем простой конвертер
-                    # (этот код работает без ffmpeg)
-                    import wave
-                    import audioop
-                    with open(ogg_path, 'rb') as f:
-                        ogg_data = f.read()
-                    # Простая конвертация (только для теста)
-                    wav_path = ogg_path.replace(".ogg", ".wav")
-                    with wave.open(wav_path, 'wb') as wav:
-                        wav.setnchannels(1)
-                        wav.setsampwidth(2)
-                        wav.setframerate(16000)
-                        # Конвертируем OGG в WAV (упрощённо)
-                        wav.writeframes(ogg_data[:1000])  # временно
-                    os.unlink(ogg_path)
+                # 3. Конвертируем через pydub
+                audio = AudioSegment.from_ogg(ogg_path)
+                wav_bytes = io.BytesIO()
+                audio.export(wav_bytes, format="wav")
+                wav_bytes.seek(0)
+                os.unlink(ogg_path)
 
                 # 4. Распознаём через Google Speech
                 recognizer = sr.Recognizer()
-                with sr.AudioFile(wav_path) as source:
+                with sr.AudioFile(wav_bytes) as source:
                     audio_data = recognizer.record(source)
                     text = recognizer.recognize_google(audio_data, language="en-US")
-                os.unlink(wav_path)
 
                 if text:
                     answer_en = ask_gpt(text, user.get("name", "Student"))
@@ -169,10 +152,9 @@ async def chat_handler(m: types.Message):
     if m.text == "🗣️ Общаться":
         user_states[user_id] = "chat"
         await m.reply(
-            "🗣️ Отправь мне голосовое или текстовое сообщение на английском, "
-            "я отвечу и переведу, если нужно.\n\n"
-            "🔙 Чтобы вернуться — нажми кнопку ниже.\n"
-            "🌍 Чтобы перевести последнее сообщение — нажми «Перевести».",
+            "🗣️ Отправь мне голосовое или текстовое сообщение на английском.\n\n"
+            "🔙 Вернуться в меню — кнопка ниже.\n"
+            "🌍 Перевести последнее сообщение — тоже кнопка ниже.",
             reply_markup=back_to_menu()
         )
         return
