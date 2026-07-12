@@ -6,6 +6,9 @@ from handlers.keyboards import main_menu, translate_keyboard
 
 router = Router()
 
+# --- ХРАНИЛИЩЕ ДЛЯ ПЕРЕВОДОВ ---
+user_translations = {}
+
 @router.message()
 async def chat_handler(m: types.Message):
     user_id = str(m.from_user.id)
@@ -13,14 +16,14 @@ async def chat_handler(m: types.Message):
     user = get_user(users, user_id)
     save_users(users)
 
-    # --- ШАГ 1: ЗАПРОС ИМЕНИ ---
+    # --- ЕСЛИ ПОЛЬЗОВАТЕЛЬ НЕ ЗАРЕГИСТРИРОВАН (НЕТ ИМЕНИ) ---
     if user.get("name") is None:
         user["name"] = m.text.strip()
-        # --- УСТАНАВЛИВАЕМ ЯЗЫК ПО УМОЛЧАНИЮ (РУССКИЙ) ---
-        user["language"] = "Russian"
+        user["language"] = "Russian"  # язык по умолчанию
         user["step"] = "ready"
         save_users(users)
 
+        # --- ФОРМИРУЕМ ПРИВЕТСТВИЕ ---
         welcome_en = (
             f"🌟 *Welcome, {user['name']}!*\n\n"
             "🎯 *Your AI English tutor is ready to help you:*\n\n"
@@ -37,17 +40,19 @@ async def chat_handler(m: types.Message):
             "👇 *Choose what to do using the buttons below.*"
         )
         
-        # --- СОХРАНЯЕМ ПЕРЕВОД ДЛЯ КНОПКИ ---
+        # --- СОХРАНЯЕМ ПЕРЕВОД ПРИВЕТСТВИЯ ДЛЯ КНОПКИ ---
         translation_ru = translate_to_language(welcome_en, user["language"])
         if translation_ru:
             user_translations[user_id] = {"translation": translation_ru}
             
+        # --- ОТПРАВЛЯЕМ ПРИВЕТСТВИЕ ---
         await m.reply(
             welcome_en,
             parse_mode="Markdown",
             reply_markup=main_menu()
         )
-        # --- ОТДЕЛЬНОЕ СООБЩЕНИЕ С КНОПКОЙ ПЕРЕВОДА ---
+        
+        # --- КНОПКА ПЕРЕВОДА ---
         await m.reply(
             "📖 *Нажми кнопку ниже, чтобы прочитать это сообщение на русском.*",
             parse_mode="Markdown",
@@ -55,14 +60,12 @@ async def chat_handler(m: types.Message):
         )
         return
 
-    # --- ОСТАЛЬНАЯ ЛОГИКА (для зарегистрированных пользователей) ---
+    # --- ЕСЛИ ПОЛЬЗОВАТЕЛЬ УЖЕ ЗАРЕГИСТРИРОВАН ---
     if m.text and not m.text.startswith("/"):
         answer_en = ask_gpt(m.text, user["name"])
-        # --- СОХРАНЯЕМ ПЕРЕВОД ОТВЕТА ---
         answer_ru = translate_to_language(answer_en, user["language"])
         if answer_ru:
             user_translations[user_id] = {"translation": answer_ru}
-            
         await m.reply(
             answer_en,
             reply_markup=translate_keyboard(user["language"])
