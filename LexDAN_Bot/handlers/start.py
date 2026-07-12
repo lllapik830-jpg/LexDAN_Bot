@@ -1,14 +1,11 @@
 from aiogram import Router, types
 from aiogram.filters import Command
 from datetime import date
-import time
-from config import MANAGER_ID
 from services.database import load_users, save_users, get_user
 from handlers.keyboards import main_menu
 
 router = Router()
 
-# --- КОМАНДА /start ---
 @router.message(Command("start"))
 async def start_cmd(m: types.Message):
     user_id = str(m.from_user.id)
@@ -32,13 +29,11 @@ async def start_cmd(m: types.Message):
         reply_markup=main_menu()
     )
 
-# --- КОМАНДА /reset ---
 @router.message(Command("reset"))
 async def reset_cmd(m: types.Message):
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
-    save_users(users)
 
     if user_id in users:
         name = user.get("name", "Student")
@@ -59,13 +54,13 @@ async def reset_cmd(m: types.Message):
         save_users(users)
 
         await m.reply(
-            f"🔄 *Данные сброшены.*\n"
-            f"Твои регистрационные данные сохранены ✅\n"
-            f"Имя: {name}\n"
-            f"Язык: {language}\n\n"
-            "Прогресс (уроки и слова) обнулён. Подписка активна.",
+            f"🔄 *Data reset.*\n"
+            f"Registration data saved ✅\n"
+            f"Name: {name}\n"
+            f"Language: {language}\n\n"
+            "Progress reset. Subscription active.",
             parse_mode="Markdown",
             reply_markup=main_menu()
         )
     else:
-        await m.reply("❌ Нет данных для сброса.")
+        await m.reply("❌ No data to reset.")
