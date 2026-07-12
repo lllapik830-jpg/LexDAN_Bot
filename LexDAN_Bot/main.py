@@ -1,26 +1,27 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
-from aiogram.types import Message
 from config import BOT_TOKEN
+from handlers import start, chat, voice, lessons, subscription, progress
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-@dp.message(Command("start"))
-async def start_cmd(m: Message):
-    await m.reply("🤖 *Hello! I'm LexDAN, your AI English tutor.*\n\n📝 *What is your name?*", parse_mode="Markdown")
-
-@dp.message()
-async def all_messages(m: Message):
-    if m.text and not m.text.startswith('/'):
-        await m.reply("📩 I received your message. I will respond soon!")
+# Подключаем все обработчики
+dp.include_routers(
+    start.router,
+    chat.router,
+    voice.router,
+    lessons.router,
+    subscription.router,
+    progress.router
+)
 
 async def main():
-    print("🤖 LexDAN is running (aiogram 3 with VPN)!")
+    print("🤖 LexDAN is running on Render!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
