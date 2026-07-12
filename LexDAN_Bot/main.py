@@ -19,6 +19,8 @@ dp.include_routers(
     lessons.router,
     subscription.router,
     progress.router
+    callback.router
+)
 )
 
 # --- ВЕБ-СЕРВЕР ДЛЯ RENDER ---
