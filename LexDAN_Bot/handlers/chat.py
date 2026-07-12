@@ -1,6 +1,6 @@
 from aiogram import Router, types
 from services.database import load_users, save_users, get_user
-from handlers.keyboards import main_menu, back_to_menu, profile_menu, translate_keyboard
+from handlers.keyboards import main_menu, back_to_menu, profile_menu
 from services.gpt import ask_gpt
 from services.translation import translate_to_language
 from services.elevenlabs import elevenlabs_tts
@@ -51,20 +51,7 @@ async def chat_handler(m: types.Message):
         await m.reply(welcome_text, reply_markup=main_menu())
         return
 
-    # --- ШАГ 2: КНОПКА ПЕРЕВОДА (обрабатывается в любом состоянии) ---
-    if m.text == "🌍 Перевести":
-        last_text = user_last_message.get(user_id)
-        if last_text:
-            translation = translate_to_language(last_text, "Russian")
-            if translation:
-                await m.reply(f"🌐 {translation}")
-            else:
-                await m.reply("❌ Не удалось перевести.")
-        else:
-            await m.reply("❌ Нет текста для перевода. Напиши что-нибудь!")
-        return
-
-    # --- ШАГ 3: Обработка кнопок (кроме "Вернуться") ---
+    # --- ШАГ 2: Обработка кнопок (кроме "Вернуться") ---
     current_state = user_states.get(user_id, "menu")
     
     if m.text == "🔙 Вернуться в меню":
@@ -75,22 +62,18 @@ async def chat_handler(m: types.Message):
         )
         return
 
-    # --- ШАГ 4: РЕЖИМ ОБЩЕНИЯ ---
+    # --- ШАГ 3: РЕЖИМ ОБЩЕНИЯ ---
     if current_state == "chat":
         # --- ТЕКСТОВЫЕ СООБЩЕНИЯ ---
         if m.text and not m.text.startswith('/'):
             answer_en = ask_gpt(m.text, user.get("name", "Student"))
-            
-            # Сохраняем ответ для кнопки перевода
             user_last_message[user_id] = answer_en
             
-            # Отправляем текст + кнопку перевода
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🌍 Перевести", callback_data="translate")]
             ])
             await m.reply(f"🇬🇧 {answer_en}", reply_markup=keyboard)
             
-            # Отправляем голосовой ответ
             audio_bytes = elevenlabs_tts(answer_en)
             if audio_bytes:
                 try:
@@ -103,17 +86,22 @@ async def chat_handler(m: types.Message):
                     logging.error(f"TTS error: {e}")
             return
 
-        # --- ГОЛОСОВЫЕ СООБЩЕНИЯ ---
+        # --- ГОЛОСОВЫЕ СООБЩЕНИЯ (БЕЗ FFMPEG) ---
         if m.voice:
             await m.reply("🎧 Обрабатываю голосовое...")
             try:
                 file = await bot.get_file(m.voice.file_id)
                 voice_data = await bot.download_file(file.file_path)
 
-                audio = AudioSegment.from_file(io.BytesIO(voice_data.read()), format="ogg")
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as tmp_ogg:
+                    tmp_ogg.write(voice_data.read())
+                    ogg_path = tmp_ogg.name
+
+                audio = AudioSegment.from_file(ogg_path, format="ogg")
                 wav_bytes = io.BytesIO()
                 audio.export(wav_bytes, format="wav")
                 wav_bytes.seek(0)
+                os.unlink(ogg_path)
 
                 recognizer = sr.Recognizer()
                 with sr.AudioFile(wav_bytes) as source:
@@ -141,8 +129,6 @@ async def chat_handler(m: types.Message):
                             logging.error(f"TTS error: {e}")
                 else:
                     await m.reply("Не удалось распознать речь. Попробуй ещё раз.")
-            except sr.UnknownValueError:
-                await m.reply("Не понял речь. Попробуй сказать чётче.")
             except Exception as e:
                 logging.error(f"Voice error: {e}")
                 await m.reply("Ошибка обработки голосового. Попробуй текстом.")
@@ -150,7 +136,7 @@ async def chat_handler(m: types.Message):
 
         return
 
-    # --- ШАГ 5: Обработка кнопок (только если в меню) ---
+    # --- ШАГ 4: Обработка кнопок (только если в меню) ---
     if m.text == "🗣️ Общаться":
         user_states[user_id] = "chat"
         await m.reply(
@@ -213,7 +199,7 @@ async def chat_handler(m: types.Message):
         )
         return
 
-    # --- ШАГ 6: Если пользователь пишет текст без кнопки ---
+    # --- ШАГ 5: Если пользователь пишет текст без кнопки ---
     if m.text and not m.text.startswith('/'):
         await m.reply(
             "Пожалуйста, выбери действие с помощью кнопок ниже.\n"
@@ -225,7 +211,7 @@ async def chat_handler(m: types.Message):
         )
         return
 
-    # --- ШАГ 7: Голосовые (если не в чате) ---
+    # --- ШАГ 6: Голосовые (если не в чате) ---
     if m.voice:
         await m.reply(
             "🎤 Чтобы отправить голосовое, нажми сначала кнопку «🗣️ Общаться».\n"
