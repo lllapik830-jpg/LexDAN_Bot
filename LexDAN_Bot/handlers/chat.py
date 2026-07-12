@@ -13,21 +13,16 @@ async def chat_handler(m: types.Message):
     user = get_user(users, user_id)
     save_users(users)
 
-    if user.get("step") == "name":
+    # --- ШАГ 1: ЗАПРОС ИМЕНИ ---
+    if user.get("name") is None:
         user["name"] = m.text.strip()
-        user["step"] = "language"
-        save_users(users)
-        await m.reply("🌐 *What is your native language?*\nType your language (e.g., Russian)", parse_mode="Markdown")
-        return
-
-    if user.get("step") == "language":
-        user["language"] = m.text.strip()
+        # --- УСТАНАВЛИВАЕМ ЯЗЫК ПО УМОЛЧАНИЮ (РУССКИЙ) ---
+        user["language"] = "Russian"
         user["step"] = "ready"
         save_users(users)
 
         welcome_en = (
             f"🌟 *Welcome, {user['name']}!*\n\n"
-            f"🌐 Your native language: *{user['language']}*\n\n"
             "🎯 *Your AI English tutor is ready to help you:*\n\n"
             "💬 *Chat in English* — practice anytime, get instant feedback.\n"
             "🎤 *Voice messages* — speak, listen, and improve your pronunciation.\n"
@@ -41,9 +36,34 @@ async def chat_handler(m: types.Message):
             "Unlock unlimited learning with /upgrade.\n\n"
             "👇 *Choose what to do using the buttons below.*"
         )
-        await m.reply(welcome_en, parse_mode="Markdown", reply_markup=main_menu())
+        
+        # --- СОХРАНЯЕМ ПЕРЕВОД ДЛЯ КНОПКИ ---
+        translation_ru = translate_to_language(welcome_en, user["language"])
+        if translation_ru:
+            user_translations[user_id] = {"translation": translation_ru}
+            
+        await m.reply(
+            welcome_en,
+            parse_mode="Markdown",
+            reply_markup=main_menu()
+        )
+        # --- ОТДЕЛЬНОЕ СООБЩЕНИЕ С КНОПКОЙ ПЕРЕВОДА ---
+        await m.reply(
+            "📖 *Нажми кнопку ниже, чтобы прочитать это сообщение на русском.*",
+            parse_mode="Markdown",
+            reply_markup=translate_keyboard(user["language"])
+        )
         return
 
+    # --- ОСТАЛЬНАЯ ЛОГИКА (для зарегистрированных пользователей) ---
     if m.text and not m.text.startswith("/"):
         answer_en = ask_gpt(m.text, user["name"])
-        await m.reply(answer_en, reply_markup=translate_keyboard(user["language"]))
+        # --- СОХРАНЯЕМ ПЕРЕВОД ОТВЕТА ---
+        answer_ru = translate_to_language(answer_en, user["language"])
+        if answer_ru:
+            user_translations[user_id] = {"translation": answer_ru}
+            
+        await m.reply(
+            answer_en,
+            reply_markup=translate_keyboard(user["language"])
+        )
