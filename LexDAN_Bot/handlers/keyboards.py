@@ -1,34 +1,35 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
+# --- ГЛАВНОЕ МЕНЮ (4 кнопки) ---
 def main_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🗣️ Общаться"), KeyboardButton(text="📚 Уроки")],
-            [KeyboardButton(text="💎 Подписка"), KeyboardButton(text="📊 Прогресс")],
-            [KeyboardButton(text="❓ Помощь"), KeyboardButton(text="🔄 Сброс")]
+            [KeyboardButton(text="📊 Профиль"), KeyboardButton(text="🆘 Поддержка")]
         ],
         resize_keyboard=True
     )
 
-def translate_keyboard(lang="Russian"):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"📖 Перевести на {lang}", callback_data="translate")]
-    ])
+# --- КНОПКА "ВЕРНУТЬСЯ В МЕНЮ" (используется в разделах) ---
+def back_to_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
+        resize_keyboard=True
+    )
 
-def subscription_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="💎 Безлимит (399 ₽)", callback_data="buy_base"),
-            InlineKeyboardButton(text="👑 Премиум (799 ₽)", callback_data="buy_premium")
-        ]
-    ])
+# --- КНОПКИ В ПРОФИЛЕ (Подписка + Вернуться) ---
+def profile_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="💎 Подписка")],
+            [KeyboardButton(text="🔙 Вернуться в меню")]
+        ],
+        resize_keyboard=True
+    )
 
-def lessons_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="1. Введение", callback_data="lesson_1")]
-    ])
-
-def back_to_lessons_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Вернуться к урокам", callback_data="back_to_lessons")]
-    ])
+# --- КНОПКИ В РАЗДЕЛЕ "ОБЩАТЬСЯ" (пока нет перевода, только "Вернуться") ---
+def chat_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
+        resize_keyboard=True
+    )
