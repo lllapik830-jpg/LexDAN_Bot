@@ -1,16 +1,11 @@
 from aiogram import Router, types
 from services.gpt import ask_gpt
 from services.translation import translate_to_language
-from services.elevenlabs import elevenlabs_tts
 from services.database import load_users, save_users, get_user
 from handlers.keyboards import main_menu, translate_keyboard
-import tempfile
-import os
-import logging
 
 router = Router()
 
-# --- ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ---
 @router.message()
 async def chat_handler(m: types.Message):
     user_id = str(m.from_user.id)
@@ -18,7 +13,6 @@ async def chat_handler(m: types.Message):
     user = get_user(users, user_id)
     save_users(users)
 
-    # --- РЕГИСТРАЦИЯ: ИМЯ ---
     if user.get("step") == "name":
         user["name"] = m.text.strip()
         user["step"] = "language"
@@ -26,7 +20,6 @@ async def chat_handler(m: types.Message):
         await m.reply("🌐 *What is your native language?*\nType your language (e.g., Russian)", parse_mode="Markdown")
         return
 
-    # --- РЕГИСТРАЦИЯ: ЯЗЫК ---
     if user.get("step") == "language":
         user["language"] = m.text.strip()
         user["step"] = "ready"
@@ -51,20 +44,6 @@ async def chat_handler(m: types.Message):
         await m.reply(welcome_en, parse_mode="Markdown", reply_markup=main_menu())
         return
 
-    # --- ОБЫЧНОЕ ОБЩЕНИЕ ---
     if m.text and not m.text.startswith("/"):
-        await m.reply("💬 Thinking...")
         answer_en = ask_gpt(m.text, user["name"])
         await m.reply(answer_en, reply_markup=translate_keyboard(user["language"]))
-
-        # --- ОЗВУЧКА ОТВЕТА ---
-        audio_bytes = elevenlabs_tts(answer_en)
-        if audio_bytes:
-            try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-                    f.write(audio_bytes)
-                    path = f.name
-                await m.reply_voice(types.FSInputFile(path))
-                os.unlink(path)
-            except Exception as e:
-                logging.error(f"TTS error: {e}")
