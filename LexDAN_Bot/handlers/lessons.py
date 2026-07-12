@@ -1,9 +1,35 @@
-from aiogram import Router, types
-from aiogram.filters import Command
-from handlers.keyboards import lessons_menu
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-router = Router()
+# --- ГЛАВНОЕ МЕНЮ (4 кнопки) ---
+def main_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🗣️ Общаться"), KeyboardButton(text="📚 Уроки")],
+            [KeyboardButton(text="📊 Профиль"), KeyboardButton(text="🆘 Поддержка")]
+        ],
+        resize_keyboard=True
+    )
 
-@router.message(Command("lesson"))
-async def lesson_cmd(m: types.Message):
-    await m.reply("📚 *Выберите урок:*", parse_mode="Markdown", reply_markup=lessons_menu())
+# --- КНОПКА "ВЕРНУТЬСЯ В МЕНЮ" (используется в разделах) ---
+def back_to_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
+        resize_keyboard=True
+    )
+
+# --- КНОПКИ В ПРОФИЛЕ (Подписка + Вернуться) ---
+def profile_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="💎 Подписка")],
+            [KeyboardButton(text="🔙 Вернуться в меню")]
+        ],
+        resize_keyboard=True
+    )
+
+# --- КНОПКИ В РАЗДЕЛЕ "ОБЩАТЬСЯ" (пока нет перевода, только "Вернуться") ---
+def chat_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
+        resize_keyboard=True
+    )
