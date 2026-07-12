@@ -13,7 +13,7 @@ import logging
 
 router = Router()
 
-# --- ГЛОБАЛЬНЫЙ СЛОВАРЬ ДЛЯ ПОСЛЕДНИХ СООБЩЕНИЙ (доступен из chat.py) ---
+# --- ГЛОБАЛЬНЫЙ СЛОВАРЬ ДЛЯ ПОСЛЕДНИХ СООБЩЕНИЙ ---
 user_last_message = {}
 
 @router.message(lambda m: m.voice is not None)
@@ -22,39 +22,30 @@ async def voice_handler(m: types.Message):
     await m.reply("🎧 Обрабатываю голосовое...")
     
     try:
-        # 1. Скачиваем голосовое
         file = await bot.get_file(m.voice.file_id)
         voice_data = await bot.download_file(file.file_path)
 
-        # 2. Сохраняем OGG во временный файл
         with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as tmp_ogg:
             tmp_ogg.write(voice_data.read())
             ogg_path = tmp_ogg.name
 
-        # 3. Конвертируем OGG → WAV через pydub
         audio = AudioSegment.from_ogg(ogg_path)
         wav_bytes = io.BytesIO()
         audio.export(wav_bytes, format="wav")
         wav_bytes.seek(0)
         os.unlink(ogg_path)
 
-        # 4. Распознаём через Google Speech
         recognizer = sr.Recognizer()
         with sr.AudioFile(wav_bytes) as source:
             audio_data = recognizer.record(source)
             text = recognizer.recognize_google(audio_data, language="en-US")
 
         if text:
-            # 5. Отвечаем через GPT
             answer_en = ask_gpt(text, "Student")
-            
-            # 6. Сохраняем последнее сообщение в ГЛОБАЛЬНЫЙ словарь
             user_last_message[user_id] = answer_en
             
-            # 7. Отправляем текст
             await m.reply(f"🗣️ Ты сказал: {text}\n\n🇬🇧 {answer_en}")
             
-            # 8. Отправляем голосовой ответ
             audio_bytes = elevenlabs_tts(answer_en)
             if audio_bytes:
                 try:
