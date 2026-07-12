@@ -3,7 +3,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from config import BOT_TOKEN
-from handlers import start, chat, voice, lessons, subscription, progress
+from handlers import start, chat, voice, lessons, subscription, progress, callback
 from flask import Flask
 import threading
 
