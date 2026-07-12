@@ -10,26 +10,22 @@ def main_menu():
         resize_keyboard=True
     )
 
-# --- КНОПКА "ВЕРНУТЬСЯ В МЕНЮ" (используется в разделах) ---
+# --- КНОПКИ В РЕЖИМЕ "ОБЩАТЬСЯ" (Перевести + Вернуться) ---
 def back_to_menu():
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
+        keyboard=[
+            [KeyboardButton(text="🌍 Перевести")],
+            [KeyboardButton(text="🔙 Вернуться в меню")]
+        ],
         resize_keyboard=True
     )
 
-# --- КНОПКИ В ПРОФИЛЕ (Подписка + Вернуться) ---
+# --- КНОПКИ В ПРОФИЛЕ ---
 def profile_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="💎 Подписка")],
             [KeyboardButton(text="🔙 Вернуться в меню")]
         ],
-        resize_keyboard=True
-    )
-
-# --- КНОПКИ В РАЗДЕЛЕ "ОБЩАТЬСЯ" (пока нет перевода, только "Вернуться") ---
-def chat_menu():
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
         resize_keyboard=True
     )
