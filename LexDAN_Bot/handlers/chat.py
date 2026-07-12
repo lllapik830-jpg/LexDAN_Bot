@@ -1,12 +1,23 @@
 from aiogram import Router, types
 from services.database import load_users, save_users, get_user
 from handlers.keyboards import main_menu, back_to_menu, profile_menu
+from services.gpt import ask_gpt
+from services.translation import translate_to_language
+from services.elevenlabs import elevenlabs_tts
+from aiogram.types import FSInputFile
+import speech_recognition as sr
+from pydub import AudioSegment
+import io
+import tempfile
+import os
 import logging
+import time
 
 router = Router()
 
-# --- ХРАНИЛИЩЕ СОСТОЯНИЙ ПОЛЬЗОВАТЕЛЕЙ ---
+# --- ХРАНИЛИЩЕ СОСТОЯНИЙ И ПЕРЕВОДОВ ---
 user_states = {}  # user_id: "chat" / "profile" / "lessons" / "menu"
+user_translations = {}
 
 @router.message()
 async def chat_handler(m: types.Message):
@@ -40,8 +51,7 @@ async def chat_handler(m: types.Message):
         await m.reply(welcome_text, reply_markup=main_menu())
         return
 
-    # --- ШАГ 2: Обработка кнопок ---
-    # Если пользователь в режиме "chat", то кнопки не работают (кроме "Вернуться")
+    # --- ШАГ 2: Обработка кнопок (кроме "Вернуться") ---
     current_state = user_states.get(user_id, "menu")
     
     if m.text == "🔙 Вернуться в меню":
@@ -54,17 +64,77 @@ async def chat_handler(m: types.Message):
 
     # --- ШАГ 3: РЕЖИМ ОБЩЕНИЯ (ОБРАБАТЫВАЕТСЯ ПЕРВЫМ) ---
     if current_state == "chat":
+        # --- ТЕКСТОВЫЕ СООБЩЕНИЯ ---
         if m.text and not m.text.startswith('/'):
-            # Здесь будет GPT, а пока заглушка
-            await m.reply(f"💬 Ты сказал: {m.text}\n\n(Пока это заглушка. Скоро здесь будет GPT!)")
+            answer_en = ask_gpt(m.text, user.get("name", "Student"))
+            answer_ru = translate_to_language(answer_en, "Russian")
+            if answer_ru:
+                user_translations[user_id] = {"translation": answer_ru}
+            
+            await m.reply(f"🇬🇧 {answer_en}")
+            
+            audio_bytes = elevenlabs_tts(answer_en)
+            if audio_bytes:
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+                        f.write(audio_bytes)
+                        path = f.name
+                    await m.reply_voice(FSInputFile(path))
+                    os.unlink(path)
+                except Exception as e:
+                    logging.error(f"TTS error: {e}")
+            
+            if answer_ru:
+                await m.reply(f"🌐 {answer_ru}")
             return
+
+        # --- ГОЛОСОВЫЕ СООБЩЕНИЯ (в режиме чата) ---
         if m.voice:
-            await m.reply(
-                "🎧 Голосовые сообщения пока в разработке.\n"
-                "Скоро я научусь их распознавать и отвечать голосом! 🚀"
-            )
+            await m.reply("🎧 Обрабатываю голосовое...")
+            try:
+                file = await bot.get_file(m.voice.file_id)
+                voice_data = await bot.download_file(file.file_path)
+
+                audio = AudioSegment.from_file(io.BytesIO(voice_data.read()), format="ogg")
+                wav_bytes = io.BytesIO()
+                audio.export(wav_bytes, format="wav")
+                wav_bytes.seek(0)
+
+                recognizer = sr.Recognizer()
+                with sr.AudioFile(wav_bytes) as source:
+                    audio_data = recognizer.record(source)
+                    text = recognizer.recognize_google(audio_data, language="en-US")
+
+                if text:
+                    answer_en = ask_gpt(text, user.get("name", "Student"))
+                    answer_ru = translate_to_language(answer_en, "Russian")
+                    if answer_ru:
+                        user_translations[user_id] = {"translation": answer_ru}
+
+                    await m.reply(f"🗣️ Ты сказал: {text}\n\n🇬🇧 {answer_en}")
+                    
+                    audio_bytes = elevenlabs_tts(answer_en)
+                    if audio_bytes:
+                        try:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+                                f.write(audio_bytes)
+                                path = f.name
+                            await m.reply_voice(FSInputFile(path))
+                            os.unlink(path)
+                        except Exception as e:
+                            logging.error(f"TTS error: {e}")
+                    
+                    if answer_ru:
+                        await m.reply(f"🌐 {answer_ru}")
+                else:
+                    await m.reply("Не удалось распознать речь. Попробуй ещё раз.")
+            except sr.UnknownValueError:
+                await m.reply("Не понял речь. Попробуй сказать чётче.")
+            except Exception as e:
+                logging.error(f"Voice error: {e}")
+                await m.reply("Ошибка обработки голосового. Попробуй текстом.")
             return
-        # Если пришло что-то другое
+
         return
 
     # --- ШАГ 4: Обработка кнопок (только если в меню) ---
@@ -95,7 +165,6 @@ async def chat_handler(m: types.Message):
         words_learned = user.get("words_learned", 0)
         level = user.get("level", "A1")
         
-        import time
         premium_until = user.get("premium_until", 0)
         if time.time() < premium_until:
             subscription = "Золото"
@@ -131,7 +200,7 @@ async def chat_handler(m: types.Message):
         )
         return
 
-    # --- ШАГ 5: Если пользователь пишет текст без кнопки и не в разделе ---
+    # --- ШАГ 5: Если пользователь пишет текст без кнопки ---
     if m.text and not m.text.startswith('/'):
         await m.reply(
             "Пожалуйста, выбери действие с помощью кнопок ниже.\n"
@@ -146,8 +215,7 @@ async def chat_handler(m: types.Message):
     # --- ШАГ 6: Голосовые (если не в чате) ---
     if m.voice:
         await m.reply(
-            "🎧 Голосовые сообщения пока в разработке.\n"
-            "Скоро я научусь их распознавать и отвечать голосом! 🚀",
-            reply_markup=main_menu()
+            "🎤 Чтобы отправить голосовое, нажми сначала кнопку «🗣️ Общаться».\n"
+            "Там я смогу распознать твою речь и ответить."
         )
         return
