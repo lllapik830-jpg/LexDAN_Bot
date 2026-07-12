@@ -11,16 +11,17 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# --- ПОДКЛЮЧАЕМ ВСЕ ОБРАБОТЧИКИ ---
 dp.include_routers(
     start.router,
     chat.router,
     profile.router,
     lessons.router,
     subscription.router,
-    voice.router
+    voice.router  # <-- голосовые обрабатываются в voice.py
 )
 
-# --- ВЕБ-СЕРВЕР ДЛЯ RENDER (чтобы держать порт открытым) ---
+# --- ВЕБ-СЕРВЕР ДЛЯ RENDER ---
 app = Flask(__name__)
 
 @app.route('/')
