@@ -3,9 +3,7 @@ import logging
 from config import OPENROUTER_API_KEY
 
 def translate_to_language(text, target_lang):
-    if not text:
-        return None
-    if not target_lang or target_lang.lower() == "english":
+    if not text or not target_lang or target_lang.lower() == "english":
         return None
 
     try:
