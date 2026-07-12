@@ -1,56 +1,45 @@
-from aiogram import Router, types
+from aiogram import Router, types, Bot
 from aiogram.types import FSInputFile
 from services.gpt import ask_gpt
 from services.elevenlabs import elevenlabs_tts
 import speech_recognition as sr
-from pydub import AudioSegment
 import tempfile
 import os
-import io
 import logging
 
 router = Router()
-
-# --- ГЛОБАЛЬНЫЙ СЛОВАРЬ ДЛЯ ПОСЛЕДНИХ СООБЩЕНИЙ ---
 user_last_message = {}
 
 @router.message(lambda m: m.voice is not None)
-async def voice_handler(m: types.Message):
+async def voice_handler(m: types.Message, bot: Bot):
     user_id = str(m.from_user.id)
+    logging.info(f"🎤 VOICE RECEIVED from {user_id}")
+    
     await m.reply("🎧 Обрабатываю голосовое...")
     
     try:
-        # 1. Скачиваем голосовое
         file = await bot.get_file(m.voice.file_id)
         voice_data = await bot.download_file(file.file_path)
+        logging.info("✅ VOICE DOWNLOADED")
 
-        # 2. Сохраняем OGG во временный файл
         with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as tmp_ogg:
             tmp_ogg.write(voice_data.read())
             ogg_path = tmp_ogg.name
 
-        # 3. Конвертируем через pydub (этот метод работал раньше)
-        audio = AudioSegment.from_ogg(ogg_path)
-        wav_bytes = io.BytesIO()
-        audio.export(wav_bytes, format="wav")
-        wav_bytes.seek(0)
-        os.unlink(ogg_path)
-
-        # 4. Распознаём через Google Speech
         recognizer = sr.Recognizer()
-        with sr.AudioFile(wav_bytes) as source:
+        with sr.AudioFile(ogg_path) as source:
             audio_data = recognizer.record(source)
             text = recognizer.recognize_google(audio_data, language="en-US")
+        
+        os.unlink(ogg_path)
+        logging.info(f"📝 RECOGNIZED: {text}")
 
         if text:
-            # 5. Отвечаем через GPT
             answer_en = ask_gpt(text, "Student")
             user_last_message[user_id] = answer_en
             
-            # 6. Отправляем текст
             await m.reply(f"🗣️ Ты сказал: {text}\n\n🇬🇧 {answer_en}")
             
-            # 7. Отправляем голосовой ответ
             audio_bytes = elevenlabs_tts(answer_en)
             if audio_bytes:
                 try:
@@ -62,8 +51,8 @@ async def voice_handler(m: types.Message):
                 except Exception as e:
                     logging.error(f"TTS error: {e}")
         else:
-            await m.reply("Не удалось распознать речь. Попробуй ещё раз.")
+            await m.reply("Не удалось распознать речь.")
             
     except Exception as e:
-        logging.error(f"Voice error: {e}")
+        logging.error(f"❌ Voice error: {e}")
         await m.reply(f"Ошибка: {str(e)}")
