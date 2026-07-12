@@ -1,11 +1,11 @@
 from aiogram import Router, types
 from aiogram.filters import Command
-from datetime import date
 from services.database import load_users, save_users, get_user
 from handlers.keyboards import main_menu
 
 router = Router()
 
+# --- КОМАНДА /start ---
 @router.message(Command("start"))
 async def start_cmd(m: types.Message):
     user_id = str(m.from_user.id)
@@ -13,54 +13,32 @@ async def start_cmd(m: types.Message):
     user = get_user(users, user_id)
     save_users(users)
 
+    # --- ЕСЛИ ПОЛЬЗОВАТЕЛЬ НОВЫЙ (НЕТ ИМЕНИ) ---
     if user.get("name") is None:
-        user["step"] = "name"
-        await m.reply("🤖 *Hello! I'm LexDAN, your AI English tutor.*\n\n📝 *What is your name?*", parse_mode="Markdown")
-        return
-
-    if user.get("language") is None:
-        user["step"] = "language"
-        await m.reply("🌐 *What is your native language?*\nType your language (e.g., Russian)", parse_mode="Markdown")
-        return
-
-    await m.reply(
-        f"👋 Welcome back, *{user['name']}*!\n🌐 Language: *{user['language']}*\n\nChoose an option:",
-        parse_mode="Markdown",
-        reply_markup=main_menu()
-    )
-
-@router.message(Command("reset"))
-async def reset_cmd(m: types.Message):
-    user_id = str(m.from_user.id)
-    users = load_users()
-    user = get_user(users, user_id)
-
-    if user_id in users:
-        name = user.get("name", "Student")
-        language = user.get("language", "Russian")
-        premium_until = user.get("premium_until", 0)
-
-        users[user_id] = {
-            "name": name,
-            "language": language,
-            "level": "A1",
-            "step": "ready",
-            "premium_until": premium_until,
-            "lessons_done": 0,
-            "words_learned": 0,
-            "voice_count": 0,
-            "voice_date": date.today().isoformat()
-        }
-        save_users(users)
-
         await m.reply(
-            f"🔄 *Data reset.*\n"
-            f"Registration data saved ✅\n"
-            f"Name: {name}\n"
-            f"Language: {language}\n\n"
-            "Progress reset. Subscription active.",
-            parse_mode="Markdown",
-            reply_markup=main_menu()
+            "👋 Привет! Я — LD (LexDan), твой личный ИИ-репетитор.\n"
+            "🚀 Помогу выучить английский быстрее и дешевле, чем с репетитором.\n"
+            "😊 Давай познакомимся! Как тебя зовут?"
         )
-    else:
-        await m.reply("❌ No data to reset.")
+        user["step"] = "awaiting_name"
+        save_users(users)
+        return
+
+    # --- ЕСЛИ ПОЛЬЗОВАТЕЛЬ УЖЕ ЗАРЕГИСТРИРОВАН ---
+    welcome_text = (
+        f"🎉 Привет, {user['name']}! Рад снова тебя видеть!\n\n"
+        "🧠 Вот что я умею:\n"
+        "• 💬 Общаться на английском — я исправлю ошибки и подскажу, как сказать лучше.\n"
+        "• 🎤 Распознавать голосовые сообщения и отвечать на них голосом.\n"
+        "• 📚 Проводить короткие интерактивные уроки (5-7 минут) по твоему уровню.\n"
+        "• 📊 Отслеживать твой прогресс — ты видишь, сколько слов выучил и уроков прошёл.\n\n"
+        "🎯 Твоя цель: заниматься 15–20 минут в день.\n"
+        "⏳ Через месяц ты заметишь результат.\n\n"
+        "👇 Что означают кнопки:\n"
+        "🗣️ Общаться — простое общение на английском с переводом и голосовыми сообщениями.\n"
+        "📚 Уроки — изучай английский с помощью коротких интерактивных занятий.\n"
+        "📊 Профиль — твой прогресс, уровень и статистика.\n"
+        "🆘 Поддержка — если есть вопросы, жми на кнопку.\n\n"
+        "👇 Выбери, с чего начнёшь:"
+    )
+    await m.reply(welcome_text, reply_markup=main_menu())
