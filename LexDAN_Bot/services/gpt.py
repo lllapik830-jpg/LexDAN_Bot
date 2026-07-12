@@ -3,6 +3,9 @@ import logging
 from config import OPENROUTER_API_KEY
 
 def ask_gpt(prompt, user_name="Student"):
+    """
+    Отправляет запрос к OpenRouter (ChatGPT) и возвращает ответ.
+    """
     try:
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
