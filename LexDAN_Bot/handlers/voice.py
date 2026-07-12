@@ -2,7 +2,6 @@ from aiogram import Router, types
 from aiogram.types import FSInputFile
 from services.gpt import ask_gpt
 from services.elevenlabs import elevenlabs_tts
-from handlers.keyboards import back_to_menu
 import speech_recognition as sr
 from pydub import AudioSegment
 import tempfile
@@ -21,30 +20,37 @@ async def voice_handler(m: types.Message):
     await m.reply("🎧 Обрабатываю голосовое...")
     
     try:
+        # 1. Скачиваем голосовое
         file = await bot.get_file(m.voice.file_id)
         voice_data = await bot.download_file(file.file_path)
 
+        # 2. Сохраняем OGG во временный файл
         with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as tmp_ogg:
             tmp_ogg.write(voice_data.read())
             ogg_path = tmp_ogg.name
 
+        # 3. Конвертируем через pydub (этот метод работал раньше)
         audio = AudioSegment.from_ogg(ogg_path)
         wav_bytes = io.BytesIO()
         audio.export(wav_bytes, format="wav")
         wav_bytes.seek(0)
         os.unlink(ogg_path)
 
+        # 4. Распознаём через Google Speech
         recognizer = sr.Recognizer()
         with sr.AudioFile(wav_bytes) as source:
             audio_data = recognizer.record(source)
             text = recognizer.recognize_google(audio_data, language="en-US")
 
         if text:
+            # 5. Отвечаем через GPT
             answer_en = ask_gpt(text, "Student")
             user_last_message[user_id] = answer_en
             
+            # 6. Отправляем текст
             await m.reply(f"🗣️ Ты сказал: {text}\n\n🇬🇧 {answer_en}")
             
+            # 7. Отправляем голосовой ответ
             audio_bytes = elevenlabs_tts(answer_en)
             if audio_bytes:
                 try:
