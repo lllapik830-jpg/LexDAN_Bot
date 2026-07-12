@@ -13,7 +13,7 @@ import logging
 
 router = Router()
 
-# --- ХРАНИЛИЩЕ ДЛЯ ПОСЛЕДНИХ СООБЩЕНИЙ ---
+# --- ГЛОБАЛЬНЫЙ СЛОВАРЬ ДЛЯ ПОСЛЕДНИХ СООБЩЕНИЙ (доступен из chat.py) ---
 user_last_message = {}
 
 @router.message(lambda m: m.voice is not None)
@@ -31,7 +31,7 @@ async def voice_handler(m: types.Message):
             tmp_ogg.write(voice_data.read())
             ogg_path = tmp_ogg.name
 
-        # 3. Конвертируем OGG → WAV через pydub (используем временный файл)
+        # 3. Конвертируем OGG → WAV через pydub
         audio = AudioSegment.from_ogg(ogg_path)
         wav_bytes = io.BytesIO()
         audio.export(wav_bytes, format="wav")
@@ -47,12 +47,14 @@ async def voice_handler(m: types.Message):
         if text:
             # 5. Отвечаем через GPT
             answer_en = ask_gpt(text, "Student")
+            
+            # 6. Сохраняем последнее сообщение в ГЛОБАЛЬНЫЙ словарь
             user_last_message[user_id] = answer_en
             
-            # 6. Отправляем текст
+            # 7. Отправляем текст
             await m.reply(f"🗣️ Ты сказал: {text}\n\n🇬🇧 {answer_en}")
             
-            # 7. Отправляем голосовой ответ
+            # 8. Отправляем голосовой ответ
             audio_bytes = elevenlabs_tts(answer_en)
             if audio_bytes:
                 try:
@@ -68,4 +70,4 @@ async def voice_handler(m: types.Message):
             
     except Exception as e:
         logging.error(f"Voice error: {e}")
-        await m.reply("Ошибка обработки голосового. Попробуй текстом.")
+        await m.reply(f"Ошибка: {str(e)}")
