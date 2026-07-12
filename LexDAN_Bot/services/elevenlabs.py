@@ -3,8 +3,12 @@ import logging
 from config import ELEVENLABS_API_KEY
 
 def elevenlabs_tts(text):
+    """
+    Преобразует текст в речь через ElevenLabs API.
+    Возвращает аудио-контент (MP3) или None при ошибке.
+    """
     try:
-        url = "https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB"
+        url = "https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB"  # Голос Adam
         headers = {
             "xi-api-key": ELEVENLABS_API_KEY,
             "Content-Type": "application/json"
