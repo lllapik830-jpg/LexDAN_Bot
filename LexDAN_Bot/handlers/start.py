@@ -70,7 +70,16 @@ async def save_name(m: Message):
     name = (m.text or "").strip()
 
     # защита от дурака: имя не должно быть командой/кнопкой
-    if not name or name.startswith("/") or len(name) > 40:
+    banned = {
+        "🗣️ Общаться",
+        "📚 Уроки",
+        "📊 Профиль",
+        "🆘 Поддержка",
+        "🌍 Перевести",
+        "🔙 Вернуться в меню",
+        "💎 Подписка",
+    }
+    if not name or name.startswith("/") or len(name) > 40 or name in banned:
         await m.reply("🙂 Напиши просто своё имя текстом, например: Даня")
         return
 

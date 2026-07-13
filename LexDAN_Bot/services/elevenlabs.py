@@ -1,47 +1,22 @@
 """
-Голос через ElevenLabs:
-- STT = речь → текст (распознать голосовое)
-- TTS = текст → речь (бот отвечает голосом)
-
-OGG от Telegram можно отправлять в STT как есть — ffmpeg не нужен.
+ElevenLabs: только озвучка текста (TTS).
+Распознавание голоса — в services/stt.py (Google).
 """
 
 import logging
+import os
+import shutil
+import subprocess
+import tempfile
+
 import requests
 from config import ELEVENLABS_API_KEY
 
-# Голос Adam. Позже можно сменить ID на другой голос в кабинете ElevenLabs.
 VOICE_ID = "pNInz6obpgDQGcFmaJgB"
 
 
-def elevenlabs_stt(audio_bytes: bytes, filename: str = "voice.ogg") -> str | None:
-    """Распознать речь. Возвращает текст или None."""
-    try:
-        response = requests.post(
-            "https://api.elevenlabs.io/v1/speech-to-text",
-            headers={"xi-api-key": ELEVENLABS_API_KEY},
-            data={
-                "model_id": "scribe_v1",
-                "language_code": "en",
-            },
-            files={"file": (filename, audio_bytes, "audio/ogg")},
-            timeout=60,
-        )
-        if response.status_code != 200:
-            logging.error(f"ElevenLabs STT error: {response.status_code} - {response.text}")
-            return None
-
-        data = response.json()
-        # В ответе обычно поле "text"
-        text = (data.get("text") or "").strip()
-        return text or None
-    except Exception as e:
-        logging.error(f"ElevenLabs STT error: {e}")
-        return None
-
-
 def elevenlabs_tts(text: str) -> bytes | None:
-    """Превратить английский текст в MP3. Возвращает байты или None."""
+    """Текст → MP3 байты."""
     if not text:
         return None
     try:
@@ -70,3 +45,53 @@ def elevenlabs_tts(text: str) -> bytes | None:
     except Exception as e:
         logging.error(f"ElevenLabs TTS error: {e}")
         return None
+
+
+def mp3_to_ogg_opus(mp3_bytes: bytes) -> bytes | None:
+    """
+    Telegram принимает voice только как OGG/Opus.
+    MP3 как reply_voice часто просто не уходит.
+    """
+    if not mp3_bytes:
+        return None
+    if not shutil.which("ffmpeg"):
+        logging.error("ffmpeg not found — cannot convert TTS to ogg")
+        return None
+
+    mp3_path = None
+    ogg_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+            f.write(mp3_bytes)
+            mp3_path = f.name
+        ogg_path = mp3_path + ".ogg"
+
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                mp3_path,
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "48k",
+                ogg_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            logging.error(f"ffmpeg TTS convert error: {result.stderr}")
+            return None
+
+        with open(ogg_path, "rb") as f:
+            return f.read()
+    except Exception as e:
+        logging.error(f"mp3_to_ogg error: {e}")
+        return None
+    finally:
+        for path in (mp3_path, ogg_path):
+            if path and os.path.exists(path):
+                os.unlink(path)

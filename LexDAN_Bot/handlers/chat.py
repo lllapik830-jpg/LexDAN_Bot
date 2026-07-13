@@ -1,6 +1,6 @@
 """
-Раздел «Общаться» — только текст (голос в voice.py).
-Работает ТОЛЬКО когда mode == chat.
+Раздел «Общаться».
+Кнопка «Перевести» ловится по слову Перевести (на случай разного эмодзи).
 """
 
 from aiogram import Router, F
@@ -19,7 +19,7 @@ from services.tutor_reply import reply_as_tutor
 router = Router()
 
 
-@router.message(ModeFilter(MODE_CHAT), F.text == "🌍 Перевести")
+@router.message(F.text.func(lambda t: bool(t) and "Перевести" in t))
 async def translate_last(m: Message):
     user_id = str(m.from_user.id)
     users = load_users()
@@ -33,6 +33,7 @@ async def translate_last(m: Message):
         )
         return
 
+    await m.reply("🌐 Перевожу…")
     translation = translate_to_russian(last)
     if translation:
         await m.reply(f"🌐 {translation}", reply_markup=chat_menu())
@@ -43,7 +44,7 @@ async def translate_last(m: Message):
 @router.message(
     ModeFilter(MODE_CHAT),
     F.text,
-    ~F.text.in_({"🌍 Перевести", "🔙 Вернуться в меню"}),
+    ~F.text.func(lambda t: bool(t) and ("Перевести" in t or "Вернуться в меню" in t)),
 )
 async def chat_text(m: Message):
     text = (m.text or "").strip()
@@ -56,9 +57,8 @@ async def chat_text(m: Message):
 
 @router.message(ModeFilter(MODE_CHAT))
 async def chat_wrong_content(m: Message):
-    """Стикеры, фото и т.п. в разделе общения."""
     if m.voice:
-        return  # голос обработает voice.py
+        return
     await m.reply(
         "🙂 В этом разделе пришли текст или голосовое на английском.",
         reply_markup=chat_menu(),

@@ -1,8 +1,6 @@
 """
-Голосовые сообщения.
-
-Важно: обработчик срабатывает ТОЛЬКО в режиме chat.
-Если человек в «Уроках» пришлёт ГС — сюда запрос НЕ попадёт.
+Голосовые — только в режиме chat.
+STT: Google (через ffmpeg), не ElevenLabs.
 """
 
 import logging
@@ -13,7 +11,7 @@ from aiogram.types import Message
 from handlers.filters import ModeFilter
 from handlers.keyboards import chat_menu
 from services.database import MODE_CHAT
-from services.elevenlabs import elevenlabs_stt
+from services.stt import recognize_english
 from services.tutor_reply import reply_as_tutor
 
 router = Router()
@@ -28,10 +26,11 @@ async def voice_in_chat(m: Message, bot: Bot):
         voice_buffer = await bot.download_file(file.file_path)
         audio_bytes = voice_buffer.read()
 
-        text = elevenlabs_stt(audio_bytes, filename="voice.ogg")
+        text = recognize_english(audio_bytes)
         if not text:
             await m.reply(
-                "❌ Не удалось распознать речь. Попробуй ещё раз поближе к микрофону.",
+                "❌ Не удалось распознать речь.\n"
+                "Говори по-английски чуть громче и чётче, потом попробуй снова.",
                 reply_markup=chat_menu(),
             )
             return

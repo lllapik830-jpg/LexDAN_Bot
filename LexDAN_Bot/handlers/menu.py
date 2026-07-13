@@ -1,5 +1,6 @@
 """
-Главное меню: переход в разделы + защита от «напишу что угодно».
+Главное меню.
+Кнопки разделов работают ВСЕГДА (даже если режим сбился после рестарта Render).
 """
 
 from aiogram import Router, F
@@ -20,7 +21,7 @@ from services.database import (
 router = Router()
 
 
-@router.message(ModeFilter(MODE_MENU), F.text == "🗣️ Общаться")
+@router.message(F.text == "🗣️ Общаться")
 async def open_chat(m: Message):
     set_mode(str(m.from_user.id), MODE_CHAT)
     await m.reply(
@@ -33,7 +34,7 @@ async def open_chat(m: Message):
     )
 
 
-@router.message(ModeFilter(MODE_MENU), F.text == "📚 Уроки")
+@router.message(F.text == "📚 Уроки")
 async def open_lessons(m: Message):
     set_mode(str(m.from_user.id), MODE_LESSONS)
     await m.reply(
@@ -44,28 +45,31 @@ async def open_lessons(m: Message):
     )
 
 
-@router.message(ModeFilter(MODE_MENU), F.text == "📊 Профиль")
+@router.message(F.text == "📊 Профиль")
 async def open_profile(m: Message):
     set_mode(str(m.from_user.id), MODE_PROFILE)
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
 
+    name = user.get("name") or m.from_user.first_name or "Не указано"
+
     await m.reply(
-        "📊 *Твой профиль:*\n\n"
-        f"📛 Имя: {user.get('name') or 'Не указано'}\n"
+        "📊 Твой профиль:\n\n"
+        f"📛 Имя: {name}\n"
         f"📚 Пройдено уроков: {user.get('lessons_done', 0)}\n"
         f"📈 Уровень: {user.get('level', 'A1')}\n"
         f"📝 Слов выучено: {user.get('words_learned', 0)}\n"
-        f"💎 Подписка: бесплатно (все функции открыты)",
-        parse_mode="Markdown",
+        f"💎 Подписка: бесплатно (все функции открыты)\n\n"
+        "ℹ️ Если имя сбросилось — нажми /start и введи снова "
+        "(на бесплатном Render файл пользователей иногда очищается после рестарта).",
         reply_markup=profile_menu(),
     )
 
 
-@router.message(ModeFilter(MODE_MENU), F.text == "🆘 Поддержка")
+@router.message(F.text == "🆘 Поддержка")
 async def open_support(m: Message):
-    # остаёмся в меню — поддержка это просто сообщение
+    set_mode(str(m.from_user.id), MODE_MENU)
     await m.reply(
         "🆘 По вопросам пиши: @твой_ник\n"
         "(замени этот ник на свой в файле handlers/menu.py)",
@@ -75,7 +79,6 @@ async def open_support(m: Message):
 
 @router.message(ModeFilter(MODE_MENU), StepFilter("ready"), F.text)
 async def menu_foolproof(m: Message):
-    """Если человек в главном меню пишет ерунду — мягко направляем на кнопки."""
     await m.reply(
         "🙂 Пожалуйста, выбери действие кнопкой ниже.",
         reply_markup=main_menu(),
