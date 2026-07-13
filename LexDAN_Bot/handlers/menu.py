@@ -11,6 +11,7 @@ from services.database import (
     load_users,
     get_user,
     set_mode,
+    MODE_MENU,
     MODE_CHAT,
     MODE_LESSONS,
     MODE_PROFILE,

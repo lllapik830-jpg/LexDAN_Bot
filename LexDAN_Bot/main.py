@@ -11,6 +11,7 @@
 
 import asyncio
 import logging
+import os
 import threading
 
 from aiogram import Bot, Dispatcher
@@ -47,7 +48,9 @@ def home():
 
 
 def keep_alive():
-    app.run(host="0.0.0.0", port=8080)
+    # Render сам даёт порт в переменной PORT
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 
 
 async def main():

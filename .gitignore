@@ -1,0 +1,11 @@
+.env
+users.json
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.mp3
+*.ogg
+*.wav
+.idea/
+.vscode/
