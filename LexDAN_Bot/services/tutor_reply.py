@@ -32,7 +32,7 @@ async def reply_as_tutor(
 
     mp3_bytes = elevenlabs_tts(result["reply_en"])
     if not mp3_bytes:
-        await message.reply("⚠️ Текст готов, но голос сейчас не озвучился (ElevenLabs).")
+        await message.reply("⚠️ Текст готов, но голос сейчас не отправился.")
         return
 
     ogg_bytes = mp3_to_ogg_opus(mp3_bytes)

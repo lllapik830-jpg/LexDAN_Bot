@@ -56,8 +56,13 @@ async def open_lessons(m: Message):
         return
 
     if phase in {"vocab", "listen", "write"}:
+        names = {
+            "vocab": "словарь",
+            "listen": "аудирование",
+            "write": "письмо",
+        }
         await m.reply(
-            f"Сейчас этап: {phase}. Пришли ответ текстом.",
+            f"Продолжаем тест — {names.get(phase, 'задание')}. Пришли ответ текстом.",
             reply_markup=assess_simple_kb(),
         )
         return
