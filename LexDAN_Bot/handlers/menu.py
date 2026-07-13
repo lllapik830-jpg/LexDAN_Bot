@@ -1,13 +1,13 @@
 """
 Главное меню.
-Кнопки разделов работают ВСЕГДА (даже если режим сбился после рестарта Render).
 """
 
 from aiogram import Router, F
 from aiogram.types import Message
 
 from handlers.filters import ModeFilter, StepFilter
-from handlers.keyboards import main_menu, chat_menu, back_to_menu, profile_menu
+from handlers.keyboards import main_menu, chat_menu, profile_menu, assess_translate_kb, assess_simple_kb
+from handlers.lessons import send_lessons_home
 from services.database import (
     load_users,
     get_user,
@@ -17,6 +17,7 @@ from services.database import (
     MODE_LESSONS,
     MODE_PROFILE,
 )
+from services.assessment import ensure_user_fields
 
 router = Router()
 
@@ -36,13 +37,32 @@ async def open_chat(m: Message):
 
 @router.message(F.text == "📚 Уроки")
 async def open_lessons(m: Message):
-    set_mode(str(m.from_user.id), MODE_LESSONS)
-    await m.reply(
-        "📚 Раздел «Уроки» пока в разработке.\n"
-        "Скоро здесь будут уровни A0–C2: грамматика, чтение, аудирование и словарь.\n\n"
-        "Пока нажми «Вернуться в меню».",
-        reply_markup=back_to_menu(),
-    )
+    user_id = str(m.from_user.id)
+    set_mode(user_id, MODE_LESSONS)
+
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_user_fields(user)
+    phase = user["assessment"].get("phase")
+
+    if phase == "translate":
+        a = user["assessment"]
+        show_skip = a.get("translate_level") == "A0" and a.get("a0_second_shown")
+        await m.reply(
+            "Продолжаем тест — задание 1/4: перевод.\n\n"
+            f"🇬🇧 Текст:\n{a['translate_source_en']}",
+            reply_markup=assess_translate_kb(show_skip=show_skip),
+        )
+        return
+
+    if phase in {"vocab", "listen", "write"}:
+        await m.reply(
+            f"Сейчас этап: {phase}. Пришли ответ текстом.",
+            reply_markup=assess_simple_kb(),
+        )
+        return
+
+    await send_lessons_home(m)
 
 
 @router.message(F.text == "📊 Профиль")
@@ -60,9 +80,7 @@ async def open_profile(m: Message):
         f"📚 Пройдено уроков: {user.get('lessons_done', 0)}\n"
         f"📈 Уровень: {user.get('level', 'A1')}\n"
         f"📝 Слов выучено: {user.get('words_learned', 0)}\n"
-        f"💎 Подписка: бесплатно (все функции открыты)\n\n"
-        "ℹ️ Если имя сбросилось — нажми /start и введи снова "
-        "(на бесплатном Render файл пользователей иногда очищается после рестарта).",
+        f"💎 Подписка: бесплатно",
         reply_markup=profile_menu(),
     )
 
@@ -71,8 +89,7 @@ async def open_profile(m: Message):
 async def open_support(m: Message):
     set_mode(str(m.from_user.id), MODE_MENU)
     await m.reply(
-        "🆘 По вопросам пиши: @твой_ник\n"
-        "(замени этот ник на свой в файле handlers/menu.py)",
+        "🆘 По вопросам пиши: @твой_ник",
         reply_markup=main_menu(),
     )
 

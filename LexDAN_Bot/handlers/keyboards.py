@@ -1,15 +1,13 @@
 """
 Кнопки бота.
-
-Простыми словами:
-здесь только РИСУЕМ кнопки. Логика «что делать при нажатии» — в других файлах.
 """
 
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
+from data.assessment_data import LEVELS
+
 
 def main_menu() -> ReplyKeyboardMarkup:
-    """Главное меню — 4 большие кнопки."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🗣️ Общаться"), KeyboardButton(text="📚 Уроки")],
@@ -20,7 +18,6 @@ def main_menu() -> ReplyKeyboardMarkup:
 
 
 def chat_menu() -> ReplyKeyboardMarkup:
-    """Кнопки внутри раздела «Общаться»."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🌍 Перевести")],
@@ -31,7 +28,6 @@ def chat_menu() -> ReplyKeyboardMarkup:
 
 
 def back_to_menu() -> ReplyKeyboardMarkup:
-    """Одна кнопка «назад» (уроки, заглушки и т.п.)."""
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
         resize_keyboard=True,
@@ -39,11 +35,52 @@ def back_to_menu() -> ReplyKeyboardMarkup:
 
 
 def profile_menu() -> ReplyKeyboardMarkup:
-    """Кнопки внутри профиля."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="💎 Подписка")],
             [KeyboardButton(text="🔙 Вернуться в меню")],
         ],
+        resize_keyboard=True,
+    )
+
+
+def lessons_home_first() -> ReplyKeyboardMarkup:
+    """Первый заход: только проверка уровня."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🎯 Проверить уровень")],
+            [KeyboardButton(text="🔙 Вернуться в меню")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def lessons_home_levels() -> ReplyKeyboardMarkup:
+    """После теста: уровни A0–C2."""
+    rows = []
+    row = []
+    for i, lv in enumerate(LEVELS):
+        row.append(KeyboardButton(text=lv))
+        if len(row) == 4:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([KeyboardButton(text="🎯 Пройти тест снова")])
+    rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def assess_translate_kb(show_skip: bool = False) -> ReplyKeyboardMarkup:
+    rows = [[KeyboardButton(text="⬇️ Дай текст проще")]]
+    if show_skip:
+        rows.append([KeyboardButton(text="⏭️ Пропустить задание")])
+    rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def assess_simple_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
         resize_keyboard=True,
     )

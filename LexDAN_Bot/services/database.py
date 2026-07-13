@@ -51,7 +51,9 @@ def get_user(users: dict, user_id: str) -> dict:
             "lessons_done": 0,
             "words_learned": 0,
             "last_bot_reply": None,
-            "premium_until": 0,  # пока все бесплатно; позже для подписок
+            "premium_until": 0,
+            "assessment_done": False,
+            "assessment": {},
         }
     # На всякий случай дописываем новые поля старым пользователям
     defaults = {
@@ -61,6 +63,8 @@ def get_user(users: dict, user_id: str) -> dict:
         "lessons_done": 0,
         "words_learned": 0,
         "premium_until": 0,
+        "assessment_done": False,
+        "assessment": {},
     }
     for key, value in defaults.items():
         users[user_id].setdefault(key, value)
