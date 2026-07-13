@@ -56,7 +56,7 @@ def lessons_home_first() -> ReplyKeyboardMarkup:
 
 
 def lessons_home_levels() -> ReplyKeyboardMarkup:
-    """После теста: уровни A0–C2."""
+    """После теста: уровни A0–C2 (без повторного теста)."""
     rows = []
     row = []
     for i, lv in enumerate(LEVELS):
@@ -66,7 +66,6 @@ def lessons_home_levels() -> ReplyKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
-    rows.append([KeyboardButton(text="🎯 Пройти тест снова")])
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 

@@ -19,7 +19,7 @@ router = Router()
 
 @router.message(ModeFilter(MODE_CHAT), F.voice)
 async def voice_in_chat(m: Message, bot: Bot):
-    await m.reply("🎧 Слушаю голосовое…", reply_markup=chat_menu())
+    await m.reply("🎧 Слушаю…", reply_markup=chat_menu())
 
     try:
         file = await bot.get_file(m.voice.file_id)

@@ -1,5 +1,5 @@
 """
-Общение (строгие правки с объяснением правил) + судьи для теста уровня.
+Общение (живые правки по грамматике) + судьи для теста уровня.
 """
 
 import json
@@ -9,32 +9,43 @@ import requests
 from config import OPENROUTER_API_KEY
 
 SYSTEM_PROMPT = """
-You are LexDAN — a strict but friendly English tutor for Russian-speaking students.
+You are LexDAN — a warm human English tutor on Telegram (NOT a cold chatbot).
+Talk like a real teacher in a private lesson: kind, natural, lightly playful.
 
-ALWAYS answer in this exact JSON format (no markdown, no extra text):
+The student is Russian-speaking. Text may come from VOICE transcripts.
+
+ALWAYS answer in this exact JSON (no markdown):
 {
-  "mistakes_ru": "конкретно что неправильно в тексте ученика",
-  "rule_ru": "короткое объяснение ПОЧЕМУ (правило грамматики/лексики простыми словами, 1-2 предложения)",
-  "better_en": "естественный правильный вариант на английском",
-  "reply_en": "короткий ответ 1-2 предложения на английском + один follow-up вопрос"
+  "mistakes_ru": "грамматическая/лексическая ошибка или пустая строка",
+  "rule_ru": "дружелюбное объяснение правила 1-2 предложения или пустая строка",
+  "better_en": "естественный вариант или пустая строка",
+  "reply_en": "живой ответ 1-2 предложения + лёгкий follow-up вопрос"
 }
 
-STRICT RULES:
-- If there is ANY mistake, fill mistakes_ru, rule_ru and better_en.
-- rule_ru MUST mention the grammar/vocab rule (tenses, articles, prepositions, agreement, word order, collocation...).
-- Only leave mistakes_ru/rule_ru/better_en empty when English is truly correct and natural.
-- Catch typical Russian-speaker errors: articles, he go/goes, Present Simple vs Continuous, in/on/at, much/many, I am agree, etc.
-- reply_en: English only, short, warm.
-- mistakes_ru and rule_ru: Russian only.
+CORRECT only real English problems:
+tenses, articles, prepositions, agreement, word order, wrong words, Russian calques.
+
+IGNORE completely:
+- capital letters
+- missing . ! ? , 
+- messy voice-transcript punctuation
+- informal missing punctuation
+
+TONE for reply_en:
+sound like a friendly tutor, use contractions (I'm, that's, let's),
+react to content, keep chatting. Never say "As an AI".
+
+mistakes_ru / rule_ru: simple kind Russian.
+If grammar is fine — leave those three fields empty and just chat.
 """
 
 
 def ask_tutor(user_text: str, user_name: str = "Student") -> dict:
     fallback = {
-        "mistakes_ru": "Не удалось разобрать сообщение.",
+        "mistakes_ru": "",
         "rule_ru": "",
         "better_en": "",
-        "reply_en": "Sorry, I couldn't process that. Can you try again?",
+        "reply_en": "Hey! I didn't catch that — can you say it again?",
     }
 
     try:
@@ -49,19 +60,23 @@ def ask_tutor(user_text: str, user_name: str = "Student") -> dict:
                 "messages": [
                     {
                         "role": "system",
-                        "content": SYSTEM_PROMPT + f"\nStudent's name: {user_name}.",
+                        "content": (
+                            SYSTEM_PROMPT
+                            + f"\nStudent's name: {user_name}. Use the name naturally sometimes."
+                        ),
                     },
                     {
                         "role": "user",
                         "content": (
-                            "Find mistakes, explain the rule simply in Russian, "
-                            "give a better English version, then continue chatting:\n\n"
+                            "Ignore capitalization and punctuation. "
+                            "Correct only real grammar/vocab. "
+                            "Explain kindly if needed, then reply like a real tutor:\n\n"
                             f"{user_text}"
                         ),
                     },
                 ],
                 "max_tokens": 450,
-                "temperature": 0.2,
+                "temperature": 0.55,
             },
             timeout=25,
         )
@@ -158,22 +173,22 @@ def format_tutor_message(result: dict, heard_text: str | None = None) -> str:
     parts = []
 
     if heard_text:
-        parts.append(f"🗣️ Ты сказал(а): {heard_text}")
+        parts.append(f"🗣️ Услышал: {heard_text}")
 
     mistakes = result.get("mistakes_ru") or ""
     rule = result.get("rule_ru") or ""
     better = result.get("better_en") or ""
 
     if mistakes or better or rule:
-        parts.append("✏️ Исправление:")
+        parts.append("✏️ Маленькая правка:")
         if mistakes:
-            parts.append(f"• Ошибка: {mistakes}")
+            parts.append(f"• {mistakes}")
         if rule:
-            parts.append(f"• Почему: {rule}")
+            parts.append(f"• {rule}")
         if better:
-            parts.append(f"• Лучше сказать: {better}")
+            parts.append(f"• Так естественнее: {better}")
     else:
-        parts.append("✅ Ошибок нет — отлично!")
+        parts.append("✅ По грамматике всё ок!")
 
     parts.append(f"\n🇬🇧 {result['reply_en']}")
     return "\n".join(parts)

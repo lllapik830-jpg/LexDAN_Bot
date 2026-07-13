@@ -51,7 +51,7 @@ async def chat_text(m: Message):
     if not text or text.startswith("/"):
         return
 
-    await m.reply("💭 Думаю…")
+    await m.reply("💭 …")
     await reply_as_tutor(m, user_text=text)
 
 

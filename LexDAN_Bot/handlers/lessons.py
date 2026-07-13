@@ -63,14 +63,14 @@ async def send_lessons_home(m: Message, intro: str | None = None):
             intro = (
                 f"📚 Уроки\n\n"
                 f"Твой уровень: {user.get('level', 'A1')}.\n"
-                f"Выбери уровень или пройди тест снова."
+                f"Выбери уровень ниже."
             )
         else:
             intro = (
                 "📚 Уроки\n\n"
-                "Сначала проверь уровень английского.\n"
-                "Тест ~10 минут: перевод, слова, аудирование, письмо.\n\n"
-                "Нажми «Проверить уровень»."
+                "Давай сначала быстро проверим твой уровень — минут 10.\n"
+                "Перевод, слова, аудирование и короткое письмо.\n\n"
+                "Когда будешь готов — жми «Проверить уровень»."
             )
 
     await m.reply(intro, reply_markup=lessons_keyboard_for(user))
@@ -100,7 +100,19 @@ def _as_bool(value) -> bool:
 @router.message(ModeFilter(MODE_LESSONS), F.text == BTN_CHECK)
 @router.message(ModeFilter(MODE_LESSONS), F.text == BTN_AGAIN)
 async def start_level_test(m: Message):
-    await m.reply("Готовлю тест…")
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_user_fields(user)
+
+    if user.get("assessment_done"):
+        await m.reply(
+            "Тест уровня уже пройден — повторно его пройти нельзя.\n"
+            "Выбери уровень для занятий ниже.",
+            reply_markup=lessons_home_levels(),
+        )
+        return
+
+    await m.reply("Секунду, готовлю тебе тест…")
     user = start_assessment(str(m.from_user.id))
     a = user["assessment"]
     await m.reply(
@@ -359,7 +371,7 @@ async def _handle_write_answer(m: Message, user: dict, text: str):
     finish_assessment(str(m.from_user.id), final)
 
     await m.reply(
-        f"🏁 Тест завершён!\n\n"
+        f"Готово! Тест позади 🙂\n\n"
         f"Ваш предполагаемый и предпочитаемый уровень для изучения — {final}. "
         f"Но вы можете пройти и уроки уровнем ниже — для закрепления знаний."
     )
