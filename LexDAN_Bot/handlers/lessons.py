@@ -350,14 +350,16 @@ async def choose_level(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_user_fields(user)
 
+    if user["assessment"].get("phase"):
+        return
+
     if not user.get("assessment_done"):
         await m.reply("Сначала пройди проверку уровня.", reply_markup=lessons_home_first())
         return
 
-    await m.reply(
-        f"📚 Уровень {m.text}\n\nУроки по этому уровню скоро появятся.",
-        reply_markup=lessons_home_levels(),
-    )
+    from handlers.lessons_grammar import open_level_hub
+
+    await open_level_hub(m, m.text)
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text)
@@ -372,6 +374,10 @@ async def lessons_text(m: Message):
     phase = user["assessment"].get("phase")
 
     if not phase:
+        # Если человек внутри раздела грамматики — пусть отвечает lessons_grammar
+        hub = (user.get("lesson") or {}).get("hub")
+        if hub:
+            return
         await m.reply("Выбери действие кнопкой ниже.", reply_markup=lessons_keyboard_for(user))
         return
 
