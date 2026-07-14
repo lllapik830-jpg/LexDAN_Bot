@@ -120,10 +120,11 @@ def generate_grammar_exercise(
     a0_hint = ""
     if beginner:
         a0_hint = (
-            " IMPORTANT FOR A0/A1: Write the task INSTRUCTIONS in Russian. "
-            "Keep English ONLY for the target sentence / options / answer. "
-            "Under the English sentence add a Russian gloss in italics like <i>...</i>. "
-            "Use very simple vocabulary. Short sentences."
+            " IMPORTANT FOR A0/A1: Write task instructions as a short friendly story in Russian "
+            "(Rico tutor voice). Keep English ONLY for the target sentence and answer options. "
+            "Under each English sentence add Russian gloss in HTML <i>...</i>. "
+            "Include prompt_ru: full Russian explanation of what to do AND translation of English parts. "
+            "Use very simple vocabulary."
         )
 
     data = _ask_json(

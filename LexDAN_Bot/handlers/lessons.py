@@ -18,7 +18,7 @@ from handlers.keyboards import (
     assess_dont_know_kb,
     assess_write_kb,
 )
-from data.assessment_data import LEVELS, lower_level, level_index
+from data.assessment_data import LEVELS, level_index, lower_level, lower_level, level_index
 from services.database import load_users, get_user, MODE_LESSONS
 from services.assessment import (
     ensure_user_fields,
@@ -357,9 +357,27 @@ async def choose_level(m: Message):
         await m.reply("Сначала пройди проверку уровня.", reply_markup=lessons_home_first())
         return
 
+    selected = m.text
+    user_level = user.get("level") or "A1"
+    if level_index(selected) > level_index(user_level):
+        need = (
+            user_level
+            if level_index(selected) == level_index(user_level) + 1
+            else lower_level(selected)
+        )
+        await m.reply(
+            f"🦜 <b>Рико:</b> Твой уровень по тесту — <b>{user_level}</b>.\n"
+            f"Уровень <b>{selected}</b> пока закрыт 🔒\n\n"
+            f"Для начала освой уровень <b>{need}</b> — "
+            f"шаг за шагом, без спешки! Когда будешь готов — вернёшься сюда 💪",
+            reply_markup=lessons_home_levels(),
+            parse_mode="HTML",
+        )
+        return
+
     from handlers.lessons_grammar import open_level_hub
 
-    await open_level_hub(m, m.text)
+    await open_level_hub(m, selected)
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text)

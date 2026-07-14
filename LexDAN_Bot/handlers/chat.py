@@ -19,7 +19,7 @@ from services.tutor_reply import reply_as_tutor
 router = Router()
 
 
-@router.message(F.text.func(lambda t: bool(t) and "Перевести" in t))
+@router.message(ModeFilter(MODE_CHAT), F.text.func(lambda t: bool(t) and "Перевести" in t))
 async def translate_last(m: Message):
     user_id = str(m.from_user.id)
     users = load_users()

@@ -26,8 +26,8 @@ dp.include_routers(
     common.router,
     menu.router,       # кнопки меню раньше разделов — чтобы всегда ловились
     voice.router,
+    lessons_grammar.router,  # грамматика раньше chat — чтобы «Перевести» в заданиях
     chat.router,
-    lessons_grammar.router,  # грамматика раньше catch-all уроков
     lessons.router,
     profile.router,
 )

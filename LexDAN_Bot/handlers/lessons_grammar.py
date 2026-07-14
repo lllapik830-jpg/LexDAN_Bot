@@ -324,20 +324,23 @@ async def back_to_topic(m: Message):
     if assessment_busy(user):
         return
     ensure_lesson(user)
+    hub = user["lesson"].get("hub")
+    if hub not in {"topic", "exercises", "exercise"}:
+        return
     topic_id = user["lesson"].get("topic_id")
     title = user["lesson"].get("topic_title") or "тема"
     if not topic_id:
         await back_to_topics(m)
         return
+    if hub == "exercise":
+        clear_active_exercise(str(m.from_user.id))
+    elif hub == "exercises":
+        pass
     open_topic(str(m.from_user.id), topic_id, title)
     level = user["lesson"].get("level") or "A1"
     topic = get_topic(level, topic_id)
     intro = topic["rico_intro"] if topic else f"🦜 Тема: {title}"
-    await m.reply(
-        intro,
-        reply_markup=_topic_kb_for(level, topic_id),
-        parse_mode="HTML",
-    )
+    await m.reply(intro, reply_markup=_topic_kb_for(level, topic_id), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == "⬅️ К выбору заданий")

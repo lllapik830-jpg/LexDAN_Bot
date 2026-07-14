@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from data.grammar_enrichments import GRAMMAR_SECTION_INTRO, get_enrichment
+from data.grammar_narratives import get_narrative_intro
 
 # Структура: LEVEL -> list[{id, title, rico_intro}]
 
@@ -685,10 +686,15 @@ def _normalize_topic(raw: dict) -> dict:
         t["mode"] = "ack"
     else:
         t["mode"] = t.get("mode") or "practice"
-    intro = t.get("rico_intro") or ""
-    extra = get_enrichment(tid, t["mode"])
-    if extra and extra not in intro:
-        t["rico_intro"] = intro + extra
+
+    narrative = get_narrative_intro(tid)
+    if narrative:
+        t["rico_intro"] = narrative
+    else:
+        intro = t.get("rico_intro") or ""
+        extra = get_enrichment(tid, t["mode"])
+        if extra and extra not in intro:
+            t["rico_intro"] = intro + extra
     return t
 
 
