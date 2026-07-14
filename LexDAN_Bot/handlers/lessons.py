@@ -399,6 +399,20 @@ async def lessons_other(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_user_fields(user)
     phase = user["assessment"].get("phase")
+
+    # Внутри Grammar не сбрасываем клавиатуру на выбор уровня
+    if not phase and (user.get("lesson") or {}).get("hub"):
+        from handlers.lessons_grammar import _kb_for_user, VOICE_ONLY_TEXT
+
+        if m.voice:
+            await m.reply(VOICE_ONLY_TEXT, reply_markup=_kb_for_user(user), parse_mode="HTML")
+        else:
+            await m.reply(
+                "Напиши текст или нажми кнопку ниже.",
+                reply_markup=_kb_for_user(user),
+            )
+        return
+
     kb = lessons_keyboard_for(user)
     if phase in {"vocab", "listen"}:
         kb = assess_dont_know_kb()

@@ -35,21 +35,21 @@ def grammar_topics_kb(level: str) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def topic_chat_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📝 Задания")],
-            [KeyboardButton(text="⬅️ К темам")],
-            [KeyboardButton(text="🔙 Вернуться в меню")],
-        ],
-        resize_keyboard=True,
-    )
+def topic_chat_kb(*, ack: bool = False) -> ReplyKeyboardMarkup:
+    rows = []
+    if ack:
+        rows.append([KeyboardButton(text="✅ Ознакомился")])
+    else:
+        rows.append([KeyboardButton(text="📝 Задания")])
+    rows.append([KeyboardButton(text="⬅️ К темам")])
+    rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def exercises_menu_kb() -> ReplyKeyboardMarkup:
     rows = []
     row = []
-    for num, title in EXERCISE_TYPES:
+    for num, _title in EXERCISE_TYPES:
         row.append(KeyboardButton(text=f"Задание {num}"))
         if len(row) == 2:
             rows.append(row)

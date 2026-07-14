@@ -11,7 +11,8 @@ GRAMMAR_BY_LEVEL: dict[str, list[dict]] = {
     "A0": [
         {
             "id": "alphabet",
-            "title": "Alphabet (алфавит)",
+            "title": "Alphabet / Алфавит",
+            "mode": "ack",
             "rico_intro": (
                 "🦜 <b>Рико:</b> Алфавит — твой фундамент!\n\n"
                 "В английском <b>26 букв</b>: A B C D E F G H I J K L M N O P Q R S T U V W X Y Z.\n"
@@ -23,15 +24,18 @@ GRAMMAR_BY_LEVEL: dict[str, list[dict]] = {
                 "<b>Согласные:</b> все остальные.\n\n"
                 "Пример:\n"
                 "— How do you spell your name?\n"
-                "— D-A-N-I-L.\n\n"
-                "После заданий откроется <b>тест</b> по теме.\n"
-                "💡 В заданиях я помогаю всегда. В тесте — только <b>2 подсказки</b>.\n\n"
-                "Спрашивай меня здесь, если что-то непонятно. Готов к заданиям? ✨"
+                "<i>— Как по буквам пишется твоё имя?</i>\n"
+                "— D-A-N-I-L.\n"
+                "<i>— Д-А-Н-И-Л.</i>\n\n"
+                "Здесь не нужно заданий — просто ознакомься и жми "
+                "<b>✅ Ознакомился</b>, тема засчитается.\n"
+                "Если что-то непонятно — пиши мне сюда текстом ✨"
             ),
         },
         {
             "id": "numbers_1_20",
-            "title": "Numbers 1–20 (цифры)",
+            "title": "Numbers 1–20 / Цифры 1–20",
+            "mode": "ack",
             "rico_intro": (
                 "🦜 <b>Рико:</b> Цифры — must-have с первого дня!\n\n"
                 "1 one, 2 two, 3 three, 4 four, 5 five, 6 six, 7 seven, 8 eight, 9 nine, 10 ten,\n"
@@ -40,14 +44,17 @@ GRAMMAR_BY_LEVEL: dict[str, list[dict]] = {
                 "<b>Зачем?</b> возраст, цена, номер телефона, время позже.\n\n"
                 "Полезные фразы:\n"
                 "• How old are you? — I’m …\n"
-                "• What’s your number?\n\n"
-                "После заданий будет тест. В заданиях помогаю всегда, в тесте — 2 раза.\n"
-                "Пиши вопросы — разберём вместе! 🦜"
+                "<i>• Сколько тебе лет? — Мне …</i>\n"
+                "• What’s your number?\n"
+                "<i>• Какой у тебя номер?</i>\n\n"
+                "Заданий нет — жми <b>✅ Ознакомился</b>, и тема в зачёт.\n"
+                "Пиши вопросы текстом — разберём вместе! 🦜"
             ),
         },
         {
             "id": "pronouns_be",
-            "title": "I / You + to be (я есть…)",
+            "title": "I / You + to be / Я есть…",
+            "mode": "practice",
             "rico_intro": (
                 "🦜 <b>Рико:</b> Самый важный глагол на старте — <b>to be</b> (быть)!\n\n"
                 "Сейчас (Present):\n"
@@ -57,38 +64,54 @@ GRAMMAR_BY_LEVEL: dict[str, list[dict]] = {
                 "• we/you/they <b>are</b>\n\n"
                 "Примеры:\n"
                 "• I am Danil.\n"
+                "<i>• Я — Данил. / Меня зовут Данил.</i>\n"
                 "• She is a student.\n"
-                "• They are friends.\n\n"
+                "<i>• Она студентка.</i>\n"
+                "• They are friends.\n"
+                "<i>• Они друзья.</i>\n\n"
                 "Отрицание: I’m not / isn’t / aren’t.\n"
                 "Вопрос: Am I…? Is she…? Are you…?\n\n"
-                "Без to be почти нельзя представиться. Давай потренируем! "
-                "После заданий откроется тест (в тесте только 2 подсказки)."
+                "После заданий откроется тест по теме.\n"
+                "💡 В заданиях я помогаю: 1-я подсказка — намёк, 2-я — уже ответ "
+                "(и задание засчитывается). В тесте — только 2 подсказки.\n"
+                "Пиши вопросы текстом! ✨"
             ),
         },
         {
             "id": "this_that",
-            "title": "This / That (это / то)",
+            "title": "This / That / Это / То",
+            "mode": "practice",
             "rico_intro": (
                 "🦜 <b>Рико:</b>\n\n"
                 "<b>This</b> — это (близко), <b>That</b> — то (дальше).\n\n"
-                "• This is a book. (книга рядом)\n"
-                "• That is a car. (машина вон там)\n\n"
-                "Вопросы: What’s this? What’s that?\n\n"
-                "После практики — тест. Вопросы по теме пиши мне сюда 🦜"
+                "• This is a book.\n"
+                "<i>• Это книга. (книга рядом)</i>\n"
+                "• That is a car.\n"
+                "<i>• То — машина. (машина вон там)</i>\n\n"
+                "Вопросы:\n"
+                "What’s this? / What’s that?\n"
+                "<i>Что это? / Что это там?</i>\n\n"
+                "Дальше — задания, потом тест. Вопросы пиши мне сюда текстом 🦜"
             ),
         },
         {
             "id": "simple_phrases",
-            "title": "Simple phrases (простые фразы)",
+            "title": "Simple phrases / Простые фразы",
+            "mode": "practice",
             "rico_intro": (
                 "🦜 <b>Рико:</b> Собираем первые «живые» фразы!\n\n"
                 "• Hello! / Hi!\n"
+                "<i>• Привет!</i>\n"
                 "• What’s your name? — My name is…\n"
+                "<i>• Как тебя зовут? — Меня зовут…</i>\n"
                 "• Nice to meet you.\n"
+                "<i>• Приятно познакомиться.</i>\n"
                 "• Thank you. / Please. / Sorry.\n"
-                "• How are you? — I’m fine.\n\n"
-                "Это каркас вежливого общения. Дальше нарастим грамматику.\n"
-                "Задания → потом тест. Я рядом! ✨"
+                "<i>• Спасибо. / Пожалуйста. / Извини.</i>\n"
+                "• How are you? — I’m fine.\n"
+                "<i>• Как дела? — Хорошо.</i>\n\n"
+                "Это каркас вежливого общения. Дальше — задания и тест.\n"
+                "Я рядом, пиши текстом! ✨"
             ),
         },
     ],
@@ -168,7 +191,12 @@ GRAMMAR_BY_LEVEL: dict[str, list[dict]] = {
                 "🦜 <b>Рико:</b> На A1 расширяем цифры до 100!\n\n"
                 "20 twenty, 30 thirty, 40 forty, 50 fifty, 60 sixty, 70 seventy, 80 eighty, 90 ninety, 100 a hundred.\n"
                 "21 twenty-one, 45 forty-five…\n\n"
-                "Нужны для цен, возраста, номеров. Поехали практиковать!"
+                "Нужны для цен, возраста, номеров.\n\n"
+                "Пример:\n"
+                "How much is it? — It’s fifty pounds.\n"
+                "<i>Сколько это стоит? — Пятьдесят фунтов.</i>\n\n"
+                "Заданий нет — жми <b>✅ Ознакомился</b>, тема в зачёт.\n"
+                "Вопросы пиши текстом! 🦜"
             ),
         },
     ],
@@ -178,13 +206,17 @@ GRAMMAR_BY_LEVEL: dict[str, list[dict]] = {
             "title": "Numbers, time & dates",
             "rico_intro": (
                 "🦜 <b>Рико:</b> На A2 цифры уже «живут» во времени и датах!\n\n"
-                "• время: It’s half past two. / It’s a quarter to five.\n"
-                "• даты: the 3rd of May / May 3rd\n"
-                "• года: 1999 = nineteen ninety-nine; 2005 = two thousand five\n"
-                "• большие числа: 100 one hundred, 1,000 one thousand\n\n"
+                "• It’s half past two.\n"
+                "<i>• Сейчас половина третьего.</i>\n"
+                "• It’s a quarter to five.\n"
+                "<i>• Без пятнадцати пять.</i>\n"
+                "• the 3rd of May / May 3rd\n"
+                "<i>• третье мая</i>\n"
+                "• 1999 = nineteen ninety-nine\n"
+                "• 100 one hundred, 1,000 one thousand\n\n"
                 "Полезно для расписаний, билетов, встреч.\n\n"
-                "После заданий откроется тест. В заданиях помогаю всегда, в тесте — 2 раза.\n"
-                "Спрашивай сюда! ✨"
+                "Заданий нет — жми <b>✅ Ознакомился</b>, и тема засчитается.\n"
+                "Спрашивай текстом! ✨"
             ),
         },
         {
@@ -579,8 +611,76 @@ GRAMMAR_BY_LEVEL: dict[str, list[dict]] = {
 }
 
 
+# Английское название → русское (для единого вида «EN / RU»)
+_TITLE_RU: dict[str, str] = {
+    "alphabet": "Alphabet / Алфавит",
+    "numbers_1_20": "Numbers 1–20 / Цифры 1–20",
+    "pronouns_be": "I / You + to be / Я есть…",
+    "this_that": "This / That / Это / То",
+    "simple_phrases": "Simple phrases / Простые фразы",
+    "present_simple": "Present Simple / Настоящее простое",
+    "articles_a_an": "Articles a / an / Артикли a и an",
+    "plurals": "Plurals / Множественное число",
+    "there_is_are": "There is / There are / Есть…",
+    "can_ability": "Can / Умею, могу",
+    "numbers_1_100": "Numbers 1–100 / Цифры 1–100",
+    "numbers_time_dates": "Numbers, time & dates / Числа, время и даты",
+    "present_continuous": "Present Continuous / Настоящее длительное",
+    "past_simple": "Past Simple / Прошедшее простое",
+    "going_to_future": "Going to / Планы (going to)",
+    "much_many_some_any": "Much / Many / Some / Any",
+    "comparatives": "Comparatives / Степени сравнения",
+    "modals_a2": "Must / Have to / Should / Модальные",
+    "present_perfect": "Present Perfect / Настоящее совершённое",
+    "past_perfect": "Past Perfect / Предпрошедшее",
+    "past_continuous": "Past Continuous / Прошедшее длительное",
+    "conditionals_0_1": "Conditionals 0 & 1 / Условные 0 и 1",
+    "gerund_infinitive": "Gerund / Infinitive / Герундий и инфинитив",
+    "passive_basic": "Passive Voice / Страдательный залог (база)",
+    "relative_clauses_b1": "Relative clauses / Относительные предложения",
+    "present_perfect_continuous": "Present Perfect Continuous / Настоящее совершённо-длительное",
+    "conditionals_2_3": "Conditionals 2 & 3 / Условные 2 и 3",
+    "reported_speech": "Reported Speech / Косвенная речь",
+    "passives_advanced": "Passive (all tenses) / Пассив (все времена)",
+    "modals_deduction": "Modals of deduction / Модальные догадки",
+    "relative_advanced": "Relative clauses (advanced) / Относительные (продвинутые)",
+    "inversion": "Inversion / Инверсия",
+    "cleft_sentences": "Cleft sentences / Расщеплённые предложения",
+    "advanced_modals": "Advanced modals / Продвинутые модальные",
+    "participle_clauses": "Participle clauses / Причастные обороты",
+    "nominalisation": "Nominalisation / Номинализация",
+    "discourse_markers": "Discourse markers / Связки речи",
+    "stylistic_inversion": "Stylistic nuance & inversion / Стиль и инверсия",
+    "subtle_modality": "Subtle modality / Тонкая модальность",
+    "mixed_conditionals": "Mixed conditionals / Смешанные условные",
+    "ellipsis_substitution": "Ellipsis & substitution / Пропуски и замены",
+    "register_control": "Register control / Стиль речи (register)",
+    "pragmatic_softening": "Pragmatic softening / Вежливое смягчение",
+}
+
+# Темы без заданий: только «Ознакомился»
+ACK_TOPIC_IDS = {
+    "alphabet",
+    "numbers_1_20",
+    "numbers_1_100",
+    "numbers_time_dates",
+}
+
+
+def _normalize_topic(raw: dict) -> dict:
+    t = dict(raw)
+    tid = t.get("id") or ""
+    if tid in _TITLE_RU:
+        t["title"] = _TITLE_RU[tid]
+    if tid in ACK_TOPIC_IDS:
+        t["mode"] = "ack"
+    else:
+        t["mode"] = t.get("mode") or "practice"
+    return t
+
+
 def get_topics(level: str) -> list[dict]:
-    return GRAMMAR_BY_LEVEL.get(level, [])
+    return [_normalize_topic(t) for t in GRAMMAR_BY_LEVEL.get(level, [])]
 
 
 def get_topic(level: str, topic_id: str) -> dict | None:
@@ -597,13 +697,25 @@ def get_topic_by_index(level: str, index_1based: int) -> dict | None:
     return topics[index_1based - 1]
 
 
-def format_topics_list(level: str) -> str:
+def is_ack_topic(topic: dict | None) -> bool:
+    if not topic:
+        return False
+    return topic.get("mode") == "ack" or topic.get("id") in ACK_TOPIC_IDS
+
+
+def format_topics_list(
+    level: str,
+    completed_topic_ids: set[str] | None = None,
+) -> str:
     topics = get_topics(level)
+    done = completed_topic_ids or set()
     lines = [f"📘 <b>Grammar · уровень {level}</b>\n", "Выбери тему:\n"]
     for i, t in enumerate(topics, start=1):
-        lines.append(f"<b>{i}.</b> {t['title']}")
+        mark = "✅ " if t["id"] in done else ""
+        lines.append(f"<b>{i}.</b> {mark}{t['title']}")
     lines.append(
-        "\n🦜 После теории будут задания, а затем тест по теме.\n"
-        "В заданиях я помогаю всегда. В тесте — только 2 подсказки."
+        "\n🦜 Темы с алфавитом/цифрами — просто ознакомиться.\n"
+        "В остальных: теория → задания → потом тест.\n"
+        "В заданиях: 1-я помощь = подсказка, 2-я = ответ (и зачёт)."
     )
     return "\n".join(lines)

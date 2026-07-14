@@ -30,6 +30,9 @@ def rico_topic_chat_text(level: str, topic_title: str, question: str, user_name:
                         "content": (
                             "Ты попугай Рико 🦜 — дружелюбный репетитор. "
                             "Отвечай по-русски, с английскими примерами. "
+                            "После КАЖДОГО английского примера сразу ниже дай перевод "
+                            "курсивом в HTML: <i>…</i>. "
+                            "Формат ответа — HTML для Telegram (можно <b> и <i>). "
                             "Коротко, ясно, по-человечески. Не используй JSON."
                         ),
                     },
@@ -67,11 +70,11 @@ def generate_grammar_exercise(
       kind: mcq|write,
       prompt: str,
       options: [4 strings] | null,
-      answer: str,  # exact option text or expected answer
-      tip: str
+      answer: str,
+      tip: str,
+      help_count: 0
     }
     """
-    # 1–4, 6 — выбор кнопкой; 5, 7, 8 — сам пишет
     kind = "mcq" if exercise_num in {1, 2, 3, 4, 6} else "write"
     labels = {
         1: "Choose the correct word form for the blank. One sentence with ____ .",
@@ -84,19 +87,25 @@ def generate_grammar_exercise(
         8: "Write 2 short English sentences using the topic grammar.",
     }
 
+    beginner = level in {"A0", "A1"}
     fallback_options = ["am", "is", "are", "be"]
     fallback = {
         "kind": "mcq",
-        "prompt": f"({level} · {topic_title})\nI ____ a student.",
+        "prompt": (
+            f"({level} · {topic_title})\n"
+            "Выбери правильную форму:\n"
+            "I ____ a student.\n"
+            "<i>Я ____ студент.</i>"
+        ),
         "options": fallback_options,
         "answer": "am",
         "tip": "После I обычно am.",
     }
     if kind == "write":
         write_prompts = {
-            5: "Перепиши предложение, используя грамматику темы (смотри инструкцию внутри prompt из JSON).",
+            5: "Перепиши предложение по теме урока (смотри задание ниже).",
             7: "Переведи на английский, используй тему урока:\nЯ живу в городе.",
-            8: "Напиши 2 коротких предложения по теме урока.",
+            8: "Напиши 1–2 коротких предложения по теме урока (можно очень простые).",
         }
         fallback = {
             "kind": "write",
@@ -105,6 +114,15 @@ def generate_grammar_exercise(
             "answer": "I live in a city.",
             "tip": "Пиши коротко и по теме.",
         }
+
+    a0_hint = ""
+    if beginner:
+        a0_hint = (
+            " IMPORTANT FOR A0/A1: Write the task INSTRUCTIONS in Russian. "
+            "Keep English ONLY for the target sentence / options / answer. "
+            "Under the English sentence add a Russian gloss in italics like <i>...</i>. "
+            "Use very simple vocabulary. Short sentences."
+        )
 
     data = _ask_json(
         [
@@ -116,8 +134,9 @@ def generate_grammar_exercise(
                     f"Task style #{exercise_num}: {labels.get(exercise_num, '')} "
                     f'Output kind MUST be "{kind}". '
                     "Difficulty must match the level (not too easy/hard). "
+                    f"{a0_hint} "
                     "Return ONLY JSON. "
-                    'For MCQ: {"kind":"mcq","prompt":"...with ____ ...","options":["a","b","c","d"],'
+                    'For MCQ: {"kind":"mcq","prompt":"...","options":["a","b","c","d"],'
                     '"answer":"exact option text","tip":"short Russian tip"} '
                     'For WRITE: {"kind":"write","prompt":"...","options":null,'
                     '"answer":"model answer","tip":"short Russian tip"}'
@@ -133,24 +152,29 @@ def generate_grammar_exercise(
         max_tokens=350,
     )
 
-    kind_out = kind
     prompt = (data.get("prompt") or fallback["prompt"]).strip()
     tip = (data.get("tip") or fallback["tip"]).strip()
     answer = (data.get("answer") or fallback["answer"]).strip()
     options = data.get("options")
 
-    if kind_out == "mcq":
+    if kind == "mcq":
         if not isinstance(options, list) or len(options) < 4:
             options = list(fallback_options)
         options = [str(x) for x in options[:4]]
         if answer not in options:
-            answer = options[0]
+            # try case-insensitive match
+            lower_map = {o.lower(): o for o in options}
+            if answer.lower() in lower_map:
+                answer = lower_map[answer.lower()]
+            else:
+                answer = options[0]
         return {
             "kind": "mcq",
             "prompt": prompt,
             "options": options,
             "answer": answer,
             "tip": tip,
+            "help_count": 0,
         }
 
     return {
@@ -159,6 +183,7 @@ def generate_grammar_exercise(
         "options": None,
         "answer": answer,
         "tip": tip,
+        "help_count": 0,
     }
 
 
@@ -176,6 +201,7 @@ def check_write_answer(
                 "content": (
                     "Check student's English answer for a grammar exercise. "
                     "Be fair: meaning + target grammar matter more than style. "
+                    "For A0/A1 accept very simple answers if grammar target is ok. "
                     'Return ONLY JSON: {"correct":bool,"feedback_ru":"short friendly Russian"}'
                 ),
             },
@@ -198,10 +224,31 @@ def rico_help_for_exercise(
     topic_title: str,
     prompt: str,
     options: list[str] | None,
+    reveal: bool = False,
+    answer: str = "",
 ) -> str:
     opt_txt = ", ".join(options) if options else "(письменный ответ)"
-    fallback = "🦜 Подсказка: вспомни правило темы и отбрось лишнее. Ты справишься!"
+    if reveal:
+        fallback = (
+            f"🦜 Правильный ответ: <b>{answer}</b>.\n"
+            "Запомни правило и иди к следующему заданию!"
+        )
+    else:
+        fallback = "🦜 Подсказка: вспомни правило темы и отбрось лишнее. Ты справишься!"
+
     try:
+        if reveal:
+            system = (
+                "Ты Рико 🦜. Объяви правильный ответ и коротко объясни НА РУССКОМ, "
+                "почему он верный, с мини-примером. English example + <i>русский перевод</i>. "
+                f"Правильный ответ: {answer}. HTML ok."
+            )
+        else:
+            system = (
+                "Ты Рико 🦜. Дай ПОДСКАЗКУ НА РУССКОМ по заданию. "
+                "НЕ называй правильный вариант и НЕ цитируй ответ дословно. "
+                "Наведи на правило. Коротко. HTML: можно <i>."
+            )
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
@@ -211,14 +258,7 @@ def rico_help_for_exercise(
             json={
                 "model": "gpt-3.5-turbo",
                 "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Ты Рико 🦜. Дай подсказку НА РУССКОМ по конкретному заданию, "
-                            "с мини-примером. НЕ называй прямой правильный вариант-букву, "
-                            "если это выбор из кнопок — наведи на правило. Коротко."
-                        ),
-                    },
+                    {"role": "system", "content": system},
                     {
                         "role": "user",
                         "content": (
@@ -239,4 +279,55 @@ def rico_help_for_exercise(
         return text
     except Exception as e:
         logging.error(f"Rico help error: {e}")
+        return fallback
+
+
+def rico_explain_wrong_final(
+    level: str,
+    topic_title: str,
+    prompt: str,
+    answer: str,
+) -> str:
+    fallback = (
+        f"🦜 Неправильно. Правильный ответ: <b>{answer}</b>.\n"
+        "Разбери пример и иди дальше 💪"
+    )
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-3.5-turbo",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Ты Рико 🦜. Ученик ошибся в последний раз. "
+                            "Скажи, что неправильно, назови правильный ответ и коротко объясни "
+                            "на русском + английский пример с <i>переводом</i>. HTML ok."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Уровень {level}, тема {topic_title}.\n"
+                            f"Задание: {prompt}\nПравильный ответ: {answer}"
+                        ),
+                    },
+                ],
+                "max_tokens": 280,
+                "temperature": 0.4,
+            },
+            timeout=25,
+        )
+        response.raise_for_status()
+        text = response.json()["choices"][0]["message"]["content"].strip()
+        if not text.startswith("🦜"):
+            text = f"🦜 {text}"
+        return text
+    except Exception as e:
+        logging.error(f"Rico final explain error: {e}")
         return fallback
