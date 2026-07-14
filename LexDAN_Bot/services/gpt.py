@@ -9,27 +9,42 @@ import requests
 from config import OPENROUTER_API_KEY
 
 SYSTEM_PROMPT = """
-You are LexDAN — a warm human English tutor on Telegram (NOT a cold chatbot).
-Talk like a real teacher in a private lesson: kind, natural, lightly playful.
+You are LexDAN — a warm human English tutor on Telegram.
+Student is Russian-speaking. Messages may be from voice transcripts.
 
-The student is Russian-speaking. Text may come from VOICE transcripts.
+Return ONLY JSON (no markdown).
 
-Return ONLY valid JSON (no markdown, no comments).
+Schema:
+{"has_error":bool,"better_en":"","rule_ru":"","reply_en":""}
 
-When there IS a spelling/grammar/vocab mistake:
-{"has_error":true,"better_en":"Hello!","rule_ru":"Hallo — частая ошибка. Правильно hello.","reply_en":"Hi! How are you today?"}
+CRITICAL — how corrections work:
+1) better_en is a MINIMAL fix of the student's OWN words.
+2) Keep the SAME meaning. Do NOT rewrite into a new sentence/idea.
+3) Do NOT replace a greeting with a different greeting (hello ≠ Hi how are you).
+4) Do NOT invent content the student did not say.
+5) Ignore capitalization and missing punctuation completely.
+6) If the student message is already correct (example: "hello") → has_error=false, better_en="", rule_ru="".
+7) Spelling typos still count (hallo → hello). Grammar counts (I likes → I like).
 
-When there is NO real mistake:
-{"has_error":false,"better_en":"","rule_ru":"","reply_en":"Nice! What did you do yesterday?"}
+Examples:
+Student: "hello"
+→ {"has_error":false,"better_en":"","rule_ru":"","reply_en":"Hey! How are you today?"}
 
-Rules:
-- Spelling mistakes count (hallo → hello).
-- Ignore ONLY missing capitals and missing .!? punctuation.
-- better_en = corrected English phrase/sentence.
-- rule_ru = short Russian explanation of WHY.
-- reply_en = warm English reply + one easy question. Use contractions.
-- NEVER put instructions or placeholder text into JSON values.
-- Never say "As an AI".
+Student: "hallo"
+→ {"has_error":true,"better_en":"hello","rule_ru":"Это опечатка: правильно hello (привет).","reply_en":"Hey! Nice to meet you — how are you?"}
+
+Student: "i likes cow"
+→ {"has_error":true,"better_en":"I like cow","rule_ru":"После I глагол без -s: I like (не likes).","reply_en":"Cool! Do you like milk too?"}
+
+Student: "I go to school yesterday"
+→ {"has_error":true,"better_en":"I went to school yesterday","rule_ru":"Yesterday = прошедшее время: went, не go.","reply_en":"Nice! What did you do there?"}
+
+BAD (never do this):
+Student: "hello" → better_en "Hi! How are you today?"  ❌
+Student: "i likes cow" → better_en "I love playing chess" ❌
+
+reply_en = separate warm tutor reply about what they said + one easy question.
+Never say "As an AI".
 """
 
 
@@ -61,25 +76,89 @@ def ask_tutor(user_text: str, user_name: str = "Student") -> dict:
                     {
                         "role": "user",
                         "content": (
-                            "Check the student message. "
-                            "If wrong spelling/grammar/vocab — set has_error true and fill better_en + rule_ru. "
-                            "If fine — has_error false and empty better_en/rule_ru. "
-                            "Always write a natural tutor reply_en.\n\n"
-                            f"Student: {user_text}"
+                            "Minimal-correct the student message if needed. "
+                            "Preserve meaning. Separate chat reply in reply_en.\n\n"
+                            f"Student message: {user_text}"
                         ),
                     },
                 ],
-                "max_tokens": 400,
-                "temperature": 0.4,
+                "max_tokens": 350,
+                "temperature": 0.25,
             },
             timeout=25,
         )
         response.raise_for_status()
         raw = response.json()["choices"][0]["message"]["content"].strip()
-        return _parse_tutor_json(raw) or fallback
+        parsed = _parse_tutor_json(raw) or fallback
+        return _sanitize_correction(user_text, parsed)
     except Exception as e:
         logging.error(f"GPT error: {e}")
         return fallback
+
+
+def _normalize_tokens(text: str) -> list[str]:
+    text = (text or "").lower()
+    text = re.sub(r"[^a-zа-яё0-9\s']", " ", text)
+    return [t for t in text.split() if t]
+
+
+def _is_minimal_correction(user_text: str, better_en: str) -> bool:
+    """Проверка: правка близка к исходной фразе, а не новый смысл."""
+    u = _normalize_tokens(user_text)
+    b = _normalize_tokens(better_en)
+    if not u or not b:
+        return False
+
+    # короткие реплики (hello/hallo): правка тоже короткая
+    if len(u) <= 2:
+        if len(b) > 4:
+            return False
+        return (u[0][:2] == b[0][:2]) or (
+            abs(len(u[0]) - len(b[0])) <= 2 and u[0][0] == b[0][0]
+        )
+
+    # для фраз: много общих слов И похожая длина
+    overlap = len(set(u) & set(b))
+    if overlap >= max(1, len(set(u)) - 2):
+        return True
+    if overlap / max(len(set(u)), 1) >= 0.5 and abs(len(u) - len(b)) <= 3:
+        return True
+    return False
+
+
+def _same_ignoring_noise(user_text: str, better_en: str) -> bool:
+    """Одинаковый смысл без учёта регистра/пунктуации."""
+    return _normalize_tokens(user_text) == _normalize_tokens(better_en)
+
+
+def _sanitize_correction(user_text: str, result: dict) -> dict:
+    """Если модель переписала смысл — считаем, что ошибки нет."""
+    if not result.get("has_error"):
+        result["better_en"] = ""
+        result["rule_ru"] = ""
+        return result
+
+    better = (result.get("better_en") or "").strip()
+    if not better:
+        result["has_error"] = False
+        result["rule_ru"] = ""
+        return result
+
+    # "hello" → "Hello" не ошибка
+    if _same_ignoring_noise(user_text, better):
+        result["has_error"] = False
+        result["better_en"] = ""
+        result["rule_ru"] = ""
+        return result
+
+    if not _is_minimal_correction(user_text, better):
+        logging.info(
+            f"Dropped non-minimal correction: '{user_text}' -> '{better}'"
+        )
+        result["has_error"] = False
+        result["better_en"] = ""
+        result["rule_ru"] = ""
+    return result
 
 
 def judge_translation(source_en: str, reference_ru: str, user_ru: str) -> dict:
