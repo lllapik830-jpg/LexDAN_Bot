@@ -35,6 +35,8 @@ def _blank_assessment() -> dict:
         "listen_used": [],
         "write_topic": "",
         "write_level": "B2",
+        "write_replacements_left": 3,
+        "write_failed": False,
     }
 
 
@@ -179,8 +181,49 @@ def begin_write(user_id: str, level: str) -> dict:
         a["write_level"] = level
         a["cefr"] = level
         a["write_topic"] = topic
+        a["write_replacements_left"] = 3
+        a["write_failed"] = False
 
     return update_user(user_id, mut)
+
+
+def replace_write_topic(user_id: str) -> tuple[dict | None, str]:
+    """
+    Заменить тему письма.
+    Возвращает (user, status):
+      - "ok" — тема заменена
+      - "ended" — использована последняя замена, задание провалено
+      - "none" — замен уже не было
+    """
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_user_fields(user)
+    a = user["assessment"]
+    left = int(a.get("write_replacements_left", 0))
+
+    if left <= 0:
+        return user, "none"
+
+    # последняя замена → задание завершается как невыполненное
+    if left == 1:
+
+        def mut_end(u):
+            aa = u["assessment"]
+            aa["write_replacements_left"] = 0
+            aa["write_failed"] = True
+
+        return update_user(user_id, mut_end), "ended"
+
+    left -= 1
+    level = a.get("write_level") or "A2"
+    topic = generate_write_topic(level)
+
+    def mut(u):
+        aa = u["assessment"]
+        aa["write_replacements_left"] = left
+        aa["write_topic"] = topic
+
+    return update_user(user_id, mut), "ok"
 
 
 def finish_assessment(user_id: str, final_level: str) -> dict:

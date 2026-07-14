@@ -45,7 +45,6 @@ def profile_menu() -> ReplyKeyboardMarkup:
 
 
 def lessons_home_first() -> ReplyKeyboardMarkup:
-    """Первый заход: только проверка уровня."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🎯 Проверить уровень")],
@@ -56,7 +55,6 @@ def lessons_home_first() -> ReplyKeyboardMarkup:
 
 
 def lessons_home_levels() -> ReplyKeyboardMarkup:
-    """После теста: уровни A0–C2 (без повторного теста)."""
     rows = []
     row = []
     for i, lv in enumerate(LEVELS):
@@ -81,5 +79,27 @@ def assess_translate_kb(show_skip: bool = False) -> ReplyKeyboardMarkup:
 def assess_simple_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
+        resize_keyboard=True,
+    )
+
+
+def assess_dont_know_kb() -> ReplyKeyboardMarkup:
+    """Словарь / аудирование."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🙈 Не знаю")],
+            [KeyboardButton(text="🔙 Вернуться в меню")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def assess_write_kb() -> ReplyKeyboardMarkup:
+    """Письмо: замена темы."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🔄 Заменить текст")],
+            [KeyboardButton(text="🔙 Вернуться в меню")],
+        ],
         resize_keyboard=True,
     )
