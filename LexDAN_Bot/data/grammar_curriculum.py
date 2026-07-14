@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from data.grammar_enrichments import GRAMMAR_SECTION_INTRO, get_enrichment
+
 # Структура: LEVEL -> list[{id, title, rico_intro}]
 
 GRAMMAR_BY_LEVEL: dict[str, list[dict]] = {
@@ -14,22 +16,29 @@ GRAMMAR_BY_LEVEL: dict[str, list[dict]] = {
             "title": "Alphabet / Алфавит",
             "mode": "ack",
             "rico_intro": (
-                "🦜 <b>Рико:</b> Алфавит — твой фундамент!\n\n"
-                "В английском <b>26 букв</b>: A B C D E F G H I J K L M N O P Q R S T U V W X Y Z.\n"
-                "У каждой буквы есть название: A=/eɪ/, B=/biː/, C=/siː/…\n\n"
-                "<b>Зачем это нужно?</b>\n"
-                "• чтобы диктовать и понимать имена, email, коды\n"
-                "• чтобы читать вслух и учить слова правильно\n\n"
-                "<b>Гласные:</b> A E I O U (иногда Y).\n"
-                "<b>Согласные:</b> все остальные.\n\n"
-                "Пример:\n"
+                "🦜 <b>Рико:</b> Эй, дружище! 👋 Рад, что мы начинаем с алфавита — "
+                "это самый честный и правильный старт! 🌱\n\n"
+                "В английском <b>26 букв</b> — те же, что ты видишь на клавиатуре:\n"
+                "<b>A B C D E F G H I J K L M N O P Q R S T U V W X Y Z</b>\n\n"
+                "У каждой буквы есть <b>название</b> (как «эм» у русской М):\n"
+                "A = /eɪ/ «эй», B = /biː/ «би», C = /siː/ «си»…\n\n"
+                "<b>Зачем это тебе?</b> 🤔\n"
+                "• диктовать имя, email, пароль по буквам\n"
+                "• читать слова вслух правильно\n"
+                "• понимать, когда тебе «произносят» буквы\n\n"
+                "<b>Гласные (vowels):</b> A, E, I, O, U — иногда ещё Y (my, yes).\n"
+                "<b>Согласные (consonants):</b> все остальные.\n\n"
+                "<b>Пример в жизни:</b>\n"
                 "— How do you spell your name?\n"
                 "<i>— Как по буквам пишется твоё имя?</i>\n"
                 "— D-A-N-I-L.\n"
                 "<i>— Д-А-Н-И-Л.</i>\n\n"
-                "Здесь не нужно заданий — просто ознакомься и жми "
-                "<b>✅ Ознакомился</b>, тема засчитается.\n"
-                "Если что-то непонятно — пиши мне сюда текстом ✨"
+                "— What's your email?\n"
+                "<i>— Какой у тебя email?</i>\n"
+                "— d-a-n at gmail dot com.\n"
+                "<i>— d-a-n «собака» gmail «точка» com.</i>\n\n"
+                "Здесь <b>не нужны задания</b> — просто прочитай, посмотри примеры "
+                "и жми <b>✅ Ознакомился</b>. Тема засчитается! 🎉"
             ),
         },
         {
@@ -676,7 +685,18 @@ def _normalize_topic(raw: dict) -> dict:
         t["mode"] = "ack"
     else:
         t["mode"] = t.get("mode") or "practice"
+    intro = t.get("rico_intro") or ""
+    extra = get_enrichment(tid, t["mode"])
+    if extra and extra not in intro:
+        t["rico_intro"] = intro + extra
     return t
+
+
+def get_grammar_section_intro(level: str) -> str:
+    return GRAMMAR_SECTION_INTRO.get(
+        level,
+        f"🦜 <b>Рико:</b> Грамматика уровня <b>{level}</b> — поехали! ✨",
+    )
 
 
 def get_topics(level: str) -> list[dict]:
@@ -714,8 +734,7 @@ def format_topics_list(
         mark = "✅ " if t["id"] in done else ""
         lines.append(f"<b>{i}.</b> {mark}{t['title']}")
     lines.append(
-        "\n🦜 Темы с алфавитом/цифрами — просто ознакомиться.\n"
-        "В остальных: теория → задания → потом тест.\n"
-        "В заданиях: 1-я помощь = подсказка, 2-я = ответ (и зачёт)."
+        "\n🦜 Я объясняю каждую тему подробно — с переводом, примерами и подводками.\n"
+        "Темы алфавита/цифр — просто «Ознакомился». Остальные: теория → задания (есть 🌍 Перевести)."
     )
     return "\n".join(lines)

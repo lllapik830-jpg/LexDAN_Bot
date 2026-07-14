@@ -220,5 +220,15 @@ def clear_active_exercise(user_id: str) -> dict:
     return update_lesson(user_id, mut)
 
 
+def count_completed_tasks(user: dict) -> int:
+    """Сколько заданий/тем засчитано в Grammar (для профиля)."""
+    ensure_progress(user)
+    gp = user["grammar_progress"]
+    total = len(gp.get("completed_topics") or [])
+    for nums in (gp.get("completed_exercises") or {}).values():
+        total += len(nums or [])
+    return total
+
+
 def assessment_busy(user: dict) -> bool:
     return bool((user.get("assessment") or {}).get("phase"))

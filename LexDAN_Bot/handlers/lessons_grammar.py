@@ -23,7 +23,9 @@ from data.grammar_curriculum import (
     get_topic_by_index,
     get_topic,
     is_ack_topic,
+    get_grammar_section_intro,
 )
+from data.level_intros import get_level_welcome
 from services.database import MODE_LESSONS, load_users, get_user
 from services.lesson_state import (
     ensure_lesson,
@@ -49,12 +51,14 @@ from services.rico_tutor import (
     check_write_answer,
     rico_help_for_exercise,
     rico_explain_wrong_final,
+    translate_exercise_prompt,
 )
 
 router = Router()
 
 BTN_GRAMMAR = "📘 Grammar"
 BTN_ACK = "✅ Ознакомился"
+BTN_TRANSLATE = "🌍 Перевести"
 SECTION_STUBS = {
     "📗 Vocabulary",
     "🎧 Listening",
@@ -120,9 +124,7 @@ def _kb_for_user(user: dict) -> ReplyKeyboardMarkup:
 async def open_level_hub(m: Message, level: str):
     set_level_hub(str(m.from_user.id), level)
     await m.reply(
-        f"🎓 <b>Уровень {level}</b>\n\n"
-        "Выбери раздел. Сейчас полностью готов <b>Grammar</b> — остальные скоро!\n"
-        "🦜 Рико уже настроен помогать в грамматике.",
+        get_level_welcome(level),
         reply_markup=level_sections_kb(),
         parse_mode="HTML",
     )
@@ -154,6 +156,7 @@ async def open_grammar(m: Message):
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
+    await m.reply(get_grammar_section_intro(level), parse_mode="HTML")
     await m.reply(
         format_topics_list(level, _completed_topic_ids(user, level)),
         reply_markup=grammar_topics_kb(level),
@@ -220,13 +223,8 @@ async def choose_topic_number(m: Message):
 
     open_topic(str(m.from_user.id), topic["id"], topic["title"])
     ack = is_ack_topic(topic)
-    extra = (
-        "\n\n💬 Пиши вопросы текстом — или жми <b>✅ Ознакомился</b>."
-        if ack
-        else "\n\n💬 Пиши вопросы по теме текстом — или жми <b>📝 Задания</b>."
-    )
     await m.reply(
-        topic["rico_intro"] + extra,
+        topic["rico_intro"],
         reply_markup=topic_chat_kb(ack=ack),
         parse_mode="HTML",
     )
@@ -389,14 +387,46 @@ async def start_assignment(m: Message):
     start_exercise(str(m.from_user.id), num, ex)
 
     if ex["kind"] == "mcq":
-        text = f"<b>Задание {num}/8</b>\n\n{ex['prompt']}\n\nВыбери ответ кнопкой:"
+        text = (
+            f"<b>Задание {num}/8</b>\n\n{ex['prompt']}\n\n"
+            "Выбери ответ кнопкой. Не понимаешь фразу — жми <b>🌍 Перевести</b>."
+        )
         await m.reply(text, reply_markup=exercise_mcq_kb(ex["options"]), parse_mode="HTML")
     else:
         text = (
             f"<b>Задание {num}/8</b>\n\n{ex['prompt']}\n\n"
-            "Напиши ответ текстом. Можно попросить помощь Рико."
+            "Напиши ответ текстом. Не понятно — <b>🌍 Перевести</b> или помощь Рико."
         )
         await m.reply(text, reply_markup=exercise_write_kb(), parse_mode="HTML")
+
+
+def _exercise_kb(ex: dict) -> ReplyKeyboardMarkup:
+    if ex.get("kind") == "mcq" and ex.get("options"):
+        return exercise_mcq_kb(ex["options"])
+    return exercise_write_kb()
+
+
+async def _show_exercise_translation(m: Message, user: dict):
+    ex = dict((user.get("lesson") or {}).get("exercise") or {})
+    ru = ex.get("prompt_ru") or translate_exercise_prompt(ex.get("prompt") or "")
+    if not ru:
+        await m.reply(
+            "🦜 Не получилось перевести. Попробуй ещё раз или спроси помощь.",
+            reply_markup=_exercise_kb(ex),
+        )
+        return
+    await m.reply(
+        f"🌍 <b>Перевод задания:</b>\n\n{ru}",
+        reply_markup=_exercise_kb(ex),
+        parse_mode="HTML",
+    )
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("exercise"), F.text == BTN_TRANSLATE)
+async def exercise_translate(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    await _show_exercise_translation(m, user)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("exercise"), F.text == "🦜 Помощь Рико")
@@ -439,12 +469,7 @@ async def exercise_help(m: Message):
     )
     ex["help_count"] = help_count + 1
     update_active_exercise(str(m.from_user.id), ex)
-    kb = (
-        exercise_mcq_kb(ex["options"])
-        if ex.get("kind") == "mcq" and ex.get("options")
-        else exercise_write_kb()
-    )
-    await m.reply(tip, reply_markup=kb, parse_mode="HTML")
+    await m.reply(tip, reply_markup=_exercise_kb(ex), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("exercise"))
@@ -453,6 +478,7 @@ async def exercise_answer(m: Message):
         return
     if m.text in {
         "🦜 Помощь Рико",
+        BTN_TRANSLATE,
         "⬅️ К выбору заданий",
         "🔙 Вернуться в меню",
         "📝 Задания",
@@ -477,7 +503,7 @@ async def exercise_answer(m: Message):
         if m.text not in options:
             await m.reply(
                 "Выбери один из вариантов кнопок ниже.",
-                reply_markup=exercise_mcq_kb(options),
+                reply_markup=_exercise_kb(ex),
             )
             return
 
@@ -511,7 +537,7 @@ async def exercise_answer(m: Message):
         update_active_exercise(uid, ex)
         await m.reply(
             "🦜 Неправильно, попробуй ещё раз!",
-            reply_markup=exercise_mcq_kb(remaining),
+            reply_markup=_exercise_kb(ex),
         )
         return
 

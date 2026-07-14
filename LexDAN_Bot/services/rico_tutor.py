@@ -97,6 +97,7 @@ def generate_grammar_exercise(
             "I ____ a student.\n"
             "<i>Я ____ студент.</i>"
         ),
+        "prompt_ru": "Выбери правильную форму глагола to be.\nЯ ____ студент.",
         "options": fallback_options,
         "answer": "am",
         "tip": "После I обычно am.",
@@ -110,6 +111,7 @@ def generate_grammar_exercise(
         fallback = {
             "kind": "write",
             "prompt": f"({level} · {topic_title})\n{write_prompts.get(exercise_num, write_prompts[8])}",
+            "prompt_ru": write_prompts.get(exercise_num, write_prompts[8]),
             "options": None,
             "answer": "I live in a city.",
             "tip": "Пиши коротко и по теме.",
@@ -136,10 +138,10 @@ def generate_grammar_exercise(
                     "Difficulty must match the level (not too easy/hard). "
                     f"{a0_hint} "
                     "Return ONLY JSON. "
-                    'For MCQ: {"kind":"mcq","prompt":"...","options":["a","b","c","d"],'
-                    '"answer":"exact option text","tip":"short Russian tip"} '
-                    'For WRITE: {"kind":"write","prompt":"...","options":null,'
-                    '"answer":"model answer","tip":"short Russian tip"}'
+                    'For MCQ: {"kind":"mcq","prompt":"...","prompt_ru":"полный перевод задания и англ. предложения на русском",'
+                    '"options":["a","b","c","d"],"answer":"exact option text","tip":"short Russian tip"} '
+                    'For WRITE: {"kind":"write","prompt":"...","prompt_ru":"что нужно сделать + перевод фраз на русском",'
+                    '"options":null,"answer":"model answer","tip":"short Russian tip"}'
                 ),
             },
             {
@@ -153,6 +155,7 @@ def generate_grammar_exercise(
     )
 
     prompt = (data.get("prompt") or fallback["prompt"]).strip()
+    prompt_ru = (data.get("prompt_ru") or fallback.get("prompt_ru") or "").strip()
     tip = (data.get("tip") or fallback["tip"]).strip()
     answer = (data.get("answer") or fallback["answer"]).strip()
     options = data.get("options")
@@ -162,29 +165,51 @@ def generate_grammar_exercise(
             options = list(fallback_options)
         options = [str(x) for x in options[:4]]
         if answer not in options:
-            # try case-insensitive match
             lower_map = {o.lower(): o for o in options}
             if answer.lower() in lower_map:
                 answer = lower_map[answer.lower()]
             else:
                 answer = options[0]
+        if not prompt_ru:
+            prompt_ru = translate_exercise_prompt(prompt) or "Перевод временно недоступен."
         return {
             "kind": "mcq",
             "prompt": prompt,
+            "prompt_ru": prompt_ru,
             "options": options,
             "answer": answer,
             "tip": tip,
             "help_count": 0,
         }
 
+    if not prompt_ru:
+        prompt_ru = translate_exercise_prompt(prompt) or "Перевод временно недоступен."
     return {
         "kind": "write",
         "prompt": prompt,
+        "prompt_ru": prompt_ru,
         "options": None,
         "answer": answer,
         "tip": tip,
         "help_count": 0,
     }
+
+
+def translate_exercise_prompt(prompt: str) -> str | None:
+    """Переводит английскую часть задания для кнопки «Перевести»."""
+    if not prompt:
+        return None
+    from services.translation import translate_to_russian
+
+    clean = prompt.replace("<i>", "").replace("</i>", "").strip()
+    # Убираем служебные префиксы уровня
+    if "\n" in clean:
+        lines = [ln for ln in clean.split("\n") if ln.strip() and not ln.strip().startswith("(")]
+        clean = "\n".join(lines) if lines else clean
+    ru = translate_to_russian(clean)
+    if not ru:
+        return None
+    return ru
 
 
 def check_write_answer(

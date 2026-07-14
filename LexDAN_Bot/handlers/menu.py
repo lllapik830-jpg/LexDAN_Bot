@@ -18,6 +18,7 @@ from services.database import (
     MODE_PROFILE,
 )
 from services.assessment import ensure_user_fields
+from services.lesson_state import count_completed_tasks
 
 router = Router()
 
@@ -81,11 +82,12 @@ async def open_profile(m: Message):
     user = get_user(users, user_id)
 
     name = user.get("name") or m.from_user.first_name or "Не указано"
+    tasks_done = count_completed_tasks(user)
 
     await m.reply(
         "📊 Твой профиль:\n\n"
         f"📛 Имя: {name}\n"
-        f"📚 Пройдено уроков: {user.get('lessons_done', 0)}\n"
+        f"✅ Пройдено заданий: {tasks_done}\n"
         f"📈 Уровень: {user.get('level', 'A1')}\n"
         f"📝 Слов выучено: {user.get('words_learned', 0)}\n"
         f"💎 Подписка: бесплатно",

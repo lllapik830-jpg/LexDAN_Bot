@@ -63,6 +63,7 @@ def exercises_menu_kb() -> ReplyKeyboardMarkup:
 
 def exercise_mcq_kb(options: list[str]) -> ReplyKeyboardMarkup:
     rows = [[KeyboardButton(text=opt)] for opt in options]
+    rows.append([KeyboardButton(text="🌍 Перевести")])
     rows.append([KeyboardButton(text="🦜 Помощь Рико")])
     rows.append([KeyboardButton(text="⬅️ К выбору заданий")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
@@ -71,6 +72,7 @@ def exercise_mcq_kb(options: list[str]) -> ReplyKeyboardMarkup:
 def exercise_write_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text="🌍 Перевести")],
             [KeyboardButton(text="🦜 Помощь Рико")],
             [KeyboardButton(text="⬅️ К выбору заданий")],
         ],
