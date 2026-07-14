@@ -14,37 +14,30 @@ Talk like a real teacher in a private lesson: kind, natural, lightly playful.
 
 The student is Russian-speaking. Text may come from VOICE transcripts.
 
-ALWAYS answer in this exact JSON (no markdown):
-{
-  "mistakes_ru": "грамматическая/лексическая ошибка или пустая строка",
-  "rule_ru": "дружелюбное объяснение правила 1-2 предложения или пустая строка",
-  "better_en": "естественный вариант или пустая строка",
-  "reply_en": "живой ответ 1-2 предложения + лёгкий follow-up вопрос"
-}
+Return ONLY valid JSON (no markdown, no comments).
 
-CORRECT only real English problems:
-tenses, articles, prepositions, agreement, word order, wrong words, Russian calques.
+When there IS a spelling/grammar/vocab mistake:
+{"has_error":true,"better_en":"Hello!","rule_ru":"Hallo — частая ошибка. Правильно hello.","reply_en":"Hi! How are you today?"}
 
-IGNORE completely:
-- capital letters
-- missing . ! ? , 
-- messy voice-transcript punctuation
-- informal missing punctuation
+When there is NO real mistake:
+{"has_error":false,"better_en":"","rule_ru":"","reply_en":"Nice! What did you do yesterday?"}
 
-TONE for reply_en:
-sound like a friendly tutor, use contractions (I'm, that's, let's),
-react to content, keep chatting. Never say "As an AI".
-
-mistakes_ru / rule_ru: simple kind Russian.
-If grammar is fine — leave those three fields empty and just chat.
+Rules:
+- Spelling mistakes count (hallo → hello).
+- Ignore ONLY missing capitals and missing .!? punctuation.
+- better_en = corrected English phrase/sentence.
+- rule_ru = short Russian explanation of WHY.
+- reply_en = warm English reply + one easy question. Use contractions.
+- NEVER put instructions or placeholder text into JSON values.
+- Never say "As an AI".
 """
 
 
 def ask_tutor(user_text: str, user_name: str = "Student") -> dict:
     fallback = {
-        "mistakes_ru": "",
-        "rule_ru": "",
+        "has_error": False,
         "better_en": "",
+        "rule_ru": "",
         "reply_en": "Hey! I didn't catch that — can you say it again?",
     }
 
@@ -68,15 +61,16 @@ def ask_tutor(user_text: str, user_name: str = "Student") -> dict:
                     {
                         "role": "user",
                         "content": (
-                            "Ignore capitalization and punctuation. "
-                            "Correct only real grammar/vocab. "
-                            "Explain kindly if needed, then reply like a real tutor:\n\n"
-                            f"{user_text}"
+                            "Check the student message. "
+                            "If wrong spelling/grammar/vocab — set has_error true and fill better_en + rule_ru. "
+                            "If fine — has_error false and empty better_en/rule_ru. "
+                            "Always write a natural tutor reply_en.\n\n"
+                            f"Student: {user_text}"
                         ),
                     },
                 ],
-                "max_tokens": 450,
-                "temperature": 0.55,
+                "max_tokens": 400,
+                "temperature": 0.4,
             },
             timeout=25,
         )
@@ -170,28 +164,67 @@ def judge_writing(topic: str, user_text: str, current_level: str) -> dict:
 
 
 def format_tutor_message(result: dict, heard_text: str | None = None) -> str:
+    """Красивое HTML-сообщение для Telegram."""
     parts = []
 
     if heard_text:
-        parts.append(f"🗣️ Услышал: {heard_text}")
+        parts.append(f"🗣 <b>Услышал:</b> <i>{_esc(heard_text)}</i>")
+        parts.append("")
 
-    mistakes = result.get("mistakes_ru") or ""
-    rule = result.get("rule_ru") or ""
-    better = result.get("better_en") or ""
+    has_error = bool(result.get("has_error"))
+    better = _clean_field(result.get("better_en") or "")
+    rule = _clean_field(result.get("rule_ru") or "")
 
-    if mistakes or better or rule:
-        parts.append("✏️ Маленькая правка:")
-        if mistakes:
-            parts.append(f"• {mistakes}")
-        if rule:
-            parts.append(f"• {rule}")
+    if has_error and not better and not rule:
+        has_error = False
+
+    if has_error:
+        parts.append("✏️ <b>Не совсем так</b>")
         if better:
-            parts.append(f"• Так естественнее: {better}")
+            parts.append(f"Правильно будет: <b>{_esc(better)}</b>")
+        if rule:
+            parts.append("")
+            parts.append(f"💡 <b>Почему:</b>\n{_esc(rule)}")
     else:
-        parts.append("✅ По грамматике всё ок!")
+        parts.append("✅ <b>Ошибки отсутствуют — молодец!</b> 🎉")
 
-    parts.append(f"\n🇬🇧 {result['reply_en']}")
+    parts.append("")
+    parts.append("────────")
+    parts.append("")
+    parts.append(f"💬 {_esc(result.get('reply_en') or '')}")
+
     return "\n".join(parts)
+
+
+_BAD_PLACEHOLDERS = (
+    "пустая строка",
+    "грамматическая/лексическая",
+    "дружелюбное объяснение",
+    "естественный вариант",
+    "живой ответ",
+    "лёгкий follow-up",
+    "short friendly",
+    "correct natural",
+    "warm 1-2",
+)
+
+
+def _clean_field(text: str) -> str:
+    t = (text or "").strip()
+    low = t.lower()
+    for bad in _BAD_PLACEHOLDERS:
+        if bad.lower() in low:
+            return ""
+    return t
+
+
+def _esc(text: str) -> str:
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
 
 def _ask_json(
@@ -249,12 +282,30 @@ def _parse_tutor_json(raw: str) -> dict | None:
     data = _extract_json(raw)
     if not data:
         return None
+
     reply = (data.get("reply_en") or "").strip()
-    if not reply:
-        return None
+    if not reply or _clean_field(reply) == "":
+        # если reply сам похож на плейсхолдер — отбрасываем
+        if not reply or any(b.lower() in reply.lower() for b in _BAD_PLACEHOLDERS):
+            return None
+
+    better = _clean_field(data.get("better_en") or "")
+    rule = _clean_field(data.get("rule_ru") or "")
+
+    has_error = data.get("has_error")
+    if isinstance(has_error, str):
+        has_error = has_error.strip().lower() in {"1", "true", "yes"}
+    elif has_error is None:
+        has_error = bool(better or rule)
+    else:
+        has_error = bool(has_error)
+
+    if has_error and not better and not rule:
+        has_error = False
+
     return {
-        "mistakes_ru": (data.get("mistakes_ru") or "").strip(),
-        "rule_ru": (data.get("rule_ru") or "").strip(),
-        "better_en": (data.get("better_en") or "").strip(),
+        "has_error": has_error,
+        "better_en": better,
+        "rule_ru": rule,
         "reply_en": reply,
     }

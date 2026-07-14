@@ -28,7 +28,7 @@ async def reply_as_tutor(
     set_last_bot_reply(user_id, result["reply_en"])
 
     text_out = format_tutor_message(result, heard_text=heard_text)
-    await message.reply(text_out)
+    await message.reply(text_out, parse_mode="HTML")
 
     mp3_bytes = elevenlabs_tts(result["reply_en"])
     if not mp3_bytes:

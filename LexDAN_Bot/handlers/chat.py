@@ -36,9 +36,22 @@ async def translate_last(m: Message):
     await m.reply("🌐 Перевожу…")
     translation = translate_to_russian(last)
     if translation:
-        await m.reply(f"🌐 {translation}", reply_markup=chat_menu())
+        await m.reply(
+            f"🌐 <b>Перевод:</b>\n{_esc_html(translation)}",
+            reply_markup=chat_menu(),
+            parse_mode="HTML",
+        )
     else:
-        await m.reply("❌ Не удалось перевести. Попробуй ещё раз.", reply_markup=chat_menu())
+        await m.reply("Не получилось перевести 🙈 Попробуй ещё раз.", reply_markup=chat_menu())
+
+
+def _esc_html(text: str) -> str:
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
 
 @router.message(
@@ -51,7 +64,7 @@ async def chat_text(m: Message):
     if not text or text.startswith("/"):
         return
 
-    await m.reply("💭 …")
+    await m.reply("✨ …")
     await reply_as_tutor(m, user_text=text)
 
 
