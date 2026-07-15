@@ -1,9 +1,9 @@
 """
-Старт и регистрация имени.
+Старт и регистрация имени + рефералка.
 """
 
 from aiogram import Router, F
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 
 from handlers.filters import StepFilter
@@ -14,57 +14,61 @@ from services.database import (
     get_user,
     MODE_MENU,
 )
+from services.growth import (
+    apply_referral_on_start,
+    bind_referral_code,
+    ensure_growth,
+    grant_referral_bonuses,
+    REF_BONUS_DAYS,
+)
 
 router = Router()
 
 HELLO_NEW = (
     "✨ <b>Привет!</b> Рад тебя видеть 👋\n\n"
-    "Я — <b>LexDan</b>, твой личный репетитор по английскому 🎓🇬🇧\n\n"
-    "Здесь можно:\n"
-    "💬 болтать со мной на английском (текст и голос)\n"
-    "✏️ разбирать ошибки по-человечески, без занудства\n"
-    "📚 проходить уроки по уровню\n"
-    "📈 смотреть свой прогресс\n\n"
-    "Атмосфера лёгкая — как на занятии с живым преподом, только всегда на связи 🚀\n\n"
-    "🥰 <b>Давай познакомимся!</b>\n"
-    "Как тебя зовут?"
+    "Я — <b>LexDan</b>, а рядом всегда попугай <b>Рико</b> 🦜\n\n"
+    "Наша идея простая:\n"
+    "⏱ <b>15 минут английского в день</b> в Telegram — болтовня, слова, грамматика, прогресс.\n\n"
+    "Можно:\n"
+    "💬 болтать текстом и голосом с правками ошибок\n"
+    "📚 проходить уроки по уровню (Grammar + Vocabulary уже работают)\n"
+    "📈 видеть серию дней и счётчики в профиле\n\n"
+    "🥰 <b>Как тебя зовут?</b>"
 )
 
 WELCOME_AFTER_NAME = (
-    "🎉 <b>Вау, приятно познакомиться, {name}!</b>\n\n"
-    "Я <b>LexDan</b> — буду рядом, пока ты качаешь английский 💪🇬🇧\n\n"
-    "А ещё со мной всегда мой помощник — попугай <b>Рико</b> 🦜\n"
-    "Он будет сопровождать тебя в обучении и помогать в уроках "
-    "(подсказки, поддержка, мотивация — всё по-доброму).\n\n"
-    "Вот что умеем прямо сейчас:\n\n"
-    "🗣️ <b>Общаться</b>\n"
-    "Пиши или кидай голосовые — отвечу текстом и голосом.\n"
-    "Если ошибёшься, мягко поправлю <i>только грамматику/слова</i> и коротко объясню почему.\n"
-    "Если всё ок — просто похвалю и продолжим болтать ✨\n\n"
-    "📚 <b>Уроки</b>\n"
-    "Сначала короткий тест на уровень, потом занятия от A0 до C2.\n"
-    "Рико 🦜 там тоже будет рядом.\n\n"
-    "📊 <b>Профиль</b>\n"
-    "Твой уровень, прогресс и статистика в одном месте.\n\n"
-    "🆘 <b>Поддержка</b>\n"
-    "Если что-то сломалось или есть идея — пиши туда.\n\n"
-    "👇 Жми кнопку внизу и начнём!\n"
-    "С чего хочешь стартовать сегодня? 🚀"
+    "🎉 <b>Приятно познакомиться, {name}!</b>\n\n"
+    "Я <b>LexDan</b>, со мной <b>Рико</b> 🦜 — будем как на занятии с живым преподом.\n\n"
+    "<b>Как лучше заниматься</b>\n"
+    "1) 📚 Уроки → тест уровня (один раз)\n"
+    "2) Каждый день ~15 минут: слова или грамматика\n"
+    "3) 🗣️ Общаться — закрепить вживую\n\n"
+    "После теста откроется <b>7 дней</b> полного доступа без лимита чата.\n"
+    "Пригласи друга — оба получите бонусные дни 🎁\n\n"
+    "👇 С чего начнём сегодня?"
 )
 
 WELCOME_AGAIN = (
     "🔥 <b>Снова привет, {name}!</b>\n\n"
     "Рад, что ты вернулся 🙂\n"
-    "Готов продолжать? Выбирай, чем займёмся:"
+    "15 минут с Рико — и день засчитан. Чем займёмся?"
 )
 
 
 @router.message(Command("start"))
-async def start_cmd(m: Message):
+async def start_cmd(m: Message, command: CommandObject = None):
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
+    ensure_growth(user)
+    bind_referral_code(user_id, user)
     user["mode"] = MODE_MENU
+
+    # /start ref_XXXX
+    args = (command.args if command else None) or ""
+    if args.startswith("ref_"):
+        apply_referral_on_start(user, args[4:], users)
+
     save_users(users)
 
     if not user.get("name"):
@@ -88,10 +92,12 @@ async def danil_test_messi(m: Message):
     from handlers.keyboards import lessons_home_levels
     from services.database import MODE_LESSONS, set_mode
     from services.lesson_state import clear_lesson
+    from services.growth import start_trial, extend_premium
 
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
+    ensure_growth(user)
 
     user["dev_unlock"] = True
     user["assessment_done"] = True
@@ -99,6 +105,8 @@ async def danil_test_messi(m: Message):
     user["step"] = "ready"
     user["assessment"] = {}
     user["mode"] = MODE_LESSONS
+    start_trial(user, days=30)
+    extend_premium(user, 30)
     save_users(users)
     clear_lesson(user_id)
     set_mode(user_id, MODE_LESSONS)
@@ -129,6 +137,7 @@ async def save_name(m: Message):
         "🌍 Перевести",
         "🔙 Вернуться в меню",
         "💎 Подписка",
+        "🎁 Пригласить друга",
     }
     if not name or name.startswith("/") or len(name) > 40 or name in banned:
         await m.reply("🙂 Напиши просто своё имя текстом, например: <b>Даня</b>", parse_mode="HTML")
@@ -137,13 +146,20 @@ async def save_name(m: Message):
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
+    ensure_growth(user)
+    bind_referral_code(user_id, user)
     user["name"] = name
     user["step"] = "ready"
     user["mode"] = MODE_MENU
+    grant_referral_bonuses(user_id, users)
     save_users(users)
 
+    extra = ""
+    if user.get("referred_by"):
+        extra = f"\n\n🎁 Бонус за друга: +{REF_BONUS_DAYS} дня полного доступа!"
+
     await m.reply(
-        WELCOME_AFTER_NAME.format(name=_esc(name)),
+        WELCOME_AFTER_NAME.format(name=_esc(name)) + extra,
         reply_markup=main_menu(),
         parse_mode="HTML",
     )

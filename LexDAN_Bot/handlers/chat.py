@@ -64,6 +64,20 @@ async def chat_text(m: Message):
     if not text or text.startswith("/"):
         return
 
+    from services.database import save_users
+    from services.growth import note_chat_message, ensure_growth
+
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
+    ok, tip = note_chat_message(user)
+    save_users(users)
+    if not ok:
+        await m.reply(tip or "Лимит на сегодня.", reply_markup=chat_menu(), parse_mode="HTML")
+        return
+    if tip:
+        await m.reply(tip, parse_mode="HTML")
+
     await m.reply("✨ …")
     await reply_as_tutor(m, user_text=text)
 

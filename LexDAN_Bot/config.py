@@ -9,6 +9,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
+# Username бота без @ — для реф-ссылок (пример: LexDAN_bot)
+BOT_USERNAME = (os.getenv("BOT_USERNAME") or "").lstrip("@")
+
 # Файл-«база» пользователей (лежит в корне проекта)
 USER_DATA_FILE = "users.json"
 

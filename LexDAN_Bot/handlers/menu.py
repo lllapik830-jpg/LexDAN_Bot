@@ -20,6 +20,14 @@ from services.database import (
 )
 from services.assessment import ensure_user_fields
 from services.lesson_state import count_completed_tasks
+from services.growth import (
+    bind_referral_code,
+    ensure_growth,
+    note_lesson_activity,
+    profile_growth_lines,
+    is_premium,
+)
+from config import BOT_USERNAME
 
 router = Router()
 
@@ -27,12 +35,17 @@ router = Router()
 @router.message(F.text == "🗣️ Общаться")
 async def open_chat(m: Message):
     set_mode(str(m.from_user.id), MODE_CHAT)
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
+    note_lesson_activity(user)
+    save_users(users)
     await m.reply(
         "🔥 <b>Погнали общаться!</b> 🙂\n\n"
         "Пиши текстом или кидай голосовое на английском.\n"
         "Ошибёшься — поправлю <i>только грамматику/слова</i> и коротко объясню почему.\n"
         "Всё ок — скажу «молодец» и продолжим диалог ✨\n\n"
-        "⚠️ Будь внимателен: голосовые иногда приходят с небольшой задержкой.\n\n"
+        "Цель дня: можно закрыть, если поболтаешь несколько сообщений.\n\n"
         "🌍 <b>Перевести</b> — переведу мой последний ответ\n"
         "🔙 <b>В меню</b> — выход",
         reply_markup=chat_menu(),
@@ -48,6 +61,9 @@ async def open_lessons(m: Message):
     users = load_users()
     user = get_user(users, user_id)
     ensure_user_fields(user)
+    ensure_growth(user)
+    note_lesson_activity(user)
+    save_users(users)
     phase = user["assessment"].get("phase")
 
     if phase == "translate":
@@ -83,6 +99,8 @@ async def open_profile(m: Message):
     user = get_user(users, user_id)
     from services.vocabulary_state import sync_vocab_counters
 
+    ensure_growth(user)
+    bind_referral_code(user_id, user)
     sync_vocab_counters(user)
     save_users(users)
 
@@ -90,16 +108,20 @@ async def open_profile(m: Message):
     tasks_done = count_completed_tasks(user)
     words = user.get("words_learned", 0)
     phrases = user.get("phrases_learned", 0)
+    growth = profile_growth_lines(user, BOT_USERNAME)
+    sub = "триал/полный" if is_premium(user) else "бесплатно"
 
     await m.reply(
-        "📊 Твой профиль:\n\n"
+        "📊 <b>Твой профиль</b>\n\n"
         f"📛 Имя: {name}\n"
         f"✅ Пройдено заданий: {tasks_done}\n"
         f"📈 Уровень: {user.get('level', 'A1')}\n"
         f"📝 Слов выучено: {words}\n"
         f"💬 Фраз выучено: {phrases}\n"
-        f"💎 Подписка: бесплатно",
+        f"💎 Подписка: {sub}\n\n"
+        f"{growth}",
         reply_markup=profile_menu(),
+        parse_mode="HTML",
     )
 
 
@@ -107,7 +129,8 @@ async def open_profile(m: Message):
 async def open_support(m: Message):
     set_mode(str(m.from_user.id), MODE_MENU)
     await m.reply(
-        "🆘 По вопросам пиши: @твой_ник",
+        "🆘 По вопросам пиши: @твой_ник\n\n"
+        "(Замени на свой Telegram перед рекламой 😉)",
         reply_markup=main_menu(),
     )
 

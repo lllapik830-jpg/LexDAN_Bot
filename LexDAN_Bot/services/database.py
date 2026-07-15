@@ -61,6 +61,15 @@ def get_user(users: dict, user_id: str) -> dict:
                 "completed_topics": [],
             },
             "vocabulary_progress": {"words": [], "phrases": []},
+            "streak": 0,
+            "streak_last_date": "",
+            "daily": {},
+            "referral_code": "",
+            "referred_by": None,
+            "invite_count": 0,
+            "trial_started_at": 0,
+            "growth_onboarded": False,
+            "referral_bonus_granted": False,
         }
     # На всякий случай дописываем новые поля старым пользователям
     defaults = {
@@ -79,6 +88,15 @@ def get_user(users: dict, user_id: str) -> dict:
             "completed_topics": [],
         },
         "vocabulary_progress": {"words": [], "phrases": []},
+        "streak": 0,
+        "streak_last_date": "",
+        "daily": {},
+        "referral_code": "",
+        "referred_by": None,
+        "invite_count": 0,
+        "trial_started_at": 0,
+        "growth_onboarded": False,
+        "referral_bonus_granted": False,
     }
     for key, value in defaults.items():
         users[user_id].setdefault(key, value)

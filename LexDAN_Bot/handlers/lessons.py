@@ -132,6 +132,15 @@ async def send_lessons_home(m: Message, intro: str | None = None):
     user = get_user(users, user_id)
     ensure_user_fields(user)
 
+    from services.growth import ensure_growth, start_trial, TRIAL_DAYS
+    from services.database import save_users
+
+    ensure_growth(user)
+    # Старым пользователям после уже пройденного теста — один раз дать триал
+    if user.get("assessment_done") and not user.get("trial_started_at") and not user.get("dev_unlock"):
+        start_trial(user, days=TRIAL_DAYS)
+        save_users(users)
+
     if intro is None:
         if user.get("assessment_done") or user.get("dev_unlock"):
             unlock = " 🔓 DEV" if user.get("dev_unlock") else ""
@@ -149,6 +158,7 @@ async def send_lessons_home(m: Message, intro: str | None = None):
             )
 
     await m.reply(intro, reply_markup=lessons_keyboard_for(user))
+
 
 
 def _is_nav_button(text: str) -> bool:
@@ -190,19 +200,31 @@ def _write_prompt(topic: str, left: int) -> str:
 
 
 async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
+    from services.growth import start_trial, ensure_growth, TRIAL_DAYS
+    from services.database import load_users, get_user, save_users
+
     finish_assessment(user_id, final)
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_growth(user)
+    start_trial(user, days=TRIAL_DAYS)
+    save_users(users)
+
     rico = RICO_AFTER_LEVEL.get(final, RICO_AFTER_LEVEL["A1"])
     msg = (
         f"🏁 <b>Тест позади!</b> 🙂\n\n"
         f"{note}"
-        f"Ваш предполагаемый и предпочитаемый уровень для изучения — <b>{final}</b>.\n"
-        f"Но вы можете пройти и уроки уровнем ниже — для закрепления знаний.\n\n"
-        f"{rico}"
+        f"Ваш предполагаемый уровень — <b>{final}</b>.\n"
+        f"Можно брать и уровень ниже — для закрепления.\n\n"
+        f"{rico}\n\n"
+        f"🎁 Рико открыл тебе <b>{TRIAL_DAYS} дней</b> полного доступа без лимита чата.\n"
+        "Рецепт на каждый день: <b>~15 минут</b> — Vocabulary или Grammar, потом можно поболтать.\n"
+        "Прогресс и серия дней — в 📊 Профиле."
     )
     await m.reply(msg, parse_mode="HTML")
     await send_lessons_home(
         m,
-        intro=f"📚 Уроки\n\nТвой уровень: {final}.\nВыбери уровень ниже.",
+        intro=f"📚 Уроки\n\nТвой уровень: {final}.\nВыбери уровень ниже — и погнали 🚀",
     )
 
 
@@ -217,7 +239,7 @@ async def start_level_test(m: Message):
         await m.reply(
             "Тест уровня уже пройден — повторно его пройти нельзя.\n"
             "Выбери уровень для занятий ниже.",
-            reply_markup=lessons_home_levels(user.get("level")),
+            reply_markup=lessons_home_levels(user.get("level"), user=user),
         )
         return
 

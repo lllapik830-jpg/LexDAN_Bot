@@ -44,6 +44,7 @@ def profile_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="💎 Подписка")],
+            [KeyboardButton(text="🎁 Пригласить друга")],
             [KeyboardButton(text="🔙 Вернуться в меню")],
         ],
         resize_keyboard=True,

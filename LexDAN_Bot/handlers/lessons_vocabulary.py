@@ -430,11 +430,20 @@ async def vocab_word_practice(m: Message):
         )
         return
 
-    user = finish_word_practice(str(m.from_user.id), level, topic_id, word["en"])
+    finish_word_practice(str(m.from_user.id), level, topic_id, word["en"])
+    from services.growth import note_word_learned, ensure_growth
+    from services.database import save_users
+
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
+    wrap = note_word_learned(user)
+    save_users(users)
+
     wl, wt, _, _, _ = _topic_progress(user, level, topic_id)
     batch = list((user.get("lesson") or {}).get("vocab_batch") or [])
     await m.reply(
-        f"✅ Отлично! Слово <b>{word['en']}</b> изучено! ({wl}/{wt})",
+        f"✅ Отлично! Слово <b>{word['en']}</b> изучено! ({wl}/{wt})\n{wrap}",
         parse_mode="HTML",
     )
     if batch:
@@ -528,11 +537,20 @@ async def vocab_phrase_flow(m: Message):
         )
         return
 
-    user = finish_phrase_practice(str(m.from_user.id), level, topic_id, phrase["en"])
+    finish_phrase_practice(str(m.from_user.id), level, topic_id, phrase["en"])
+    from services.growth import note_phrase_learned, ensure_growth
+    from services.database import save_users
+
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
+    wrap = note_phrase_learned(user)
+    save_users(users)
+
     pt = phrases_total(level, topic_id)
     pl, _, _ = topic_phrases_progress(user, level, topic_id, pt)
     batch = list((user.get("lesson") or {}).get("vocab_batch") or [])
-    await m.reply(f"✅ Фраза изучена! ({pl}/{pt})", parse_mode="HTML")
+    await m.reply(f"✅ Фраза изучена! ({pl}/{pt})\n{wrap}", parse_mode="HTML")
     if batch:
         await m.reply(
             "Следующая фраза 👇",
