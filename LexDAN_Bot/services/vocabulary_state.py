@@ -148,6 +148,7 @@ def clear_vocab_session(user_id: str) -> dict:
             "vocab_batch",
             "vocab_active_item",
             "vocab_practice_step",
+            "vocab_last_sentence",
             "vocab_text_en",
             "vocab_text_ru",
             "drill_kind",

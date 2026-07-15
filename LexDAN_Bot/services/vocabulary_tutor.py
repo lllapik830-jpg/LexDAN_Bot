@@ -5,9 +5,6 @@
 import logging
 import random
 
-import requests
-
-from config import OPENROUTER_API_KEY
 from services.gpt import _ask_json
 
 
@@ -38,7 +35,6 @@ def generate_vocab_text(
     else:
         labels = [w["en"] for w in words[:5]]
         count = min(5, len(labels))
-        hi = ", ".join(labels[:count])
         fallback_en = (
             f"Today I want to tell you about {topic_title.lower()}. "
             f"I see my <i>{labels[0] if labels else 'friend'}</i> every day. "
@@ -97,97 +93,165 @@ def generate_vocab_text(
     }
 
 
+def _format_word_card(word: dict, data: dict) -> str:
+    en = word["en"]
+    ru = word["ru"]
+    emoji = word.get("emoji") or "📘"
+    meaning = (data.get("meaning_ru") or f"Это значит «{ru}».").strip()
+    assoc = (data.get("association_ru") or "").strip()
+    e1 = (data.get("example1_en") or f"I use {en} every day.").strip()
+    e1r = (data.get("example1_ru") or f"Я использую «{ru}» каждый день.").strip()
+    e2 = (data.get("example2_en") or f"This is my {en}.").strip()
+    e2r = (data.get("example2_ru") or f"Это мой/моя {ru}.").strip()
+
+    lines = [
+        f"🦜 {emoji} <b>{en}</b> — <i>{ru}</i>",
+        "",
+        f"<b>Что значит:</b> {meaning}",
+    ]
+    if assoc:
+        lines.append(f"<b>Запомни:</b> {assoc}")
+    lines += [
+        "",
+        "<b>Примеры:</b>",
+        f"1. {e1}",
+        f"<i>{e1r}</i>",
+        f"2. {e2}",
+        f"<i>{e2r}</i>",
+        "",
+        "✍️ Напиши <b>одно предложение</b> с этим словом на английском.",
+    ]
+    return "\n".join(lines)
+
+
 def rico_word_card(level: str, topic_title: str, word: dict) -> str:
     en = word["en"]
     ru = word["ru"]
     emoji = word.get("emoji") or "📘"
-    fallback = (
-        f"🦜 {emoji} <b>{en}</b> — <i>{ru}</i>\n\n"
-        f"Пример: I know <b>{en}</b>.\n<i>Я знаю: {ru}.</i>\n\n"
-        "✍️ Напиши <b>одно предложение</b> с этим словом на английском."
-    )
+    fallback = {
+        "meaning_ru": f"Слово «{en}» значит «{ru}».",
+        "association_ru": f"Представь картинку с эмодзи {emoji} — и сразу вспоминается «{ru}».",
+        "example1_en": f"I know the word {en}.",
+        "example1_ru": f"Я знаю слово «{ru}».",
+        "example2_en": f"Today I learned {en}.",
+        "example2_ru": f"Сегодня я выучил(а) «{ru}».",
+    }
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-3.5-turbo",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Ты Рико 🦜. Объясни слово ученику: перевод, 2 примера EN+<i>RU</i>, "
-                            f"ассоциация для запоминания, эмодзи {emoji}. "
-                            "В конце: «✍️ Напиши одно предложение с этим словом на английском.» HTML ok."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Level {level}, topic {topic_title}, word {en} = {ru}",
-                    },
-                ],
-                "max_tokens": 380,
-                "temperature": 0.5,
-            },
-            timeout=28,
+        data = _ask_json(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты Рико 🦜 — дружелюбный репетитор английского для русскоязычных. "
+                        "Объясни слово ТОЛЬКО по-русски (кроме самих английских примеров). "
+                        "Верни JSON:\n"
+                        "{"
+                        '"meaning_ru":"краткое понятное объяснение на русском",'
+                        '"association_ru":"короткая ассоциация/мнемоника на русском",'
+                        '"example1_en":"простое предложение на английском со словом",'
+                        '"example1_ru":"перевод примера 1 на русский",'
+                        '"example2_en":"другое простое предложение на английском",'
+                        '"example2_ru":"перевод примера 2 на русский"'
+                        "}\n"
+                        f"Эмодзи для ассоциации: {emoji}. Уровень CEFR: {level}."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Тема: {topic_title}. Слово: {en} = {ru}",
+                },
+            ],
+            fallback,
+            temperature=0.55,
+            max_tokens=380,
         )
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
-        if not text.startswith("🦜"):
-            text = f"🦜 {emoji} {text}"
-        return text
+        return _format_word_card(word, data if isinstance(data, dict) else fallback)
     except Exception as e:
         logging.error(f"rico_word_card: {e}")
-        return fallback
+        return _format_word_card(word, fallback)
+
+
+def _format_phrase_card(phrase: dict, data: dict) -> str:
+    en = phrase["en"]
+    ru = phrase["ru"]
+    emoji = phrase.get("emoji") or "💬"
+    meaning = (data.get("meaning_ru") or f"Это значит «{ru}».").strip()
+    when = (data.get("when_ru") or "").strip()
+    assoc = (data.get("association_ru") or "").strip()
+    e1 = (data.get("example1_en") or f"I often say '{en}'.").strip()
+    e1r = (data.get("example1_ru") or f"Я часто говорю: «{ru}».").strip()
+    e2 = (data.get("example2_en") or f"People use '{en}' a lot.").strip()
+    e2r = (data.get("example2_ru") or f"Люди часто используют «{ru}».").strip()
+
+    lines = [
+        f"🦜 {emoji} <b>{en}</b>",
+        f"<i>{ru}</i>",
+        "",
+        f"<b>Что значит:</b> {meaning}",
+    ]
+    if when:
+        lines.append(f"<b>Когда говорят:</b> {when}")
+    if assoc:
+        lines.append(f"<b>Запомни:</b> {assoc}")
+    lines += [
+        "",
+        "<b>Примеры:</b>",
+        f"1. {e1}",
+        f"<i>{e1r}</i>",
+        f"2. {e2}",
+        f"<i>{e2r}</i>",
+        "",
+        "✍️ Напиши предложение с этой фразой на английском.",
+    ]
+    return "\n".join(lines)
 
 
 def rico_phrase_card(level: str, topic_title: str, phrase: dict) -> str:
     en = phrase["en"]
     ru = phrase["ru"]
     emoji = phrase.get("emoji") or "💬"
-    fallback = (
-        f"🦜 {emoji} <b>{en}</b>\n<i>{ru}</i>\n\n"
-        "✍️ Напиши предложение с этой фразой на английском."
-    )
+    fallback = {
+        "meaning_ru": f"Фраза «{en}» значит «{ru}».",
+        "when_ru": "Говорят в повседневных ситуациях по смыслу фразы.",
+        "association_ru": f"Эмодзи {emoji} поможет вспомнить «{ru}».",
+        "example1_en": f"I say '{en}' to friends.",
+        "example1_ru": f"Я говорю друзьям: «{ru}».",
+        "example2_en": f"Everyone knows '{en}'.",
+        "example2_ru": f"Все знают выражение «{ru}».",
+    }
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-3.5-turbo",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Ты Рико 🦜. Объясни устойчивую фразу: перевод, когда говорят, "
-                            "2 примера EN+<i>RU</i>, ассоциация, эмодзи. "
-                            "В конце попроси написать предложение с фразой. HTML."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Level {level}, topic {topic_title}, phrase {en} = {ru}",
-                    },
-                ],
-                "max_tokens": 380,
-                "temperature": 0.5,
-            },
-            timeout=28,
+        data = _ask_json(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты Рико 🦜. Объясни устойчивую фразу ТОЛЬКО по-русски "
+                        "(примеры предложений — на английском + перевод). JSON:\n"
+                        "{"
+                        '"meaning_ru":"...",'
+                        '"when_ru":"когда говорят",'
+                        '"association_ru":"...",'
+                        '"example1_en":"...",'
+                        '"example1_ru":"...",'
+                        '"example2_en":"...",'
+                        '"example2_ru":"..."'
+                        "}\n"
+                        f"Эмодзи: {emoji}. Уровень: {level}."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Тема: {topic_title}. Фраза: {en} = {ru}",
+                },
+            ],
+            fallback,
+            temperature=0.55,
+            max_tokens=380,
         )
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
-        if not text.startswith("🦜"):
-            text = f"🦜 {emoji} {text}"
-        return text
+        return _format_phrase_card(phrase, data if isinstance(data, dict) else fallback)
     except Exception as e:
         logging.error(f"rico_phrase_card: {e}")
-        return fallback
+        return _format_phrase_card(phrase, fallback)
 
 
 def check_vocab_sentence(
@@ -197,27 +261,47 @@ def check_vocab_sentence(
     *,
     is_phrase: bool = False,
 ) -> dict:
+    kind = "phrase" if is_phrase else "word"
     data = _ask_json(
         [
             {
                 "role": "system",
                 "content": (
-                    "Check if student used the target word/phrase correctly in English. "
-                    "Minor grammar ok if word/phrase used right. "
-                    'JSON: {"correct":bool,"feedback_ru":"..."}'
+                    f"You check a Russian student's English sentence that must use the target {kind}. "
+                    "Be friendly like a tutor. "
+                    "Accept minor grammar issues if the target is used correctly and meaning is clear. "
+                    "Return ONLY JSON: "
+                    '{"correct":true/false,"feedback_ru":"краткий отзыв по-русски",'
+                    '"better_en":"исправленный вариант или пустая строка"}\n'
+                    "If correct: correct=true, feedback_ru хвалит кратко, better_en=\"\". "
+                    "If wrong: correct=false, feedback_ru объясняет проблему по-русски, "
+                    "better_en = natural corrected English sentence WITH the target."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"Level {level}. Target: {target_en}. Phrase={is_phrase}.\n"
-                    f"Student: {user_sentence}"
+                    f"Level {level}. Target {kind}: {target_en}\n"
+                    f"Student sentence: {user_sentence}"
                 ),
             },
         ],
-        {"correct": False, "feedback_ru": "Попробуй ещё раз — используй слово/фразу в предложении."},
+        {
+            "correct": False,
+            "feedback_ru": "Попробуй ещё раз — используй целевое слово/фразу в предложении.",
+            "better_en": "",
+        },
         temperature=0.0,
     )
+    if not isinstance(data, dict):
+        return {
+            "correct": False,
+            "feedback_ru": "Попробуй ещё раз.",
+            "better_en": "",
+        }
+    data["correct"] = bool(data.get("correct"))
+    data["feedback_ru"] = str(data.get("feedback_ru") or "").strip()
+    data["better_en"] = str(data.get("better_en") or "").strip()
     return data
 
 
