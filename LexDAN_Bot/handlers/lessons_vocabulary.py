@@ -607,11 +607,13 @@ async def drill_dont_remember(m: Message):
     user = get_user(users, str(m.from_user.id))
     cur = (user.get("lesson") or {}).get("drill_current") or {}
     entry = cur.get("entry")
-    if not entry:
-        await _send_drill_question(m, user)
-        return
     is_phr = cur.get("kind") == "phrases"
-    await m.reply(rico_dont_remember(entry, is_phrase=is_phr), reply_markup=drill_kb(), parse_mode="HTML")
+    if entry:
+        await m.reply(rico_dont_remember(entry, is_phrase=is_phr), parse_mode="HTML")
+    # Сразу следующее задание (слово или фраза)
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    await _send_drill_question(m, user)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("vocab_drill"), F.text == BTN_BACK_DRILL)
@@ -624,16 +626,24 @@ async def drill_back(m: Message):
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("vocab_drill"), F.text)
 async def drill_answer(m: Message):
     if m.text in {BTN_DONT_REMEMBER, BTN_BACK_DRILL, "🔙 Вернуться в меню"}:
-        return
+        raise SkipHandler
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     cur = (user.get("lesson") or {}).get("drill_current") or {}
     ans = (cur.get("answer") or "").strip().lower()
     given = (m.text or "").strip().lower()
-    if given == ans or ans in given or given in ans:
+    entry = cur.get("entry") or {}
+    is_phr = cur.get("kind") == "phrases"
+    if given == ans or (ans and (ans in given or given in ans)):
         await m.reply("✅ Верно!")
     else:
-        await m.reply(f"🦜 Почти! Правильно: <b>{cur.get('answer')}</b>", parse_mode="HTML")
+        if entry:
+            await m.reply(rico_dont_remember(entry, is_phrase=is_phr), parse_mode="HTML")
+        else:
+            await m.reply(f"🦜 Почти! Правильно: <b>{cur.get('answer')}</b>", parse_mode="HTML")
+    # Сразу следующее задание
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
     await _send_drill_question(m, user)
 
 

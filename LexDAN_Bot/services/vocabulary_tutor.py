@@ -350,10 +350,17 @@ def rico_dont_remember(item: dict, *, is_phrase: bool = False) -> str:
     ru = item["ru"]
     emoji = item.get("emoji") or "💡"
     kind = "фраза" if is_phrase else "слово"
+    if is_phrase:
+        ex_en = f"People often say '{en}'."
+        ex_ru = f"Люди часто говорят: «{ru}»."
+    else:
+        base = en[3:].strip() if en.lower().startswith("to ") else en
+        ex_en = f"I learned the word {en} today."
+        ex_ru = f"Сегодня я выучил(а) слово «{ru}»."
     return (
         f"🦜 {emoji} Не страшно! <b>{en}</b> — <i>{ru}</i>\n\n"
         f"Запомни: {kind} «{en}» = {ru}.\n"
-        f"Пример: <b>I use {en} every day.</b>\n"
-        f"<i>Я использую «{ru}» каждый день.</i>\n\n"
-        "Продолжаем — переведи следующее задание 💪"
+        f"Пример: <b>{ex_en}</b>\n"
+        f"<i>{ex_ru}</i>\n\n"
+        "Дальше следующее задание 👇"
     )
