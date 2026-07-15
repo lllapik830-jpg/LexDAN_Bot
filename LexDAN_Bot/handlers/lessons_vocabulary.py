@@ -53,6 +53,9 @@ from services.vocabulary_state import (
     is_phrase_learned,
     mark_word_learned,
     mark_phrase_learned,
+    finish_word_practice,
+    finish_phrase_practice,
+    sync_vocab_counters,
     topic_words_progress,
     topic_phrases_progress,
     set_vocab_hub,
@@ -363,7 +366,8 @@ async def vocab_word_button(m: Message):
         str(m.from_user.id),
         hub="vocab_word_practice",
         vocab_active_item=word["en"],
-        vocab_practice_step=1,
+        vocab_practice_done=0,
+        vocab_practice_step=0,
         vocab_last_sentence="",
     )
     card = rico_word_card(level, topic_title, word)
@@ -381,7 +385,7 @@ def _vocab_check_reply(result: dict) -> str:
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("vocab_word_practice"), F.text)
 async def vocab_word_practice(m: Message):
-    """2 предложения с выбранным словом → слово засчитывается."""
+    """2 правильных предложения → слово засчитывается, кнопка убирается."""
     text = (m.text or "").strip()
     if text in {"⬅️ К словам", "🔙 Вернуться в меню", BTN_LEARN_PHRASES, "⬅️ К темам", "⬅️ К теме (слова)"}:
         raise SkipHandler
@@ -391,7 +395,7 @@ async def vocab_word_practice(m: Message):
     level = lesson["level"]
     topic_id = lesson["vocab_topic_id"]
     active = lesson.get("vocab_active_item")
-    step = int(lesson.get("vocab_practice_step") or 0)
+    done = int(lesson.get("vocab_practice_done") or 0)
     word = get_word_entry(level, topic_id, active) if active else None
     if not word:
         await _send_word_story(m, user)
@@ -407,43 +411,33 @@ async def vocab_word_practice(m: Message):
         return
 
     result = check_vocab_sentence(level, word["en"], text)
-    ok = bool(result.get("correct"))
-    if not ok:
+    if not result.get("correct"):
         await m.reply(_vocab_check_reply(result), reply_markup=vocab_practice_kb(), parse_mode="HTML")
         return
 
-    if step < 2:
+    done += 1
+    if done < 2:
         update_vocab_lesson(
             str(m.from_user.id),
-            vocab_practice_step=step + 1,
+            vocab_practice_done=done,
             vocab_last_sentence=text,
         )
         await m.reply(
-            "✅ Молодец! Ошибок нет.\n"
+            f"✅ Молодец! ({done}/2)\n"
             "Теперь напиши <b>ещё одно новое</b> предложение с этим словом.",
             reply_markup=vocab_practice_kb(),
             parse_mode="HTML",
         )
         return
 
-    mark_word_learned(str(m.from_user.id), level, topic_id, word["en"])
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+    user = finish_word_practice(str(m.from_user.id), level, topic_id, word["en"])
     wl, wt, _, _, _ = _topic_progress(user, level, topic_id)
+    batch = list((user.get("lesson") or {}).get("vocab_batch") or [])
     await m.reply(
         f"✅ Отлично! Слово <b>{word['en']}</b> изучено! ({wl}/{wt})",
         parse_mode="HTML",
     )
-    batch = [w for w in (lesson.get("vocab_batch") or []) if not is_word_learned(user, level, topic_id, w)]
     if batch:
-        update_vocab_lesson(
-            str(m.from_user.id),
-            hub="vocab_topic",
-            vocab_active_item=None,
-            vocab_practice_step=0,
-            vocab_last_sentence="",
-            vocab_batch=batch,
-        )
         await m.reply(
             "Выбери следующее слово 👇",
             reply_markup=vocab_topic_kb(level, topic_id, user, batch),
@@ -469,21 +463,24 @@ async def vocab_phrase_flow(m: Message):
     hub = lesson.get("hub")
 
     phrase = None
-    for p in get_phrases(level, topic_id):
-        if p["en"].lower() == text.lower() or p["en"].lower().startswith(text.lower()):
-            phrase = p
-            break
-        short = p["en"] if len(p["en"]) <= 40 else p["en"][:37] + "..."
-        if text == short or m.text.replace("✅ ", "") == short:
-            phrase = p
-            break
+    # Подбирать фразу кнопкой только на экране выбора, не во время практики.
+    if hub == "vocab_phrases":
+        for p in get_phrases(level, topic_id):
+            if p["en"].lower() == text.lower():
+                phrase = p
+                break
+            short = p["en"] if len(p["en"]) <= 40 else p["en"][:37] + "..."
+            if text == short or (m.text or "").replace("✅ ", "") == short:
+                phrase = p
+                break
 
     if hub == "vocab_phrases" and phrase:
         update_vocab_lesson(
             str(m.from_user.id),
             hub="vocab_phrase_practice",
             vocab_active_item=phrase["en"],
-            vocab_practice_step=1,
+            vocab_practice_done=0,
+            vocab_practice_step=0,
             vocab_last_sentence="",
         )
         await m.reply(rico_phrase_card(level, topic_title, phrase), reply_markup=vocab_practice_kb(), parse_mode="HTML")
@@ -500,7 +497,7 @@ async def vocab_phrase_flow(m: Message):
         await _send_phrase_story(m, user)
         return
 
-    step = int(lesson.get("vocab_practice_step") or 0)
+    done = int(lesson.get("vocab_practice_done") or 0)
     last = (lesson.get("vocab_last_sentence") or "").strip().lower()
     raw = (m.text or "").strip()
     if last and raw.lower() == last:
@@ -515,37 +512,32 @@ async def vocab_phrase_flow(m: Message):
     if not result.get("correct"):
         await m.reply(_vocab_check_reply(result), reply_markup=vocab_practice_kb(), parse_mode="HTML")
         return
-    if step < 2:
+
+    done += 1
+    if done < 2:
         update_vocab_lesson(
             str(m.from_user.id),
-            vocab_practice_step=step + 1,
+            vocab_practice_done=done,
             vocab_last_sentence=raw,
         )
         await m.reply(
-            "✅ Молодец! Ошибок нет.\n"
+            f"✅ Молодец! ({done}/2)\n"
             "Теперь напиши <b>ещё одно новое</b> предложение с этой фразой.",
             reply_markup=vocab_practice_kb(),
             parse_mode="HTML",
         )
         return
 
-    mark_phrase_learned(str(m.from_user.id), level, topic_id, phrase["en"])
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+    user = finish_phrase_practice(str(m.from_user.id), level, topic_id, phrase["en"])
     pt = phrases_total(level, topic_id)
     pl, _, _ = topic_phrases_progress(user, level, topic_id, pt)
+    batch = list((user.get("lesson") or {}).get("vocab_batch") or [])
     await m.reply(f"✅ Фраза изучена! ({pl}/{pt})", parse_mode="HTML")
-    batch = [p for p in (lesson.get("vocab_batch") or []) if not is_phrase_learned(user, level, topic_id, p)]
     if batch:
-        update_vocab_lesson(
-            str(m.from_user.id),
-            hub="vocab_phrases",
-            vocab_active_item=None,
-            vocab_practice_step=0,
-            vocab_last_sentence="",
-            vocab_batch=batch,
+        await m.reply(
+            "Следующая фраза 👇",
+            reply_markup=vocab_phrase_topic_kb(level, topic_id, user, batch),
         )
-        await m.reply("Следующая фраза 👇", reply_markup=vocab_phrase_topic_kb(level, topic_id, user, batch))
     else:
         await _send_phrase_story(m, user)
 

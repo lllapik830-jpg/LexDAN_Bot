@@ -16,11 +16,18 @@ def ensure_vocab_progress(user: dict) -> dict:
     else:
         user["vocabulary_progress"].setdefault("words", [])
         user["vocabulary_progress"].setdefault("phrases", [])
+    # Счётчики профиля всегда = длина списков
+    user["words_learned"] = len(user["vocabulary_progress"]["words"])
+    user["phrases_learned"] = len(user["vocabulary_progress"]["phrases"])
     return user["vocabulary_progress"]
 
 
+def sync_vocab_counters(user: dict) -> None:
+    ensure_vocab_progress(user)
+
+
 def item_key(level: str, topic_id: str, en: str) -> str:
-    return f"{level}:{topic_id}:{en.strip().lower()}"
+    return f"{level}:{topic_id}:{(en or '').strip().lower()}"
 
 
 def is_word_learned(user: dict, level: str, topic_id: str, en: str) -> bool:
@@ -57,6 +64,60 @@ def mark_phrase_learned(user_id: str, level: str, topic_id: str, en: str) -> dic
             phrases.append(key)
         u["vocabulary_progress"]["phrases"] = phrases
         u["phrases_learned"] = len(phrases)
+
+    return update_lesson(user_id, mut)
+
+
+def finish_word_practice(user_id: str, level: str, topic_id: str, en: str) -> dict:
+    """Засчитать слово + убрать из батча + вернуть hub к списку слов — одним сохранением."""
+    key = item_key(level, topic_id, en)
+    en_l = (en or "").strip().lower()
+
+    def mut(u):
+        ensure_lesson(u)
+        ensure_vocab_progress(u)
+        words = list(u["vocabulary_progress"]["words"])
+        if key not in words:
+            words.append(key)
+        u["vocabulary_progress"]["words"] = words
+        u["words_learned"] = len(words)
+
+        batch = list(u["lesson"].get("vocab_batch") or [])
+        batch = [w for w in batch if (w or "").strip().lower() != en_l]
+        u["lesson"]["vocab_batch"] = batch
+        u["lesson"]["hub"] = "vocab_topic"
+        u["lesson"]["vocab_active_item"] = None
+        u["lesson"]["vocab_practice_done"] = 0
+        u["lesson"]["vocab_practice_step"] = 0
+        u["lesson"]["vocab_last_sentence"] = ""
+        u["lesson"]["vocab_mode"] = "words"
+
+    return update_lesson(user_id, mut)
+
+
+def finish_phrase_practice(user_id: str, level: str, topic_id: str, en: str) -> dict:
+    """Засчитать фразу + убрать из батча + вернуть к списку фраз."""
+    key = item_key(level, topic_id, en)
+    en_l = (en or "").strip().lower()
+
+    def mut(u):
+        ensure_lesson(u)
+        ensure_vocab_progress(u)
+        phrases = list(u["vocabulary_progress"]["phrases"])
+        if key not in phrases:
+            phrases.append(key)
+        u["vocabulary_progress"]["phrases"] = phrases
+        u["phrases_learned"] = len(phrases)
+
+        batch = list(u["lesson"].get("vocab_batch") or [])
+        batch = [p for p in batch if (p or "").strip().lower() != en_l]
+        u["lesson"]["vocab_batch"] = batch
+        u["lesson"]["hub"] = "vocab_phrases"
+        u["lesson"]["vocab_active_item"] = None
+        u["lesson"]["vocab_practice_done"] = 0
+        u["lesson"]["vocab_practice_step"] = 0
+        u["lesson"]["vocab_last_sentence"] = ""
+        u["lesson"]["vocab_mode"] = "phrases"
 
     return update_lesson(user_id, mut)
 
@@ -148,6 +209,7 @@ def clear_vocab_session(user_id: str) -> dict:
             "vocab_batch",
             "vocab_active_item",
             "vocab_practice_step",
+            "vocab_practice_done",
             "vocab_last_sentence",
             "vocab_text_en",
             "vocab_text_ru",

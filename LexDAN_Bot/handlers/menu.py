@@ -11,6 +11,7 @@ from handlers.lessons import send_lessons_home
 from services.database import (
     load_users,
     get_user,
+    save_users,
     set_mode,
     MODE_MENU,
     MODE_CHAT,
@@ -80,6 +81,10 @@ async def open_profile(m: Message):
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
+    from services.vocabulary_state import sync_vocab_counters
+
+    sync_vocab_counters(user)
+    save_users(users)
 
     name = user.get("name") or m.from_user.first_name or "Не указано"
     tasks_done = count_completed_tasks(user)

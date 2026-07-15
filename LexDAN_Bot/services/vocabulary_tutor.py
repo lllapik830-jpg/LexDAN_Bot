@@ -262,6 +262,38 @@ def check_vocab_sentence(
     is_phrase: bool = False,
 ) -> dict:
     kind = "phrase" if is_phrase else "word"
+    target = (target_en or "").strip()
+    sentence = (user_sentence or "").strip()
+
+    def _coerce_correct(val) -> bool:
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return bool(val)
+        if isinstance(val, str):
+            return val.strip().lower() in {"1", "true", "yes", "да", "ok", "верно"}
+        return False
+
+    def _local_uses_target() -> bool:
+        if not target or not sentence:
+            return False
+        s = sentence.lower()
+        t = target.lower()
+        if t in s:
+            return True
+        # to walk → walk / walks / walking / walked
+        if t.startswith("to ") and len(t) > 3:
+            base = t[3:].strip()
+            if not base:
+                return False
+            import re
+
+            tokens = re.findall(r"[a-zA-Z']+", s)
+            for tok in tokens:
+                if tok == base or tok.startswith(base) or base.startswith(tok) and len(tok) >= 3:
+                    return True
+        return False
+
     data = _ask_json(
         [
             {
@@ -281,8 +313,8 @@ def check_vocab_sentence(
             {
                 "role": "user",
                 "content": (
-                    f"Level {level}. Target {kind}: {target_en}\n"
-                    f"Student sentence: {user_sentence}"
+                    f"Level {level}. Target {kind}: {target}\n"
+                    f"Student sentence: {sentence}"
                 ),
             },
         ],
@@ -294,14 +326,22 @@ def check_vocab_sentence(
         temperature=0.0,
     )
     if not isinstance(data, dict):
-        return {
+        data = {
             "correct": False,
             "feedback_ru": "Попробуй ещё раз.",
             "better_en": "",
         }
-    data["correct"] = bool(data.get("correct"))
+
+    ok = _coerce_correct(data.get("correct"))
+    # Если модель упала/строго отказала, но цель есть в предложении — засчитываем
+    if not ok and _local_uses_target():
+        ok = True
+        data["feedback_ru"] = data.get("feedback_ru") or "Отлично, цель использована!"
+        data["better_en"] = ""
+
+    data["correct"] = ok
     data["feedback_ru"] = str(data.get("feedback_ru") or "").strip()
-    data["better_en"] = str(data.get("better_en") or "").strip()
+    data["better_en"] = "" if ok else str(data.get("better_en") or "").strip()
     return data
 
 
