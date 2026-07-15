@@ -18,7 +18,7 @@ from handlers.keyboards import (
     assess_dont_know_kb,
     assess_write_kb,
 )
-from data.assessment_data import LEVELS, level_index, lower_level, lower_level, level_index
+from data.assessment_data import LEVELS, level_index, lower_level, max_accessible_level, is_level_accessible
 from services.database import load_users, get_user, MODE_LESSONS
 from services.assessment import (
     ensure_user_fields,
@@ -119,7 +119,10 @@ RICO_AFTER_LEVEL = {
 def lessons_keyboard_for(user: dict):
     ensure_user_fields(user)
     if user.get("assessment_done"):
-        return lessons_home_levels()
+        from services.vocabulary_state import ensure_vocab_progress
+        ensure_vocab_progress(user)
+        has_learned = bool(user.get("vocabulary_progress", {}).get("words") or user.get("vocabulary_progress", {}).get("phrases"))
+        return lessons_home_levels(user.get("level"), show_global_tasks=has_learned)
     return lessons_home_first()
 
 
@@ -213,7 +216,7 @@ async def start_level_test(m: Message):
         await m.reply(
             "Тест уровня уже пройден — повторно его пройти нельзя.\n"
             "Выбери уровень для занятий ниже.",
-            reply_markup=lessons_home_levels(),
+            reply_markup=lessons_home_levels(user.get("level")),
         )
         return
 
@@ -359,18 +362,14 @@ async def choose_level(m: Message):
 
     selected = m.text
     user_level = user.get("level") or "A1"
-    if level_index(selected) > level_index(user_level):
-        need = (
-            user_level
-            if level_index(selected) == level_index(user_level) + 1
-            else lower_level(selected)
-        )
+    if not is_level_accessible(user_level, selected):
+        ceiling = max_accessible_level(user_level)
         await m.reply(
             f"🦜 <b>Рико:</b> Твой уровень по тесту — <b>{user_level}</b>.\n"
+            f"Сейчас тебе доступны уровни до <b>{ceiling}</b> включительно.\n"
             f"Уровень <b>{selected}</b> пока закрыт 🔒\n\n"
-            f"Для начала освой уровень <b>{need}</b> — "
-            f"шаг за шагом, без спешки! Когда будешь готов — вернёшься сюда 💪",
-            reply_markup=lessons_home_levels(),
+            f"Сначала освой <b>{ceiling}</b> — и откроется следующий! 💪",
+            reply_markup=lessons_home_levels(user_level),
             parse_mode="HTML",
         )
         return

@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher
 from flask import Flask
 
 from config import BOT_TOKEN
-from handlers import start, common, voice, chat, lessons, lessons_grammar, profile, menu
+from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, profile, menu
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,6 +26,7 @@ dp.include_routers(
     common.router,
     menu.router,       # кнопки меню раньше разделов — чтобы всегда ловились
     voice.router,
+    lessons_vocabulary.router,
     lessons_grammar.router,  # грамматика раньше chat — чтобы «Перевести» в заданиях
     chat.router,
     lessons.router,

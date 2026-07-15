@@ -5,7 +5,9 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 from data.grammar_curriculum import get_topics
-from services.lesson_state import EXERCISE_TYPES
+from services.lesson_state import EXERCISE_TYPES, all_grammar_topics_done, is_grammar_test_passed
+
+BTN_GRAMMAR_TEST = "🎯 Тест по Grammar"
 
 
 def level_sections_kb() -> ReplyKeyboardMarkup:
@@ -19,7 +21,7 @@ def level_sections_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def grammar_topics_kb(level: str) -> ReplyKeyboardMarkup:
+def grammar_topics_kb(level: str, user: dict | None = None) -> ReplyKeyboardMarkup:
     topics = get_topics(level)
     rows = []
     row = []
@@ -30,6 +32,8 @@ def grammar_topics_kb(level: str) -> ReplyKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
+    if user and all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
+        rows.append([KeyboardButton(text=BTN_GRAMMAR_TEST)])
     rows.append([KeyboardButton(text="⬅️ К разделам")])
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
@@ -41,6 +45,15 @@ def topic_chat_kb(*, ack: bool = False) -> ReplyKeyboardMarkup:
         rows.append([KeyboardButton(text="✅ Ознакомился")])
     else:
         rows.append([KeyboardButton(text="📝 Задания")])
+    rows.append([KeyboardButton(text="⬅️ К темам")])
+    rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def grammar_test_kb(*, mcq_options: list[str] | None = None) -> ReplyKeyboardMarkup:
+    rows = []
+    if mcq_options:
+        rows.extend([[KeyboardButton(text=opt)] for opt in mcq_options])
     rows.append([KeyboardButton(text="⬅️ К темам")])
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)

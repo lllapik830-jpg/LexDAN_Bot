@@ -77,14 +77,22 @@ NARRATIVE_INTROS: dict[str, str] = {
     ),
     "present_simple": (
         "🦜 <b>Рико:</b> Итак, встречай — <b>Present Simple</b>, король повседневной речи! "
-        "Это время для привычек и фактов: «я хожу в школу», «она живёт в Москве», "
-        "«вода кипит при 100°».\n\n"
-        "Формула простая: I/you/we/they + глагол, а he/she/it + глагол с <b>-s</b>: "
-        "I like tea — <i>Я люблю чай</i>, но He likes tea — <i>Он любит чай</i>. "
-        "Слова always, usually, every day — твои подсказки.\n\n"
-        "В вопросе: Do you speak English? — <i>Ты говоришь по-английски?</i> "
-        "После doesn't — только глагол без -s: She doesn't like — <i>Ей не нравится</i>.\n\n"
-        "Это база A1 — освоишь её, и многое станет легче 🚀"
+        "Это время для привычек, распорядка и фактов: «я хожу в школу», «она живёт в Москве», "
+        "«вода кипит при 100°». Когда видишь always, usually, every day — почти всегда Simple.\n\n"
+        "Разберём <b>формулы</b> по шагам. Утверждение: "
+        "<b>I / You / We / They + V1</b> (глагол без окончания). "
+        "I like tea — <i>Я люблю чай</i>. We live here — <i>Мы живём здесь</i>. "
+        "С he/she/it добавляем <b>-s</b> или <b>-es</b>: He likes tea — <i>Он любит чай</i>. "
+        "She watches TV — <i>Она смотрит телевизор</i>.\n\n"
+        "Отрицание: <b>don't / doesn't + V1</b>. "
+        "I don't like coffee — <i>Я не люблю кофе</i>. "
+        "She doesn't work on Sundays — <i>Она не работает по воскресеньям</i>. "
+        "После doesn't глагол без -s!\n\n"
+        "Вопрос: <b>Do / Does + подлежащее + V1?</b> "
+        "Do you speak English? — <i>Ты говоришь по-английски?</i> "
+        "Does he play football? — <i>Он играет в футбол?</i>\n\n"
+        "Это база A1 — освоишь её, и Past Simple, Continuous и модальные станут в разы проще. "
+        "В заданиях жми <b>🌍 Перевести</b> — покажу русский смысл английской фразы 🚀"
     ),
     "articles_a_an": (
         "🦜 <b>Рико:</b> Сегодня про крошечные, но коварные слова — <b>a</b> и <b>an</b>. "
@@ -149,29 +157,56 @@ NARRATIVE_INTROS: dict[str, str] = {
     ),
     "present_continuous": (
         "🦜 <b>Рико:</b> Сейчас разберём <b>Present Continuous</b> — "
-        "когда действие происходит <b>прямо сейчас</b> или временно.\n\n"
-        "Формула: am/is/are + V-ing. I am reading now — <i>Я читаю сейчас</i>. "
-        "They are playing football — <i>Они играют в футбол</i>. "
-        "А I read every day — <i>Я читаю каждый день</i> — это уже привычка (Simple).\n\n"
-        "Слова now, at the moment — твои друзья. "
-        "Но know, like, want — редко в Continuous: I know ✅, I am knowing ❌. "
+        "когда действие происходит <b>прямо сейчас</b> или временно, но не «навсегда».\n\n"
+        "Формула: <b>am / is / are + V-ing</b>. "
+        "I am reading now — <i>Я читаю сейчас</i>. "
+        "She is working at the moment — <i>Она работает в данный момент</i>. "
+        "They are playing football — <i>Они играют в футбол (прямо сейчас)</i>.\n\n"
+        "Отрицание: am not / isn't / aren't + V-ing. "
+        "I'm not sleeping — <i>Я не сплю</i>. "
+        "Вопрос: <b>Am/Is/Are + подлежащее + V-ing?</b> "
+        "Are you listening? — <i>Ты слушаешь?</i>\n\n"
+        "Сравни с Simple: I read every day — <i>привычка</i>; "
+        "I am reading now — <i>прямо сейчас</i>. "
+        "Слова now, at the moment, today (иногда) — подсказки Continuous. "
+        "Но know, like, want — почти не ставят в Continuous: I know ✅, I am knowing ❌. "
         "Поймаешь ритм — и заговоришь естественнее 🔥"
     ),
     "past_simple": (
-        "🦜 <b>Рико:</b> Прошлое! <b>Past Simple</b> — про то, что уже случилось: "
-        "вчера, год назад, last week.\n\n"
-        "I visited London — <i>Я был в Лондоне</i>. "
-        "Правильные: worked, played; неправильные: go→went, see→saw. "
-        "Did you go? — <i>Ты ходил?</i> После did — только V1: Did you go ✅, Did you went ❌.\n\n"
-        "Yesterday, ago, in 2020 — подсказки Past Simple. "
-        "Это ключ к историям о себе 📖"
+        "🦜 <b>Рико:</b> Итак, друг, мы подходим к одному из самых важных времён — "
+        "<b>Past Simple</b>! Это «прошлое простое»: всё, что уже случилось и закончилось. "
+        "Вчера, год назад, last week — когда видишь такие слова, почти всегда нужен Past Simple.\n\n"
+        "Давай разберём, <b>как строится предложение</b> — это ключ ко всему. "
+        "В утверждении мы берём подлежащее и глагол в форме прошлого: "
+        "<b>I/You/He/She/It/We/They + V2</b> (вторая форма). "
+        "У правильных глаголов V2 = V1 + <b>-ed</b>: work → worked, play → played. "
+        "I worked yesterday — <i>Я работал вчера</i>. She played tennis — <i>Она играла в теннис</i>.\n\n"
+        "У <b>неправильных</b> глаголов форма особая — её просто запоминают: "
+        "go → went, see → saw, have → had, do → did. "
+        "I went home — <i>Я пошёл домой</i>. He saw a film — <i>Он посмотрел фильм</i>.\n\n"
+        "В <b>отрицании</b> появляется помощник <b>did not (didn't)</b> + глагол в первой форме: "
+        "I didn't go — <i>Я не ходил</i>. She didn't like it — <i>Ей не понравилось</i>. "
+        "Запомни ловушку: после didn't НИКОГДА не ставь went/saw — только go, see!\n\n"
+        "В <b>вопросе</b> did выходит вперёд: <b>Did + подлежащее + V1?</b> "
+        "Did you visit London? — <i>Ты был в Лондоне?</i> "
+        "Did she call you? — <i>Она тебе звонила?</i>\n\n"
+        "Слова-подсказки: yesterday, last week/month/year, ago, in 2020. "
+        "С этим временем ты наконец сможешь рассказывать истории о себе — "
+        "что делал, куда ходил, что видел. А в заданиях жми <b>🌍 Перевести</b>, "
+        "если не понимаешь английскую фразу — переведу смысл, не инструкцию 📖"
     ),
     "going_to_future": (
-        "🦜 <b>Рико:</b> Планы! <b>Going to</b> — когда ты уже решил, что сделаешь.\n\n"
+        "🦜 <b>Рико:</b> Планы и намерения — время <b>going to</b>! "
+        "Когда ты уже решил, что сделаешь, или видишь очевидный признак будущего.\n\n"
+        "Формула: <b>am / is / are + going to + V1</b>. "
         "I'm going to study tonight — <i>Сегодня вечером буду учиться</i>. "
         "She's going to buy a car — <i>Она собирается купить машину</i>. "
         "Look at the clouds! It's going to rain — <i>Сейчас пойдёт дождь</i> (видим признаки).\n\n"
-        "Going to = план; will — спонтанное решение на месте. "
+        "Вопрос: <b>Am/Is/Are + подлежащее + going to + V1?</b> "
+        "Are you going to travel? — <i>Ты собираешься путешествовать?</i> "
+        "Отрицание: I'm not going to wait — <i>Я не собираюсь ждать</i>.\n\n"
+        "Going to = заранее решённый план; <b>will</b> — спонтанное решение на месте: "
+        "The phone is ringing — I'll answer! — <i>Я отвечу!</i> "
         "Оба про будущее, но оттенок разный 🎯"
     ),
     "much_many_some_any": (
@@ -203,11 +238,17 @@ NARRATIVE_INTROS: dict[str, str] = {
     ),
     "present_perfect": (
         "🦜 <b>Рико:</b> <b>Present Perfect</b> — мост между прошлым и настоящим. "
-        "Have/has + V3: I have visited London — <i>Я был в Лондоне (опыт)</i>. "
-        "She has lost her keys — <i>Она потеряла ключи (важно сейчас)</i>.\n\n"
-        "Ever, never, already, yet — частые спутники. "
-        "Yesterday → Past Simple; без точного времени → Perfect. "
-        "Разница тонкая, но мы её поймаем на примерах ✨"
+        "Связь «было когда-то» с «важно сейчас»: опыт, результат, незаконченный период.\n\n"
+        "Формула: <b>have / has + V3</b> (третья форма глагола). "
+        "I have visited London — <i>Я был в Лондоне (опыт в жизни)</i>. "
+        "She has lost her keys — <i>Она потеряла ключи (и сейчас их нет)</i>. "
+        "We have lived here for five years — <i>Мы живём здесь пять лет (и до сих пор)</i>.\n\n"
+        "Вопрос: <b>Have/Has + подлежащее + V3?</b> "
+        "Have you ever been to Paris? — <i>Ты когда-нибудь был в Париже?</i> "
+        "Отрицание: haven't / hasn't + V3.\n\n"
+        "Маркеры: ever, never, already, yet, just, for, since. "
+        "Yesterday, last week, in 2020 → <b>Past Simple</b>, не Perfect! "
+        "Разница тонкая — поймаем на примерах в заданиях ✨"
     ),
     "past_perfect": (
         "🦜 <b>Рико:</b> <b>Past Perfect</b> — «ещё более прошлое»! Had + V3.\n\n"
@@ -332,4 +373,9 @@ NARRATIVE_INTROS: dict[str, str] = {
 
 
 def get_narrative_intro(topic_id: str) -> str | None:
-    return NARRATIVE_INTROS.get(topic_id)
+    from data.grammar_formula_deep import append_formula_deep_dive
+
+    base = NARRATIVE_INTROS.get(topic_id)
+    if not base:
+        return None
+    return append_formula_deep_dive(topic_id, base)

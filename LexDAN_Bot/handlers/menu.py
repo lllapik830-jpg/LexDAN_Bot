@@ -83,13 +83,16 @@ async def open_profile(m: Message):
 
     name = user.get("name") or m.from_user.first_name or "Не указано"
     tasks_done = count_completed_tasks(user)
+    words = user.get("words_learned", 0)
+    phrases = user.get("phrases_learned", 0)
 
     await m.reply(
         "📊 Твой профиль:\n\n"
         f"📛 Имя: {name}\n"
         f"✅ Пройдено заданий: {tasks_done}\n"
         f"📈 Уровень: {user.get('level', 'A1')}\n"
-        f"📝 Слов выучено: {user.get('words_learned', 0)}\n"
+        f"📝 Слов выучено: {words}\n"
+        f"💬 Фраз выучено: {phrases}\n"
         f"💎 Подписка: бесплатно",
         reply_markup=profile_menu(),
     )

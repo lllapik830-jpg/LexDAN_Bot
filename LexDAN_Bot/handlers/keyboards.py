@@ -4,7 +4,9 @@
 
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-from data.assessment_data import LEVELS
+from data.assessment_data import LEVELS, is_level_accessible
+
+BTN_ALL_LEVELS_TASKS = "📋 Задания по всем уровням"
 
 
 def main_menu() -> ReplyKeyboardMarkup:
@@ -54,16 +56,22 @@ def lessons_home_first() -> ReplyKeyboardMarkup:
     )
 
 
-def lessons_home_levels() -> ReplyKeyboardMarkup:
+def lessons_home_levels(user_level: str | None = None, *, show_global_tasks: bool = False) -> ReplyKeyboardMarkup:
+    if user_level:
+        visible = [lv for lv in LEVELS if is_level_accessible(user_level, lv)]
+    else:
+        visible = list(LEVELS)
     rows = []
     row = []
-    for i, lv in enumerate(LEVELS):
+    for lv in visible:
         row.append(KeyboardButton(text=lv))
         if len(row) == 4:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
+    if show_global_tasks:
+        rows.append([KeyboardButton(text=BTN_ALL_LEVELS_TASKS)])
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 

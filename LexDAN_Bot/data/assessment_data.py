@@ -341,6 +341,21 @@ def lower_level(level: str) -> str:
     return LEVELS[max(0, i - 1)]
 
 
+def max_accessible_level(user_level: str) -> str:
+    """
+    Доступны все уровни до user_level включительно + следующий.
+    C1 и C2 — все уровни открыты.
+    """
+    if user_level in {"C1", "C2"}:
+        return "C2"
+    idx = level_index(user_level)
+    return LEVELS[min(idx + 1, len(LEVELS) - 1)]
+
+
+def is_level_accessible(user_level: str, selected: str) -> bool:
+    return level_index(selected) <= level_index(max_accessible_level(user_level))
+
+
 def raise_level(level: str) -> str:
     i = level_index(level)
     return LEVELS[min(len(LEVELS) - 1, i + 1)]

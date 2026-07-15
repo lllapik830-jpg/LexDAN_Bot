@@ -50,6 +50,7 @@ def get_user(users: dict, user_id: str) -> dict:
             "level": "A1",
             "lessons_done": 0,
             "words_learned": 0,
+            "phrases_learned": 0,
             "last_bot_reply": None,
             "premium_until": 0,
             "assessment_done": False,
@@ -58,6 +59,7 @@ def get_user(users: dict, user_id: str) -> dict:
                 "completed_exercises": {},
                 "completed_topics": [],
             },
+            "vocabulary_progress": {"words": [], "phrases": []},
         }
     # На всякий случай дописываем новые поля старым пользователям
     defaults = {
@@ -66,6 +68,7 @@ def get_user(users: dict, user_id: str) -> dict:
         "level": "A1",
         "lessons_done": 0,
         "words_learned": 0,
+        "phrases_learned": 0,
         "premium_until": 0,
         "assessment_done": False,
         "assessment": {},
@@ -73,6 +76,7 @@ def get_user(users: dict, user_id: str) -> dict:
             "completed_exercises": {},
             "completed_topics": [],
         },
+        "vocabulary_progress": {"words": [], "phrases": []},
     }
     for key, value in defaults.items():
         users[user_id].setdefault(key, value)

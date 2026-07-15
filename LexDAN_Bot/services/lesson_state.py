@@ -15,15 +15,17 @@ SECTIONS = [
 ]
 
 EXERCISE_TYPES = [
-    (1, "Форма слова (выбор)"),
-    (2, "Правильное предложение"),
-    (3, "Пропуск в предложении"),
-    (4, "Найди ошибку"),
-    (5, "Преобразуй предложение"),
-    (6, "Собери порядок слов"),
-    (7, "Перевод на английский"),
-    (8, "Напиши свои примеры"),
+    (1, "Выбор правильного ответа"),
+    (2, "Выбор правильного ответа"),
+    (3, "Выбор правильного ответа"),
+    (4, "Напиши форму слова"),
+    (5, "Напиши форму слова"),
+    (6, "Напиши форму слова"),
+    (7, "Перевод: русский → английский"),
+    (8, "Перевод: английский → русский"),
 ]
+
+ALL_EXERCISE_NUMS = {n for n, _ in EXERCISE_TYPES}
 
 
 def _blank_lesson() -> dict:
@@ -36,6 +38,7 @@ def _blank_lesson() -> dict:
         "topic_title": None,
         "exercise_num": None,
         "exercise": None,
+        "grammar_test": None,
     }
 
 
@@ -43,8 +46,10 @@ def _blank_progress() -> dict:
     return {
         # "A0:present_simple" -> [1, 3, 5]
         "completed_exercises": {},
-        # ["A0:alphabet", ...] — темы «только ознакомился»
+        # ["A0:alphabet", ...] — темы полностью пройдены
         "completed_topics": [],
+        # {"A0": true, "A1": true} — тест по разделу Grammar сдан
+        "grammar_test_passed": {},
     }
 
 
@@ -57,6 +62,7 @@ def ensure_progress(user: dict) -> dict:
             user["grammar_progress"].setdefault(k, v if not isinstance(v, dict) else {})
         user["grammar_progress"].setdefault("completed_exercises", {})
         user["grammar_progress"].setdefault("completed_topics", [])
+        user["grammar_progress"].setdefault("grammar_test_passed", {})
     # Миграция со старого хранения внутри lesson
     old = (user.get("lesson") or {}).get("completed_exercises")
     if isinstance(old, dict) and old:
@@ -83,6 +89,71 @@ def get_done_exercises(user: dict, level: str, topic_id: str) -> list[int]:
     ensure_progress(user)
     key = progress_key(level, topic_id)
     return list(user["grammar_progress"]["completed_exercises"].get(key) or [])
+
+
+def is_topic_exercises_done(user: dict, level: str, topic_id: str) -> bool:
+    done = set(get_done_exercises(user, level, topic_id))
+    return ALL_EXERCISE_NUMS.issubset(done)
+
+
+def is_grammar_topic_done(user: dict, level: str, topic: dict) -> bool:
+    from data.grammar_curriculum import is_ack_topic
+
+    tid = topic["id"]
+    if is_ack_topic(topic):
+        return is_topic_completed(user, level, tid)
+    return is_topic_exercises_done(user, level, tid)
+
+
+def all_grammar_topics_done(user: dict, level: str) -> bool:
+    from data.grammar_curriculum import get_topics
+
+    topics = get_topics(level)
+    if not topics:
+        return False
+    return all(is_grammar_topic_done(user, level, t) for t in topics)
+
+
+def is_grammar_test_passed(user: dict, level: str) -> bool:
+    ensure_progress(user)
+    return bool((user["grammar_progress"].get("grammar_test_passed") or {}).get(level))
+
+
+def mark_grammar_test_passed(user_id: str, level: str) -> dict:
+    def mut(u):
+        ensure_progress(u)
+        passed = u["grammar_progress"].setdefault("grammar_test_passed", {})
+        passed[level] = True
+
+    return update_lesson(user_id, mut)
+
+
+def start_grammar_test(user_id: str, test_state: dict) -> dict:
+    def mut(u):
+        ensure_lesson(u)
+        u["lesson"]["hub"] = "grammar_test"
+        u["lesson"]["grammar_test"] = test_state
+        u["lesson"]["exercise"] = None
+        u["lesson"]["exercise_num"] = None
+
+    return update_lesson(user_id, mut)
+
+
+def update_grammar_test(user_id: str, test_state: dict) -> dict:
+    def mut(u):
+        ensure_lesson(u)
+        u["lesson"]["grammar_test"] = test_state
+
+    return update_lesson(user_id, mut)
+
+
+def clear_grammar_test(user_id: str) -> dict:
+    def mut(u):
+        ensure_lesson(u)
+        u["lesson"]["hub"] = "grammar_list"
+        u["lesson"]["grammar_test"] = None
+
+    return update_lesson(user_id, mut)
 
 
 def is_topic_completed(user: dict, level: str, topic_id: str) -> bool:
@@ -141,6 +212,7 @@ def set_grammar_list(user_id: str, level: str | None = None) -> dict:
         u["lesson"]["topic_title"] = None
         u["lesson"]["exercise"] = None
         u["lesson"]["exercise_num"] = None
+        u["lesson"]["grammar_test"] = None
 
     return update_lesson(user_id, mut)
 

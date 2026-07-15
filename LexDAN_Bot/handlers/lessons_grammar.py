@@ -15,6 +15,8 @@ from handlers.lesson_keyboards import (
     exercises_menu_kb,
     exercise_mcq_kb,
     exercise_write_kb,
+    grammar_test_kb,
+    BTN_GRAMMAR_TEST,
 )
 from handlers.keyboards import lessons_home_levels, lessons_home_first
 from data.assessment_data import LEVELS
@@ -22,6 +24,7 @@ from data.grammar_curriculum import (
     format_topics_list,
     get_topic_by_index,
     get_topic,
+    get_topics,
     is_ack_topic,
     get_grammar_section_intro,
 )
@@ -42,16 +45,26 @@ from services.lesson_state import (
     clear_active_exercise,
     clear_lesson,
     get_done_exercises,
-    is_topic_completed,
+    is_topic_exercises_done,
+    is_grammar_topic_done,
+    all_grammar_topics_done,
+    is_grammar_test_passed,
+    mark_grammar_test_passed,
+    start_grammar_test,
+    update_grammar_test,
+    clear_grammar_test,
     EXERCISE_TYPES,
 )
 from services.rico_tutor import (
     rico_topic_chat_text,
     generate_grammar_exercise,
+    generate_grammar_test,
     check_write_answer,
     rico_help_for_exercise,
     rico_explain_wrong_final,
-    translate_exercise_prompt,
+    get_exercise_sentence_translation,
+    is_word_lookup_question,
+    rico_word_lookup,
 )
 
 router = Router()
@@ -60,7 +73,6 @@ BTN_GRAMMAR = "📘 Grammar"
 BTN_ACK = "✅ Ознакомился"
 BTN_TRANSLATE = "🌍 Перевести"
 SECTION_STUBS = {
-    "📗 Vocabulary",
     "🎧 Listening",
     "📖 Reading",
     "🗣 Speaking",
@@ -84,12 +96,7 @@ def _as_bool(v) -> bool:
 
 def _completed_topic_ids(user: dict, level: str) -> set[str]:
     ensure_progress(user)
-    prefix = f"{level}:"
-    out = set()
-    for key in user["grammar_progress"].get("completed_topics") or []:
-        if str(key).startswith(prefix):
-            out.add(str(key)[len(prefix) :])
-    return out
+    return {t["id"] for t in get_topics(level) if is_grammar_topic_done(user, level, t)}
 
 
 def _topic_kb_for(level: str, topic_id: str) -> ReplyKeyboardMarkup:
@@ -106,7 +113,7 @@ def _kb_for_user(user: dict) -> ReplyKeyboardMarkup:
     if hub == "level_hub":
         return level_sections_kb()
     if hub == "grammar_list":
-        return grammar_topics_kb(level)
+        return grammar_topics_kb(level, user)
     if hub == "topic":
         return _topic_kb_for(level, lesson.get("topic_id") or "")
     if hub == "exercises":
@@ -116,9 +123,37 @@ def _kb_for_user(user: dict) -> ReplyKeyboardMarkup:
         if ex.get("kind") == "mcq" and ex.get("options"):
             return exercise_mcq_kb(ex["options"])
         return exercise_write_kb()
+    if hub == "grammar_test":
+        test = lesson.get("grammar_test") or {}
+        q = _current_test_question(test)
+        opts = q.get("options") if q and q.get("kind") == "mcq" else None
+        return grammar_test_kb(mcq_options=opts)
     if user.get("assessment_done"):
-        return lessons_home_levels()
+        return lessons_home_levels(user.get("level"))
     return lessons_home_first()
+
+
+def _current_test_question(test: dict) -> dict | None:
+    qs = test.get("questions") or []
+    idx = int(test.get("index") or 0)
+    if 0 <= idx < len(qs):
+        return qs[idx]
+    return None
+
+
+async def _show_grammar_test_question(m: Message, user: dict):
+    test = (user.get("lesson") or {}).get("grammar_test") or {}
+    q = _current_test_question(test)
+    if not q:
+        return
+    idx = int(test.get("index") or 0) + 1
+    total = len(test.get("questions") or [])
+    body = q.get("prompt") or ""
+    header = f"🎯 <b>Тест Grammar · вопрос {idx}/{total}</b>\n\n{body}"
+    if q.get("kind") == "mcq":
+        await m.reply(header + "\n\nВыбери ответ кнопкой.", reply_markup=grammar_test_kb(mcq_options=q["options"]), parse_mode="HTML")
+    else:
+        await m.reply(header + "\n\nНапиши ответ текстом.", reply_markup=grammar_test_kb(), parse_mode="HTML")
 
 
 async def open_level_hub(m: Message, level: str):
@@ -159,9 +194,42 @@ async def open_grammar(m: Message):
     await m.reply(get_grammar_section_intro(level), parse_mode="HTML")
     await m.reply(
         format_topics_list(level, _completed_topic_ids(user, level)),
-        reply_markup=grammar_topics_kb(level),
+        reply_markup=grammar_topics_kb(level, user),
         parse_mode="HTML",
     )
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_list"), F.text == BTN_GRAMMAR_TEST)
+async def start_grammar_section_test(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    level = user["lesson"].get("level") or "A1"
+    if not all_grammar_topics_done(user, level):
+        await m.reply(
+            "🦜 Сначала пройди все темы Grammar с ✅",
+            reply_markup=grammar_topics_kb(level, user),
+        )
+        return
+    if is_grammar_test_passed(user, level):
+        await m.reply(
+            "🦜 Ты уже сдал этот тест! Молодец 🏆",
+            reply_markup=grammar_topics_kb(level, user),
+        )
+        return
+
+    await m.reply("🦜 Готовлю итоговый тест по Grammar…")
+    titles = [t["title"] for t in get_topics(level)]
+    questions = generate_grammar_test(level, titles)
+    start_grammar_test(str(m.from_user.id), {"questions": questions, "index": 0, "score": 0})
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    await m.reply(
+        "🎯 <b>Итоговый тест по Grammar</b>\n\n"
+        "8 вопросов по всем темам уровня. Нужно ≥6 правильных.\n"
+        "Поехали!",
+        parse_mode="HTML",
+    )
+    await _show_grammar_test_question(m, user)
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text.in_(SECTION_STUBS))
@@ -188,7 +256,7 @@ async def back_to_levels(m: Message):
     if assessment_busy(user):
         return
     clear_lesson(str(m.from_user.id))
-    kb = lessons_home_levels() if user.get("assessment_done") else lessons_home_first()
+    kb = lessons_home_levels(user.get("level")) if user.get("assessment_done") else lessons_home_first()
     await m.reply("Выбери уровень:", reply_markup=kb)
 
 
@@ -217,7 +285,7 @@ async def choose_topic_number(m: Message):
     if not topic:
         await m.reply(
             "Нет такой темы. Выбери номер из списка.",
-            reply_markup=grammar_topics_kb(level),
+            reply_markup=grammar_topics_kb(level, user),
         )
         return
 
@@ -253,10 +321,13 @@ async def acknowledge_topic(m: Message):
     set_grammar_list(str(m.from_user.id), level)
     users = load_users()
     user = get_user(users, str(m.from_user.id))
+    extra = ""
+    if all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
+        extra = "\n\n🔓 Все темы пройдены — открой <b>🎯 Тест по Grammar</b>!"
     await m.reply(
-        f"✅ Тема «{topic['title']}» засчитана!\n\n"
+        f"✅ Тема «{topic['title']}» засчитана!{extra}\n\n"
         + format_topics_list(level, _completed_topic_ids(user, level)),
-        reply_markup=grammar_topics_kb(level),
+        reply_markup=grammar_topics_kb(level, user),
         parse_mode="HTML",
     )
 
@@ -292,10 +363,11 @@ async def open_assignments(m: Message):
         mark = "✅" if num in done else "▫️"
         lines.append(f"{mark} <b>Задание {num}</b> — {title}")
     lines.append(
-        "\n🦜 Неверный ответ → кнопка пропадает.\n"
-        "При двух оставшихся вариантах ошибка = ответ + объяснение (зачёт).\n"
-        "Помощь: 1-я = подсказка, 2-я = ответ (и зачёт).\n"
-        "Можно проходить задания снова."
+        "\n🦜 <b>8 заданий на тему:</b>\n"
+        "1–3 — выбор кнопкой · 4–6 — напиши форму слова · "
+        "7 — RU→EN · 8 — EN→RU\n"
+        "В переводах можно спросить «как переводится слово …».\n"
+        "Все 8 заданий → тема с ✅. Все темы → откроется тест по Grammar."
     )
     await m.reply("\n".join(lines), reply_markup=exercises_menu_kb(), parse_mode="HTML")
 
@@ -307,12 +379,16 @@ async def back_to_topics(m: Message):
     if assessment_busy(user):
         return
     level = (user.get("lesson") or {}).get("level") or "A1"
-    set_grammar_list(str(m.from_user.id), level)
+    hub = (user.get("lesson") or {}).get("hub")
+    if hub == "grammar_test":
+        clear_grammar_test(str(m.from_user.id))
+    else:
+        set_grammar_list(str(m.from_user.id), level)
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     await m.reply(
         format_topics_list(level, _completed_topic_ids(user, level)),
-        reply_markup=grammar_topics_kb(level),
+        reply_markup=grammar_topics_kb(level, user),
         parse_mode="HTML",
     )
 
@@ -361,11 +437,20 @@ async def abandon_exercise(m: Message):
 
 async def _finish_exercise_ok(m: Message, user_id: str, level: str, topic_id: str, num: int, text: str):
     mark_exercise_done(user_id, level, topic_id, num)
-    clear_active_exercise(user_id)
     users = load_users()
     user = get_user(users, user_id)
+    topic_title = (user.get("lesson") or {}).get("topic_title") or "тема"
+    extra = ""
+    if is_topic_exercises_done(user, level, topic_id):
+        mark_topic_done(user_id, level, topic_id)
+        extra = f"\n\n🎉 <b>Тема «{topic_title}» полностью пройдена!</b> ✅"
+        users = load_users()
+        user = get_user(users, user_id)
+        if all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
+            extra += "\n\n🔓 Все темы пройдены — открой <b>🎯 Тест по Grammar</b> в списке тем!"
+    clear_active_exercise(user_id)
     done = get_done_exercises(user, level, topic_id)
-    lines = [text, "", "📝 Прогресс:"]
+    lines = [text + extra, "", "📝 Прогресс:"]
     for n, title in EXERCISE_TYPES:
         mark = "✅" if n in done else "▫️"
         lines.append(f"{mark} Задание {n} — {title}")
@@ -390,16 +475,19 @@ async def start_assignment(m: Message):
     start_exercise(str(m.from_user.id), num, ex)
 
     if ex["kind"] == "mcq":
+        body = ex.get("prompt") or ""
         text = (
-            f"<b>Задание {num}/8</b>\n\n{ex['prompt']}\n\n"
+            f"<b>Задание {num}/8</b>\n\n{body}\n\n"
             "Выбери ответ кнопкой. Не понимаешь фразу — жми <b>🌍 Перевести</b>."
         )
         await m.reply(text, reply_markup=exercise_mcq_kb(ex["options"]), parse_mode="HTML")
     else:
-        text = (
-            f"<b>Задание {num}/8</b>\n\n{ex['prompt']}\n\n"
-            "Напиши ответ текстом. Не понятно — <b>🌍 Перевести</b> или помощь Рико."
-        )
+        body = ex.get("prompt") or ""
+        text = f"<b>Задание {num}/8</b>\n\n{body}"
+        if ex.get("subtype") in {"translate_en", "translate_ru"}:
+            text += "\n\nНе понятно слово — спроси: «как переводится …»"
+        else:
+            text += "\n\nНе понятно — <b>🌍 Перевести</b> или помощь Рико."
         await m.reply(text, reply_markup=exercise_write_kb(), parse_mode="HTML")
 
 
@@ -411,7 +499,7 @@ def _exercise_kb(ex: dict) -> ReplyKeyboardMarkup:
 
 async def _show_exercise_translation(m: Message, user: dict):
     ex = dict((user.get("lesson") or {}).get("exercise") or {})
-    ru = ex.get("prompt_ru") or translate_exercise_prompt(ex.get("prompt") or "")
+    ru = get_exercise_sentence_translation(ex)
     if not ru:
         await m.reply(
             "🦜 Не получилось перевести. Попробуй ещё раз или спроси помощь.",
@@ -419,7 +507,7 @@ async def _show_exercise_translation(m: Message, user: dict):
         )
         return
     await m.reply(
-        f"🌍 <b>Перевод задания:</b>\n\n{ru}",
+        f"🌍 <b>Перевод:</b>\n<i>{ru}</i>",
         reply_markup=_exercise_kb(ex),
         parse_mode="HTML",
     )
@@ -545,12 +633,19 @@ async def exercise_answer(m: Message):
         return
 
     # write
+    subtype = ex.get("subtype") or "write"
+    if subtype in {"translate_en", "translate_ru"} and is_word_lookup_question(m.text):
+        tip = rico_word_lookup(level, title, m.text, ex)
+        await m.reply(tip, reply_markup=exercise_write_kb(), parse_mode="HTML")
+        return
+
     result = check_write_answer(
         level,
         title,
         ex.get("prompt") or "",
         ex.get("answer") or "",
         m.text,
+        subtype=subtype,
     )
     if _as_bool(result.get("correct")):
         fb = result.get("feedback_ru") or "Отлично!"
@@ -558,6 +653,97 @@ async def exercise_answer(m: Message):
     else:
         fb = result.get("feedback_ru") or "Попробуй ещё раз."
         await m.reply(f"❌ {fb}", reply_markup=exercise_write_kb())
+
+
+async def _advance_grammar_test(m: Message, user: dict, correct: bool):
+    uid = str(m.from_user.id)
+    level = user["lesson"].get("level") or "A1"
+    test = dict(user["lesson"].get("grammar_test") or {})
+    if correct:
+        test["score"] = int(test.get("score") or 0) + 1
+    test["index"] = int(test.get("index") or 0) + 1
+    questions = test.get("questions") or []
+    if test["index"] >= len(questions):
+        score = int(test.get("score") or 0)
+        passed = score >= 6
+        clear_grammar_test(uid)
+        users = load_users()
+        user = get_user(users, uid)
+        if passed:
+            mark_grammar_test_passed(uid, level)
+            text = (
+                f"🏆 <b>Тест сдан!</b> Результат: {score}/8.\n"
+                "Grammar уровня закрыт — ты красава! 🦜"
+            )
+        else:
+            text = (
+                f"🦜 Результат: {score}/8 — нужно минимум 6.\n"
+                "Повтори слабые темы и попробуй снова!"
+            )
+        await m.reply(
+            text,
+            reply_markup=grammar_topics_kb(level, user),
+            parse_mode="HTML",
+        )
+        return
+    update_grammar_test(uid, test)
+    users = load_users()
+    user = get_user(users, uid)
+    await _show_grammar_test_question(m, user)
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_test"))
+async def grammar_test_answer(m: Message):
+    if not m.text or m.text.startswith("/"):
+        return
+    if m.text in {"⬅️ К темам", "🔙 Вернуться в меню"}:
+        return
+
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    test = dict(user["lesson"].get("grammar_test") or {})
+    q = _current_test_question(test)
+    if not q:
+        await back_to_topics(m)
+        return
+
+    level = user["lesson"].get("level") or "A1"
+    title = "Grammar test"
+
+    if q.get("kind") == "mcq":
+        options = list(q.get("options") or [])
+        if m.text not in options:
+            await m.reply("Выбери вариант кнопкой.", reply_markup=grammar_test_kb(mcq_options=options))
+            return
+        correct = m.text.strip() == (q.get("answer") or "").strip()
+        if correct:
+            await m.reply("✅ Верно!")
+        else:
+            await m.reply(f"❌ Неверно. Правильно: <b>{q.get('answer')}</b>", parse_mode="HTML")
+        await _advance_grammar_test(m, user, correct)
+        return
+
+    subtype = q.get("subtype") or "write"
+    if subtype in {"translate_en", "translate_ru"} and is_word_lookup_question(m.text):
+        tip = rico_word_lookup(level, title, m.text, q)
+        await m.reply(tip, reply_markup=grammar_test_kb(), parse_mode="HTML")
+        return
+
+    result = check_write_answer(
+        level,
+        title,
+        q.get("prompt") or "",
+        q.get("answer") or "",
+        m.text,
+        subtype=subtype,
+    )
+    correct = _as_bool(result.get("correct"))
+    if correct:
+        await m.reply(f"✅ {result.get('feedback_ru') or 'Верно!'}")
+    else:
+        fb = result.get("feedback_ru") or "Неверно."
+        await m.reply(f"❌ {fb}\nПравильно: <i>{q.get('answer')}</i>", parse_mode="HTML")
+    await _advance_grammar_test(m, user, correct)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("topic"), F.text)

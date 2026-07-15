@@ -4,10 +4,86 @@
 
 import logging
 import random
+import re
 
 import requests
 from config import OPENROUTER_API_KEY
 from services.gpt import _ask_json
+
+WORD_LOOKUP_PATTERNS = (
+    r"как\s+перевод",
+    r"как\s+будет",
+    r"что\s+значит",
+    r"перевод\s+слова",
+    r"переведи\s+слово",
+    r"what\s+does\s+.+\s+mean",
+    r"how\s+do\s+you\s+say",
+    r"how\s+to\s+translate",
+)
+
+
+def exercise_subtype(exercise_num: int) -> str:
+    if exercise_num <= 3:
+        return "mcq"
+    if exercise_num <= 6:
+        return "word_form"
+    if exercise_num == 7:
+        return "translate_en"
+    return "translate_ru"
+
+
+def is_word_lookup_question(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    return any(re.search(p, t) for p in WORD_LOOKUP_PATTERNS)
+
+
+def rico_word_lookup(level: str, topic_title: str, question: str, exercise: dict) -> str:
+    """Подсказка по слову во время переводного задания — задание не завершается."""
+    fallback = "🦜 Напиши слово, которое непонятно — переведу!"
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-3.5-turbo",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Ты Рико 🦜. Ученик в переводном задании спрашивает про слово. "
+                            "Дай короткий перевод/объяснение слова на русском. "
+                            "Если спрашивают EN→RU или RU→EN — покажи оба варианта. "
+                            "В конце одной строкой: «Задание продолжается — напиши перевод предложения». "
+                            "HTML: <b> для слова. Без JSON."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Уровень {level}, тема {topic_title}.\n"
+                            f"Задание: {exercise.get('prompt') or ''}\n"
+                            f"Вопрос ученика: {question}"
+                        ),
+                    },
+                ],
+                "max_tokens": 220,
+                "temperature": 0.3,
+            },
+            timeout=25,
+        )
+        response.raise_for_status()
+        text = response.json()["choices"][0]["message"]["content"].strip()
+        if not text.startswith("🦜"):
+            text = f"🦜 {text}"
+        return text
+    except Exception as e:
+        logging.error(f"Rico word lookup error: {e}")
+        return fallback
 
 
 def rico_topic_chat_text(level: str, topic_title: str, question: str, user_name: str = "друг") -> str:
@@ -65,67 +141,108 @@ def generate_grammar_exercise(
     exercise_num: int,
 ) -> dict:
     """
-    Возвращает:
-    {
-      kind: mcq|write,
-      prompt: str,
-      options: [4 strings] | null,
-      answer: str,
-      tip: str,
-      help_count: 0
-    }
+    1–3: MCQ (кнопки)
+    4–6: написать форму слова (базовая форма в скобках у пропуска)
+    7: RU → EN перевод
+    8: EN → RU перевод
     """
-    kind = "mcq" if exercise_num in {1, 2, 3, 4, 6} else "write"
-    labels = {
+    subtype = exercise_subtype(exercise_num)
+    kind = "mcq" if subtype == "mcq" else "write"
+
+    mcq_labels = {
         1: "Choose the correct word form for the blank. One sentence with ____ .",
-        2: "Choose the grammatically correct sentence.",
-        3: "Fill the blank: choose the best option.",
-        4: "Which sentence has NO grammar mistake?",
-        5: "Rewrite the sentence using the target grammar. Student will type the answer.",
-        6: "Choose the option with the correct word order.",
-        7: "Translate the Russian sentence into English using the topic grammar.",
-        8: "Write 2 short English sentences using the topic grammar.",
+        2: "Choose the grammatically correct sentence (4 full sentences as options).",
+        3: "Fill the blank: choose the best option among 4 word forms.",
+    }
+    word_form_labels = {
+        4: "Student types ONLY the correct word form. Show blank with base form in parentheses.",
+        5: "Same word-form task, slightly harder vocabulary.",
+        6: "Same word-form task, hardest of the three for this level.",
     }
 
-    beginner = level in {"A0", "A1"}
-    fallback_options = ["am", "is", "are", "be"]
+    fallback_options = ["visited", "visit", "visits", "visiting"]
     fallback = {
         "kind": "mcq",
-        "prompt": (
-            f"({level} · {topic_title})\n"
-            "Выбери правильную форму:\n"
-            "I ____ a student.\n"
-            "<i>Я ____ студент.</i>"
-        ),
-        "prompt_ru": "Выбери правильную форму глагола to be.\nЯ ____ студент.",
+        "subtype": "mcq",
+        "instruction_ru": "Выбери правильный ответ.",
+        "sentence_en": "I ____ my friend yesterday.",
+        "sentence_ru": "Я навещал друга вчера.",
         "options": fallback_options,
-        "answer": "am",
-        "tip": "После I обычно am.",
+        "answer": "visited",
+        "tip": "Yesterday → Past Simple.",
     }
-    if kind == "write":
-        write_prompts = {
-            5: "Перепиши предложение по теме урока (смотри задание ниже).",
-            7: "Переведи на английский, используй тему урока:\nЯ живу в городе.",
-            8: "Напиши 1–2 коротких предложения по теме урока (можно очень простые).",
-        }
+
+    if subtype == "word_form":
         fallback = {
             "kind": "write",
-            "prompt": f"({level} · {topic_title})\n{write_prompts.get(exercise_num, write_prompts[8])}",
-            "prompt_ru": write_prompts.get(exercise_num, write_prompts[8]),
+            "subtype": "word_form",
+            "instruction_ru": "Напиши правильную форму слова в пропуске (только форму, одно слово).",
+            "sentence_en": "I ____ (visit) my friend yesterday.",
+            "sentence_ru": "Я навещал друга вчера.",
+            "base_form": "visit",
             "options": None,
-            "answer": "I live in a city.",
-            "tip": "Пиши коротко и по теме.",
+            "answer": "visited",
+            "tip": "Yesterday → Past Simple, нужна V2.",
+        }
+    elif subtype == "translate_en":
+        fallback = {
+            "kind": "write",
+            "subtype": "translate_en",
+            "instruction_ru": "Переведи предложение на английский:",
+            "sentence_en": "",
+            "sentence_ru": "Я живу в большом городе.",
+            "options": None,
+            "answer": "I live in a big city.",
+            "tip": "Present Simple для фактов и привычек.",
+        }
+    elif subtype == "translate_ru":
+        fallback = {
+            "kind": "write",
+            "subtype": "translate_ru",
+            "instruction_ru": "Переведи предложение на русский:",
+            "sentence_en": "She works in a hospital.",
+            "sentence_ru": "Она работает в больнице.",
+            "options": None,
+            "answer": "Она работает в больнице.",
+            "tip": "Переводи смысл, не дословно каждое слово.",
         }
 
-    a0_hint = ""
-    if beginner:
-        a0_hint = (
-            " IMPORTANT FOR A0/A1: Write task instructions as a short friendly story in Russian "
-            "(Rico tutor voice). Keep English ONLY for the target sentence and answer options. "
-            "Under each English sentence add Russian gloss in HTML <i>...</i>. "
-            "Include prompt_ru: full Russian explanation of what to do AND translation of English parts. "
-            "Use very simple vocabulary."
+    if subtype == "mcq":
+        task_desc = mcq_labels[exercise_num]
+        json_hint = (
+            'For MCQ: {"kind":"mcq","subtype":"mcq","instruction_ru":"...","sentence_en":"I ____ ...",'
+            '"sentence_ru":"перевод правильного предложения","options":["a","b","c","d"],'
+            '"answer":"exact option","tip":"..."}'
         )
+    elif subtype == "word_form":
+        task_desc = word_form_labels[exercise_num]
+        json_hint = (
+            'For WORD FORM: {"kind":"write","subtype":"word_form","instruction_ru":"Напиши форму слова",'
+            '"sentence_en":"I ____ (visit) my friend yesterday.","base_form":"visit",'
+            '"sentence_ru":"перевод полного предложения","answer":"visited","tip":"..."} '
+            "sentence_en MUST contain ____ and (base_form) next to blank. answer = ONLY the word form."
+        )
+    elif subtype == "translate_en":
+        task_desc = "Russian sentence → student writes English translation."
+        json_hint = (
+            'For TRANSLATE EN: {"kind":"write","subtype":"translate_en",'
+            '"instruction_ru":"Переведи на английский:","sentence_ru":"русское предложение",'
+            '"sentence_en":"","answer":"correct English sentence","tip":"..."}'
+        )
+    else:
+        task_desc = "English sentence → student writes Russian translation."
+        json_hint = (
+            'For TRANSLATE RU: {"kind":"write","subtype":"translate_ru",'
+            '"instruction_ru":"Переведи на русский:","sentence_en":"English sentence",'
+            '"sentence_ru":"правильный русский перевод","answer":"same Russian translation","tip":"..."}'
+        )
+
+    level_hint = (
+        " instruction_ru = short Russian instruction. "
+        "sentence_ru = Russian meaning for Перевести button (NOT the instruction). "
+    )
+    if level in {"A0", "A1", "A2"}:
+        level_hint += " Simple Russian for A0-A2."
 
     data = _ask_json(
         [
@@ -134,15 +251,9 @@ def generate_grammar_exercise(
                 "content": (
                     "Create ONE English grammar exercise for Telegram. "
                     f"CEFR level: {level}. Topic: {topic_title}. "
-                    f"Task style #{exercise_num}: {labels.get(exercise_num, '')} "
-                    f'Output kind MUST be "{kind}". '
-                    "Difficulty must match the level (not too easy/hard). "
-                    f"{a0_hint} "
-                    "Return ONLY JSON. "
-                    'For MCQ: {"kind":"mcq","prompt":"...","prompt_ru":"полный перевод задания и англ. предложения на русском",'
-                    '"options":["a","b","c","d"],"answer":"exact option text","tip":"short Russian tip"} '
-                    'For WRITE: {"kind":"write","prompt":"...","prompt_ru":"что нужно сделать + перевод фраз на русском",'
-                    '"options":null,"answer":"model answer","tip":"short Russian tip"}'
+                    f"Task #{exercise_num}: {task_desc} "
+                    f'Output kind MUST be "{kind}". {level_hint} '
+                    "Return ONLY JSON. " + json_hint
                 ),
             },
             {
@@ -152,14 +263,20 @@ def generate_grammar_exercise(
         ],
         fallback,
         temperature=0.7,
-        max_tokens=350,
+        max_tokens=450,
     )
 
-    prompt = (data.get("prompt") or fallback["prompt"]).strip()
-    prompt_ru = (data.get("prompt_ru") or fallback.get("prompt_ru") or "").strip()
+    instruction_ru = (data.get("instruction_ru") or fallback.get("instruction_ru") or "").strip()
+    sentence_en = (data.get("sentence_en") or fallback.get("sentence_en") or "").strip()
+    sentence_ru = (data.get("sentence_ru") or fallback.get("sentence_ru") or "").strip()
     tip = (data.get("tip") or fallback["tip"]).strip()
     answer = (data.get("answer") or fallback["answer"]).strip()
+    base_form = (data.get("base_form") or fallback.get("base_form") or "").strip()
     options = data.get("options")
+    ex_subtype = (data.get("subtype") or fallback.get("subtype") or subtype).strip()
+    if subtype == "word_form" and base_form and "____" in sentence_en and f"({base_form})" not in sentence_en:
+        sentence_en = sentence_en.replace("____", f"____ ({base_form})", 1)
+    prompt = _build_exercise_display(instruction_ru, sentence_en, sentence_ru, ex_subtype)
 
     if kind == "mcq":
         if not isinstance(options, list) or len(options) < 4:
@@ -171,29 +288,99 @@ def generate_grammar_exercise(
                 answer = lower_map[answer.lower()]
             else:
                 answer = options[0]
-        if not prompt_ru:
-            prompt_ru = translate_exercise_prompt(prompt) or "Перевод временно недоступен."
+        if not sentence_ru:
+            sentence_ru = translate_exercise_sentence(sentence_en, answer) or ""
         return {
             "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": instruction_ru,
+            "sentence_en": sentence_en,
+            "sentence_ru": sentence_ru,
             "prompt": prompt,
-            "prompt_ru": prompt_ru,
             "options": options,
             "answer": answer,
             "tip": tip,
             "help_count": 0,
         }
 
-    if not prompt_ru:
-        prompt_ru = translate_exercise_prompt(prompt) or "Перевод временно недоступен."
+    if not sentence_ru and ex_subtype == "translate_ru":
+        sentence_ru = answer
+    if not sentence_ru:
+        sentence_ru = translate_exercise_sentence(sentence_en, answer, model_answer=answer) or ""
+
     return {
         "kind": "write",
+        "subtype": ex_subtype,
+        "instruction_ru": instruction_ru,
+        "sentence_en": sentence_en,
+        "sentence_ru": sentence_ru,
+        "base_form": base_form,
         "prompt": prompt,
-        "prompt_ru": prompt_ru,
         "options": None,
         "answer": answer,
         "tip": tip,
         "help_count": 0,
     }
+
+
+def _build_exercise_display(
+    instruction_ru: str,
+    sentence_en: str,
+    sentence_ru: str = "",
+    subtype: str = "mcq",
+) -> str:
+    parts = []
+    if instruction_ru:
+        parts.append(instruction_ru)
+    if subtype == "translate_en" and sentence_ru:
+        parts.append(sentence_ru)
+    elif subtype == "translate_ru" and sentence_en:
+        parts.append(sentence_en)
+    elif sentence_en:
+        parts.append(sentence_en)
+    if subtype == "word_form":
+        parts.append("✍️ Напиши в чат <b>только форму слова</b>.")
+    elif subtype in {"translate_en", "translate_ru"}:
+        parts.append(
+            "💬 Можешь спросить: «как переводится слово …» — подскажу, задание продолжится."
+        )
+    return "\n\n".join(parts)
+
+
+def _fill_blank(sentence_en: str, answer: str) -> str:
+    for blank in ("____", "___", "__"):
+        if blank in sentence_en:
+            return sentence_en.replace(blank, answer, 1)
+    return sentence_en
+
+
+def translate_exercise_sentence(
+    sentence_en: str,
+    answer: str,
+    model_answer: str = "",
+) -> str | None:
+    """Перевод смысла английского предложения для кнопки «Перевести»."""
+    from services.translation import translate_to_russian
+
+    if model_answer and not sentence_en:
+        return translate_to_russian(model_answer)
+    if not sentence_en:
+        return None
+    if answer and " " in answer.strip() and "____" not in sentence_en:
+        return translate_to_russian(answer)
+    filled = _fill_blank(sentence_en, answer)
+    return translate_to_russian(filled)
+
+
+def get_exercise_sentence_translation(exercise: dict) -> str | None:
+    ru = (exercise.get("sentence_ru") or "").strip()
+    if ru:
+        return ru
+    return translate_exercise_sentence(
+        exercise.get("sentence_en") or "",
+        exercise.get("answer") or "",
+        model_answer=exercise.get("answer") or "",
+    )
 
 
 def translate_exercise_prompt(prompt: str) -> str | None:
@@ -213,28 +400,48 @@ def translate_exercise_prompt(prompt: str) -> str | None:
     return ru
 
 
+def _normalize_text(s: str) -> str:
+    return " ".join((s or "").strip().lower().split())
+
+
+def check_word_form_answer(model_answer: str, user_answer: str) -> bool:
+    return _normalize_text(model_answer) == _normalize_text(user_answer)
+
+
 def check_write_answer(
     level: str,
     topic_title: str,
     prompt: str,
     model_answer: str,
     user_answer: str,
+    subtype: str = "write",
 ) -> dict:
+    if subtype == "word_form" and check_word_form_answer(model_answer, user_answer):
+        return {"correct": True, "feedback_ru": "Верно!"}
+
+    task_hint = ""
+    if subtype == "translate_en":
+        task_hint = "Student must translate Russian to English using topic grammar."
+    elif subtype == "translate_ru":
+        task_hint = "Student must translate English to Russian. Accept close natural Russian."
+
     data = _ask_json(
         [
             {
                 "role": "system",
                 "content": (
-                    "Check student's English answer for a grammar exercise. "
-                    "Be fair: meaning + target grammar matter more than style. "
+                    "Check student's answer for a grammar exercise. "
+                    "Be fair: meaning + target grammar matter more than punctuation. "
+                    "For word_form accept only if the word form matches (ignore case). "
                     "For A0/A1 accept very simple answers if grammar target is ok. "
+                    f"{task_hint} "
                     'Return ONLY JSON: {"correct":bool,"feedback_ru":"short friendly Russian"}'
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"Level {level}. Topic {topic_title}.\n"
+                    f"Level {level}. Topic {topic_title}. Subtype {subtype}.\n"
                     f"Task: {prompt}\nModel: {model_answer}\nStudent: {user_answer}"
                 ),
             },
@@ -243,6 +450,19 @@ def check_write_answer(
         temperature=0.0,
     )
     return data
+
+
+def generate_grammar_test(level: str, topic_titles: list[str]) -> list[dict]:
+    """8 вопросов для итогового теста по Grammar уровня."""
+    questions = []
+    titles = topic_titles or ["Grammar"]
+    for i in range(8):
+        title = titles[i % len(titles)]
+        num = (i % 3) + 1 if i < 6 else (7 if i == 6 else 8)
+        ex = generate_grammar_exercise(level, title, num)
+        ex["q_num"] = i + 1
+        questions.append(ex)
+    return questions
 
 
 def rico_help_for_exercise(
