@@ -218,8 +218,10 @@ async def start_grammar_section_test(m: Message):
         return
 
     await m.reply("🦜 Готовлю итоговый тест по Grammar…")
-    titles = [t["title"] for t in get_topics(level)]
-    questions = generate_grammar_test(level, titles)
+    topics = get_topics(level)
+    titles = [t["title"] for t in topics]
+    ids = [t["id"] for t in topics]
+    questions = generate_grammar_test(level, titles, topic_ids=ids)
     start_grammar_test(str(m.from_user.id), {"questions": questions, "index": 0, "score": 0})
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -478,7 +480,7 @@ async def start_assignment(m: Message):
         return
 
     await m.reply("🦜 Рико готовит задание…")
-    ex = generate_grammar_exercise(level, title, num)
+    ex = generate_grammar_exercise(level, title, num, topic_id=topic_id)
     start_exercise(str(m.from_user.id), num, ex)
 
     if ex["kind"] == "mcq":

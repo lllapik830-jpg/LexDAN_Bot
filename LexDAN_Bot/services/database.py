@@ -97,6 +97,7 @@ def get_user(users: dict, user_id: str) -> dict:
         "trial_started_at": 0,
         "growth_onboarded": False,
         "referral_bonus_granted": False,
+        "streak_rewards_claimed": [],
     }
     for key, value in defaults.items():
         users[user_id].setdefault(key, value)

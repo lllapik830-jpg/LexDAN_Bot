@@ -139,110 +139,125 @@ def generate_grammar_exercise(
     level: str,
     topic_title: str,
     exercise_num: int,
+    topic_id: str | None = None,
 ) -> dict:
     """
     1–3: MCQ (кнопки)
     4–6: написать форму слова (базовая форма в скобках у пропуска)
     7: RU → EN перевод
     8: EN → RU перевод
+
+    Обязательно про тему topic_id / topic_title (не чужая грамматика).
     """
+    from data.grammar_exercise_fallbacks import (
+        focus_for,
+        get_topic_fallback,
+        looks_on_topic,
+    )
+
     subtype = exercise_subtype(exercise_num)
     kind = "mcq" if subtype == "mcq" else "write"
+    focus = focus_for(topic_id, topic_title)
 
     mcq_labels = {
-        1: "Choose the correct word form for the blank. One sentence with ____ .",
+        1: "Choose the correct option for the blank. One sentence with ____ .",
         2: "Choose the grammatically correct sentence (4 full sentences as options).",
-        3: "Fill the blank: choose the best option among 4 word forms.",
+        3: "Fill the blank: choose the best option among 4 choices.",
     }
     word_form_labels = {
-        4: "Student types ONLY the correct word form. Show blank with base form in parentheses.",
-        5: "Same word-form task, slightly harder vocabulary.",
-        6: "Same word-form task, hardest of the three for this level.",
+        4: "Student types ONLY the correct word/form. Show blank with base form in parentheses.",
+        5: "Same word-form task, slightly harder, STILL on the same grammar topic.",
+        6: "Same word-form task, hardest of three, STILL on the same grammar topic.",
     }
 
-    fallback_options = ["visited", "visit", "visits", "visiting"]
-    fallback = {
-        "kind": "mcq",
-        "subtype": "mcq",
-        "instruction_ru": "Выбери правильный ответ.",
-        "sentence_en": "I ____ my friend yesterday.",
-        "sentence_ru": "Я навещал друга вчера.",
-        "options": fallback_options,
-        "answer": "visited",
-        "tip": "Yesterday → Past Simple.",
-    }
-
-    if subtype == "word_form":
+    # Дефолтный fallback — из банка темы, иначе нейтральный под название темы
+    topic_fb = get_topic_fallback(topic_id, exercise_num)
+    if topic_fb:
+        fallback = topic_fb
+        fallback_options = list(fallback.get("options") or ["is", "are", "am", "be"])
+    else:
+        fallback_options = ["is", "are", "am", "be"]
         fallback = {
-            "kind": "write",
-            "subtype": "word_form",
-            "instruction_ru": "Напиши правильную форму слова в пропуске (только форму, одно слово).",
-            "sentence_en": "I ____ (visit) my friend yesterday.",
-            "sentence_ru": "Я навещал друга вчера.",
-            "base_form": "visit",
-            "options": None,
-            "answer": "visited",
-            "tip": "Yesterday → Past Simple, нужна V2.",
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери правильный ответ по теме.",
+            "sentence_en": f"Choose the form for «{topic_title}».",
+            "sentence_ru": f"Задание по теме «{topic_title}».",
+            "options": fallback_options,
+            "answer": "is",
+            "tip": f"Вспомни правило темы «{topic_title}».",
         }
-    elif subtype == "translate_en":
-        fallback = {
-            "kind": "write",
-            "subtype": "translate_en",
-            "instruction_ru": "Переведи предложение на английский:",
-            "sentence_en": "",
-            "sentence_ru": "Я живу в большом городе.",
-            "options": None,
-            "answer": "I live in a big city.",
-            "tip": "Present Simple для фактов и привычек.",
-        }
-    elif subtype == "translate_ru":
-        fallback = {
-            "kind": "write",
-            "subtype": "translate_ru",
-            "instruction_ru": "Переведи предложение на русский:",
-            "sentence_en": "She works in a hospital.",
-            "sentence_ru": "Она работает в больнице.",
-            "options": None,
-            "answer": "Она работает в больнице.",
-            "tip": "Переводи смысл, не дословно каждое слово.",
-        }
+        if subtype == "word_form":
+            fallback = {
+                "kind": "write",
+                "subtype": "word_form",
+                "instruction_ru": "Напиши правильную форму (одно слово).",
+                "sentence_en": f"Practice «{topic_title}»: fill ____ (be).",
+                "sentence_ru": f"Тренируем тему «{topic_title}».",
+                "base_form": "be",
+                "options": None,
+                "answer": "is",
+                "tip": f"Тема: {topic_title}.",
+            }
+        elif subtype == "translate_en":
+            fallback = {
+                "kind": "write",
+                "subtype": "translate_en",
+                "instruction_ru": f"Переведи на английский (тема «{topic_title}»):",
+                "sentence_en": "",
+                "sentence_ru": f"Пример по теме «{topic_title}».",
+                "options": None,
+                "answer": f"Example about {topic_title}.",
+                "tip": f"Используй грамматику темы «{topic_title}».",
+            }
+        elif subtype == "translate_ru":
+            fallback = {
+                "kind": "write",
+                "subtype": "translate_ru",
+                "instruction_ru": "Переведи на русский:",
+                "sentence_en": f"This sentence practices {topic_title}.",
+                "sentence_ru": f"Это предложение тренирует тему «{topic_title}».",
+                "options": None,
+                "answer": f"Это предложение тренирует тему «{topic_title}».",
+                "tip": "Переводи смысл.",
+            }
 
     if subtype == "mcq":
         task_desc = mcq_labels[exercise_num]
         json_hint = (
-            'For MCQ: {"kind":"mcq","subtype":"mcq","instruction_ru":"...","sentence_en":"I ____ ...",'
+            'For MCQ: {"kind":"mcq","subtype":"mcq","instruction_ru":"...","sentence_en":"... ____ ...",'
             '"sentence_ru":"перевод правильного предложения","options":["a","b","c","d"],'
             '"answer":"exact option","tip":"..."}'
         )
     elif subtype == "word_form":
         task_desc = word_form_labels[exercise_num]
         json_hint = (
-            'For WORD FORM: {"kind":"write","subtype":"word_form","instruction_ru":"Напиши форму слова",'
-            '"sentence_en":"I ____ (visit) my friend yesterday.","base_form":"visit",'
-            '"sentence_ru":"перевод полного предложения","answer":"visited","tip":"..."} '
-            "sentence_en MUST contain ____ and (base_form) next to blank. answer = ONLY the word form."
+            'For WORD FORM: {"kind":"write","subtype":"word_form","instruction_ru":"Напиши форму",'
+            '"sentence_en":"... ____ (base) ...","base_form":"base",'
+            '"sentence_ru":"...","answer":"only-the-form","tip":"..."} '
+            "sentence_en MUST contain ____ and (base_form). answer = ONLY the form."
         )
     elif subtype == "translate_en":
-        task_desc = "Russian sentence → student writes English translation."
+        task_desc = "Russian → English. English answer MUST use the topic grammar."
         json_hint = (
             'For TRANSLATE EN: {"kind":"write","subtype":"translate_en",'
-            '"instruction_ru":"Переведи на английский:","sentence_ru":"русское предложение",'
-            '"sentence_en":"","answer":"correct English sentence","tip":"..."}'
+            '"instruction_ru":"Переведи на английский:","sentence_ru":"...",'
+            '"sentence_en":"","answer":"correct English with TOPIC grammar","tip":"..."}'
         )
     else:
-        task_desc = "English sentence → student writes Russian translation."
+        task_desc = "English → Russian. English sentence MUST use the topic grammar."
         json_hint = (
             'For TRANSLATE RU: {"kind":"write","subtype":"translate_ru",'
-            '"instruction_ru":"Переведи на русский:","sentence_en":"English sentence",'
-            '"sentence_ru":"правильный русский перевод","answer":"same Russian translation","tip":"..."}'
+            '"instruction_ru":"Переведи на русский:","sentence_en":"English with TOPIC grammar",'
+            '"sentence_ru":"...","answer":"Russian translation","tip":"..."}'
         )
 
     level_hint = (
         " instruction_ru = short Russian instruction. "
-        "sentence_ru = Russian meaning for Перевести button (NOT the instruction). "
+        "sentence_ru = meaning of the correct English sentence for the Translate button. "
     )
     if level in {"A0", "A1", "A2"}:
-        level_hint += " Simple Russian for A0-A2."
+        level_hint += " Very simple vocabulary for A0-A2."
 
     data = _ask_json(
         [
@@ -250,21 +265,34 @@ def generate_grammar_exercise(
                 "role": "system",
                 "content": (
                     "Create ONE English grammar exercise for Telegram. "
-                    f"CEFR level: {level}. Topic: {topic_title}. "
-                    f"Task #{exercise_num}: {task_desc} "
+                    f"CEFR: {level}. Topic title: {topic_title}. Topic id: {topic_id or 'n/a'}. "
+                    f"CRITICAL FOCUS: {focus} "
+                    f"Task #{exercise_num}/8: {task_desc} "
                     f'Output kind MUST be "{kind}". {level_hint} '
+                    "If you make an off-topic exercise (wrong tense/construction), it is INVALID. "
                     "Return ONLY JSON. " + json_hint
                 ),
             },
             {
                 "role": "user",
-                "content": f"Make exercise {exercise_num}/8. Seed {random.random()}",
+                "content": (
+                    f"Make ON-TOPIC exercise {exercise_num}/8 for «{topic_title}». "
+                    f"Seed {random.random()}"
+                ),
             },
         ],
         fallback,
-        temperature=0.7,
+        temperature=0.35,
         max_tokens=450,
     )
+
+    # Если ИИ уехал не в ту тему — берём запасной шаблон темы
+    trial_en = (data.get("sentence_en") or "") + " " + (data.get("answer") or "")
+    if topic_id and not looks_on_topic(
+        topic_id, trial_en, data.get("options"), str(data.get("answer") or "")
+    ):
+        logging.warning(f"Off-topic exercise for {topic_id}, using fallback #{exercise_num}")
+        data = dict(fallback)
 
     instruction_ru = (data.get("instruction_ru") or fallback.get("instruction_ru") or "").strip()
     sentence_en = (data.get("sentence_en") or fallback.get("sentence_en") or "").strip()
@@ -280,7 +308,7 @@ def generate_grammar_exercise(
 
     if kind == "mcq":
         if not isinstance(options, list) or len(options) < 4:
-            options = list(fallback_options)
+            options = list(fallback.get("options") or ["is", "are", "am", "be"])
         options = [str(x) for x in options[:4]]
         if answer not in options:
             lower_map = {o.lower(): o for o in options}
@@ -452,14 +480,16 @@ def check_write_answer(
     return data
 
 
-def generate_grammar_test(level: str, topic_titles: list[str]) -> list[dict]:
+def generate_grammar_test(level: str, topic_titles: list[str], topic_ids: list[str] | None = None) -> list[dict]:
     """8 вопросов для итогового теста по Grammar уровня."""
     questions = []
     titles = topic_titles or ["Grammar"]
+    ids = topic_ids or [None] * len(titles)
     for i in range(8):
         title = titles[i % len(titles)]
+        tid = ids[i % len(ids)] if ids else None
         num = (i % 3) + 1 if i < 6 else (7 if i == 6 else 8)
-        ex = generate_grammar_exercise(level, title, num)
+        ex = generate_grammar_exercise(level, title, num, topic_id=tid)
         ex["q_num"] = i + 1
         questions.append(ex)
     return questions

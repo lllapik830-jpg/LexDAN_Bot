@@ -1,0 +1,426 @@
+"""
+Тема-ориентированные запасные задания Grammar (если ИИ ошибся / API упал).
+Ключ = topic_id из curriculum.
+"""
+
+FALLBACKS: dict[str, list[dict]] = {
+    "there_is_are": [
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери правильную форму.",
+            "sentence_en": "____ a cat on the sofa.",
+            "sentence_ru": "На диване есть кот.",
+            "options": ["There is", "There are", "It is", "There"],
+            "answer": "There is",
+            "tip": "Ед. число → There is.",
+        },
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери правильное предложение.",
+            "sentence_en": "Which sentence is correct?",
+            "sentence_ru": "В комнате две книги.",
+            "options": [
+                "There are two books in the room.",
+                "There is two books in the room.",
+                "It are two books in the room.",
+                "There two books in the room.",
+            ],
+            "answer": "There are two books in the room.",
+            "tip": "Мн. число → There are.",
+        },
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери верный вариант.",
+            "sentence_en": "____ any milk in the fridge?",
+            "sentence_ru": "Есть молоко в холодильнике?",
+            "options": ["Is there", "Are there", "There is", "There are"],
+            "answer": "Is there",
+            "tip": "Вопрос + неисчисляемое → Is there…?",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши is или are.",
+            "sentence_en": "There ____ (be) three chairs here.",
+            "sentence_ru": "Здесь три стула.",
+            "base_form": "be",
+            "answer": "are",
+            "tip": "three chairs = мн. число → are.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши is или are.",
+            "sentence_en": "There ____ (be) a park near my house.",
+            "sentence_ru": "Рядом с домом есть парк.",
+            "base_form": "be",
+            "answer": "is",
+            "tip": "a park = ед. число → is.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши isn't или aren't.",
+            "sentence_en": "There ____ (not be) any apples.",
+            "sentence_ru": "Яблок нет.",
+            "base_form": "not be",
+            "answer": "aren't",
+            "tip": "apples = мн. → aren't.",
+        },
+        {
+            "kind": "write",
+            "subtype": "translate_en",
+            "instruction_ru": "Переведи на английский (There is / There are):",
+            "sentence_ru": "В сумке есть телефон.",
+            "sentence_en": "",
+            "answer": "There is a phone in the bag.",
+            "tip": "телефон = один → There is.",
+        },
+        {
+            "kind": "write",
+            "subtype": "translate_ru",
+            "instruction_ru": "Переведи на русский:",
+            "sentence_en": "There are five students in the class.",
+            "sentence_ru": "В классе пять студентов.",
+            "answer": "В классе пять студентов.",
+            "tip": "There are = есть (много).",
+        },
+    ],
+    "pronouns_be": [
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери форму to be.",
+            "sentence_en": "I ____ a student.",
+            "sentence_ru": "Я студент.",
+            "options": ["am", "is", "are", "be"],
+            "answer": "am",
+            "tip": "I → am.",
+        },
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери правильное предложение.",
+            "sentence_en": "Which is correct?",
+            "sentence_ru": "Она учитель.",
+            "options": [
+                "She is a teacher.",
+                "She am a teacher.",
+                "She are a teacher.",
+                "She be a teacher.",
+            ],
+            "answer": "She is a teacher.",
+            "tip": "She/he/it → is.",
+        },
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери форму.",
+            "sentence_en": "They ____ my friends.",
+            "sentence_ru": "Они мои друзья.",
+            "options": ["are", "is", "am", "be"],
+            "answer": "are",
+            "tip": "They/we/you → are.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши am/is/are.",
+            "sentence_en": "He ____ (be) happy.",
+            "sentence_ru": "Он счастлив.",
+            "base_form": "be",
+            "answer": "is",
+            "tip": "He → is.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши am/is/are.",
+            "sentence_en": "We ____ (be) from Russia.",
+            "sentence_ru": "Мы из России.",
+            "base_form": "be",
+            "answer": "are",
+            "tip": "We → are.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши aren't или isn't.",
+            "sentence_en": "It ____ (not be) cold.",
+            "sentence_ru": "Не холодно.",
+            "base_form": "not be",
+            "answer": "isn't",
+            "tip": "It → isn't.",
+        },
+        {
+            "kind": "write",
+            "subtype": "translate_en",
+            "instruction_ru": "Переведи (am/is/are):",
+            "sentence_ru": "Ты мой друг.",
+            "sentence_en": "",
+            "answer": "You are my friend.",
+            "tip": "You → are.",
+        },
+        {
+            "kind": "write",
+            "subtype": "translate_ru",
+            "instruction_ru": "Переведи на русский:",
+            "sentence_en": "I am hungry.",
+            "sentence_ru": "Я голодный.",
+            "answer": "Я голодный.",
+            "tip": "I am = я есть/я …",
+        },
+    ],
+    "can_ability": [
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери правильный вариант.",
+            "sentence_en": "I ____ swim.",
+            "sentence_ru": "Я умею плавать.",
+            "options": ["can", "cans", "can to", "am can"],
+            "answer": "can",
+            "tip": "can + глагол без to.",
+        },
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери правильное предложение.",
+            "sentence_en": "Which is correct?",
+            "sentence_ru": "Она не умеет водить.",
+            "options": [
+                "She can't drive.",
+                "She can't to drive.",
+                "She can not drives.",
+                "She don't can drive.",
+            ],
+            "answer": "She can't drive.",
+            "tip": "can't + V1 без to и без -s.",
+        },
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери вопрос.",
+            "sentence_en": "____ you help me?",
+            "sentence_ru": "Ты можешь мне помочь?",
+            "options": ["Can", "Do can", "Are", "Is"],
+            "answer": "Can",
+            "tip": "Can + subject + V1?",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши can или can't.",
+            "sentence_en": "Birds ____ (can) fly.",
+            "sentence_ru": "Птицы умеют летать.",
+            "base_form": "can",
+            "answer": "can",
+            "tip": "умеют = can.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши can или can't.",
+            "sentence_en": "I ____ (can) speak Chinese. I don't know it.",
+            "sentence_ru": "Я не умею говорить по-китайски.",
+            "base_form": "can",
+            "answer": "can't",
+            "tip": "не умею = can't.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Вставь глагол без to после can.",
+            "sentence_en": "She can ____ (dance) well.",
+            "sentence_ru": "Она хорошо умеет танцевать.",
+            "base_form": "dance",
+            "answer": "dance",
+            "tip": "после can — первая форма без to.",
+        },
+        {
+            "kind": "write",
+            "subtype": "translate_en",
+            "instruction_ru": "Переведи (can):",
+            "sentence_ru": "Я могу открыть дверь.",
+            "sentence_en": "",
+            "answer": "I can open the door.",
+            "tip": "can + open.",
+        },
+        {
+            "kind": "write",
+            "subtype": "translate_ru",
+            "instruction_ru": "Переведи:",
+            "sentence_en": "Can you cook?",
+            "sentence_ru": "Ты умеешь готовить?",
+            "answer": "Ты умеешь готовить?",
+            "tip": "Can you…? = умеешь/можешь…?",
+        },
+    ],
+    "plurals": [
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери мн. число.",
+            "sentence_en": "one book → two ____",
+            "sentence_ru": "одна книга → две книги",
+            "options": ["books", "bookes", "book", "bookies"],
+            "answer": "books",
+            "tip": "обычно +s.",
+        },
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери правильное.",
+            "sentence_en": "Which is correct?",
+            "sentence_ru": "две коробки",
+            "options": ["two boxes", "two boxs", "two box", "two boxies"],
+            "answer": "two boxes",
+            "tip": "-x → +es.",
+        },
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери форму.",
+            "sentence_en": "one child → two ____",
+            "sentence_ru": "один ребёнок → двое детей",
+            "options": ["children", "childs", "childes", "child"],
+            "answer": "children",
+            "tip": "исключение: child → children.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши мн. число.",
+            "sentence_en": "I see two ____ (cat).",
+            "sentence_ru": "Я вижу двух кошек.",
+            "base_form": "cat",
+            "answer": "cats",
+            "tip": "+s.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши мн. число.",
+            "sentence_en": "There are many ____ (city) here.",
+            "sentence_ru": "Здесь много городов.",
+            "base_form": "city",
+            "answer": "cities",
+            "tip": "согласная + y → ies.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши мн. число.",
+            "sentence_en": "two ____ (man)",
+            "sentence_ru": "два мужчины",
+            "base_form": "man",
+            "answer": "men",
+            "tip": "man → men.",
+        },
+        {
+            "kind": "write",
+            "subtype": "translate_en",
+            "instruction_ru": "Переведи:",
+            "sentence_ru": "У меня три яблока.",
+            "sentence_en": "",
+            "answer": "I have three apples.",
+            "tip": "apple → apples.",
+        },
+        {
+            "kind": "write",
+            "subtype": "translate_ru",
+            "instruction_ru": "Переведи:",
+            "sentence_en": "These are my books.",
+            "sentence_ru": "Это мои книги.",
+            "answer": "Это мои книги.",
+            "tip": "books = книги.",
+        },
+    ],
+}
+
+
+TOPIC_FOCUS: dict[str, str] = {
+    "there_is_are": (
+        "ONLY practice There is / There are / Is there / Are there / There isn't / There aren't. "
+        "Every item MUST use this construction. NEVER Past Simple visit/visited drills."
+    ),
+    "pronouns_be": "ONLY I/you/he + am/is/are. Present of to be. Not was/were.",
+    "to_be": "ONLY am/is/are (Present of to be). Not was/were.",
+    "to_be_past": "ONLY was/were.",
+    "this_that": "ONLY this/that/these/those.",
+    "present_simple": "ONLY Present Simple (habits/facts). Not continuous/past.",
+    "present_continuous": "ONLY am/is/are + V-ing.",
+    "past_simple": "ONLY Past Simple (V2 / was/were) with past time markers.",
+    "past_continuous": "ONLY was/were + V-ing.",
+    "plurals": "ONLY singular↔plural noun forms.",
+    "articles_a_an": "ONLY a/an choice.",
+    "can_ability": "ONLY can/can't + verb without to.",
+    "have_got": "ONLY have got / has got.",
+    "much_many_some_any": "ONLY much/many/some/any.",
+    "comparatives": "ONLY comparative/superlative adjectives.",
+    "modals_a2": "ONLY must/have to/should/mustn't.",
+    "conditionals_0_1": "ONLY zero/first conditional.",
+    "passive_basic": "ONLY passive (be + V3).",
+    "present_perfect": "ONLY Present Perfect (have/has + V3).",
+    "going_to_future": "ONLY be going to + V1.",
+    "future_will_going_to": "ONLY will or going to.",
+}
+
+
+def focus_for(topic_id: str | None, topic_title: str) -> str:
+    if topic_id and topic_id in TOPIC_FOCUS:
+        return TOPIC_FOCUS[topic_id]
+    return (
+        f"Train ONLY the grammar of topic «{topic_title}». "
+        "Do not switch to unrelated tenses."
+    )
+
+
+def get_topic_fallback(topic_id: str | None, exercise_num: int) -> dict | None:
+    if not topic_id:
+        return None
+    bank = FALLBACKS.get(topic_id)
+    if not bank:
+        return None
+    idx = max(0, min(exercise_num - 1, len(bank) - 1))
+    return dict(bank[idx])
+
+
+def looks_on_topic(
+    topic_id: str | None, sentence_en: str, options: list | None, answer: str
+) -> bool:
+    if not topic_id:
+        return True
+    blob = " ".join(
+        [
+            (sentence_en or "").lower(),
+            (answer or "").lower(),
+            " ".join(str(o).lower() for o in (options or [])),
+        ]
+    )
+    checks = {
+        "there_is_are": (
+            "there is",
+            "there are",
+            "is there",
+            "are there",
+            "there isn't",
+            "there aren't",
+            "there's",
+        ),
+        "present_continuous": (" am ", " is ", " are ", "ing"),
+        "can_ability": ("can ", "can't", "cannot"),
+        "past_simple": (" yesterday", " ago", " last ", "ed ", " went", " did "),
+        "pronouns_be": (" am ", " is ", " are ", "i'm", "she's", "he's", "you're"),
+        "to_be": (" am ", " is ", " are ", "i'm", "she's", "he's"),
+        "plurals": ("books", "cats", "children", "men", "boxes", "cities"),
+        "articles_a_an": (" a ", " an "),
+        "present_simple": (" every ", " usually ", "s ", "es ", " don't ", " doesn't "),
+    }
+    needles = checks.get(topic_id)
+    if not needles:
+        return True
+    return any(n in f" {blob} " or n in blob for n in needles)
