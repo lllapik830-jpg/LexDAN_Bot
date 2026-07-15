@@ -38,7 +38,11 @@ def ensure_growth(user: dict) -> dict:
     user.setdefault("premium_until", user.get("premium_until") or 0)
     user.setdefault("growth_onboarded", False)
     user.setdefault("referral_bonus_granted", False)
-    user.setdefault("streak_rewards_claimed", [])
+    user.setdefault("streak_safes", 0)
+    user.setdefault("streak_safe_milestones_claimed", [])
+    user.setdefault("streak_pending_restore", 0)
+    user.setdefault("streak_burned", False)
+    user.setdefault("streak_burn_date", "")
     if not isinstance(user.get("daily"), dict):
         user["daily"] = {}
     daily = user["daily"]
@@ -50,6 +54,16 @@ def ensure_growth(user: dict) -> dict:
             "phrases_today": 0,
             "goal_done": False,
         }
+    # Окно восстановления — только в день возврата
+    if (
+        user.get("streak_burned")
+        and user.get("streak_burn_date")
+        and user.get("streak_burn_date") != _today()
+    ):
+        user["streak_burned"] = False
+        user["streak_pending_restore"] = 0
+        user["streak_burn_date"] = ""
+    detect_streak_break(user)
     return user
 
 
@@ -104,6 +118,9 @@ def start_trial(user: dict, days: int = TRIAL_DAYS) -> None:
         user["premium_until"] = target
     if not user.get("trial_started_at"):
         user["trial_started_at"] = now
+        # Стартовый сейф «на дорожку» (один раз с триалом)
+        if int(user.get("streak_safes") or 0) < 1:
+            user["streak_safes"] = 1
 
 
 def extend_premium(user: dict, days: int) -> None:
@@ -113,53 +130,139 @@ def extend_premium(user: dict, days: int) -> None:
     user["premium_until"] = base + days * 86400
 
 
-STREAK_REWARDS = {
-    3: 1,   # +1 день доступа
-    7: 2,
-    10: 3,
-    20: 5,
-    30: 7,
-    50: 10,
-    100: 14,
+STREAK_SAFE_MILESTONES = {
+    7: 1,
+    14: 1,
+    30: 1,
+    50: 1,
+    100: 1,
 }
+
+BTN_RESTORE_STREAK = "🛡️ Восстановить серию"
+
+
+def detect_streak_break(user: dict) -> bool:
+    """Пропуск дня → серия сгорает; значение можно вернуть сейфом."""
+    today = _today()
+    last = user.get("streak_last_date") or ""
+    streak = int(user.get("streak") or 0)
+    if streak <= 0 or not last:
+        return False
+    yesterday = (datetime.now(MSK).date() - timedelta(days=1)).isoformat()
+    if last in {today, yesterday}:
+        return False
+    if user.get("streak_burned") and int(user.get("streak_pending_restore") or 0) > 0:
+        return False
+    user["streak_pending_restore"] = streak
+    user["streak_burned"] = True
+    user["streak_burn_date"] = _today()
+    user["streak"] = 0
+    return True
+
+
+def can_restore_streak(user: dict) -> bool:
+    ensure_growth(user)
+    return (
+        bool(user.get("streak_burned"))
+        and int(user.get("streak_pending_restore") or 0) > 0
+        and int(user.get("streak_safes") or 0) > 0
+    )
+
+
+def restore_streak(user: dict) -> tuple[bool, str]:
+    ensure_growth(user)
+    if not can_restore_streak(user):
+        if int(user.get("streak_pending_restore") or 0) <= 0:
+            return False, "🦜 Сейчас нечего восстанавливать — серия не сгорала."
+        if int(user.get("streak_safes") or 0) <= 0:
+            return False, (
+                "🦜 Сейфов нет 😢\n"
+                "Их дают за серию: 7 / 14 / 30 / 50 / 100 дней подряд."
+            )
+        return False, "🦜 Восстановить серию сейчас нельзя."
+
+    restored = int(user["streak_pending_restore"])
+    user["streak_safes"] = int(user["streak_safes"]) - 1
+    user["streak"] = restored
+    user["streak_last_date"] = _today()
+    user["streak_pending_restore"] = 0
+    user["streak_burned"] = False
+    user["streak_burn_date"] = ""
+    left = int(user["streak_safes"])
+    return True, (
+        f"🛡️ <b>Серия восстановлена!</b>\n\n"
+        f"Снова <b>{restored}</b> дн. подряд 🔥\n"
+        f"Сейфов осталось: <b>{left}</b>"
+    )
+
+
+def grant_safe(user: dict, n: int = 1) -> None:
+    ensure_growth(user)
+    user["streak_safes"] = int(user.get("streak_safes") or 0) + max(0, n)
 
 
 def touch_streak(user: dict) -> dict:
     ensure_growth(user)
-    user.setdefault("streak_rewards_claimed", [])
     today = _today()
     last = user.get("streak_last_date") or ""
     info = {
         "streak": int(user.get("streak") or 0),
         "streak_up": False,
         "new_day": False,
-        "reward_days": 0,
-        "reward_streak": 0,
         "reward_msg": "",
+        "burned": False,
+        "pending_restore": int(user.get("streak_pending_restore") or 0),
     }
+
     if last == today:
+        info["streak"] = int(user.get("streak") or 0)
         return info
+
     yesterday = (datetime.now(MSK).date() - timedelta(days=1)).isoformat()
+
+    # Сгоревшая серия: начинаем с 1, кнопка restore ещё доступна
+    if user.get("streak_burned") and int(user.get("streak_pending_restore") or 0) > 0:
+        user["streak"] = 1
+        user["streak_last_date"] = today
+        info["new_day"] = True
+        info["burned"] = True
+        info["streak"] = 1
+        info["pending_restore"] = int(user.get("streak_pending_restore") or 0)
+        if can_restore_streak(user):
+            info["reward_msg"] = (
+                f"⚠️ Серия сгорела (было {info['pending_restore']} дн.).\n"
+                f"В профиле жми <b>{BTN_RESTORE_STREAK}</b> — сейфов: "
+                f"{int(user.get('streak_safes') or 0)}"
+            )
+        else:
+            info["reward_msg"] = (
+                f"⚠️ Серия сгорела (было {info['pending_restore']} дн.). "
+                "Сейфов нет — копи новую 💪"
+            )
+        return info
+
     if last == yesterday:
         user["streak"] = int(user.get("streak") or 0) + 1
         info["streak_up"] = True
+        user["streak_burned"] = False
+        user["streak_pending_restore"] = 0
     else:
         user["streak"] = 1
         info["new_day"] = True
-    user["streak_last_date"] = today
-    info["streak"] = user["streak"]
 
-    claimed = list(user.get("streak_rewards_claimed") or [])
+    user["streak_last_date"] = today
+    info["streak"] = int(user["streak"])
+
+    claimed = list(user.get("streak_safe_milestones_claimed") or [])
     st = int(user["streak"])
-    if st in STREAK_REWARDS and st not in claimed:
-        days = STREAK_REWARDS[st]
+    if st in STREAK_SAFE_MILESTONES and st not in claimed:
+        n = STREAK_SAFE_MILESTONES[st]
         claimed.append(st)
-        user["streak_rewards_claimed"] = claimed
-        extend_premium(user, days)
-        info["reward_days"] = days
-        info["reward_streak"] = st
+        user["streak_safe_milestones_claimed"] = claimed
+        grant_safe(user, n)
         info["reward_msg"] = (
-            f"🏆 Бонус за серию <b>{st}</b> дн.! +<b>{days}</b> дн. полного доступа 🦜"
+            f"🛡️ Бонус серии <b>{st}</b> дн.! +<b>{n}</b> стрик-сейф "
+            f"(всего: {int(user['streak_safes'])})"
         )
     return info
 
@@ -324,17 +427,26 @@ def profile_growth_lines(user: dict, bot_username: str = "") -> str:
     daily = user["daily"]
     goal = "✅ выполнена" if daily.get("goal_done") else "⏳ выучи слово/фразу или 3 сообщ. в чате"
     prem = premium_time_label(user)
-    next_bonus = ""
-    claimed = set(user.get("streak_rewards_claimed") or [])
-    for st in sorted(STREAK_REWARDS):
+    safes = int(user.get("streak_safes") or 0)
+    pending = int(user.get("streak_pending_restore") or 0)
+    streak_line = f"🔥 Серия дней: <b>{int(user.get('streak') or 0)}</b>"
+    if pending > 0 and user.get("streak_burned"):
+        streak_line += f" (сгорела с {pending} — можно восстановить)"
+    next_safe = ""
+    claimed = set(user.get("streak_safe_milestones_claimed") or [])
+    for st in sorted(STREAK_SAFE_MILESTONES):
         if st not in claimed and st > int(user.get("streak") or 0):
-            next_bonus = f"\n🎁 След. бонус серии: <b>{st}</b> дн. → +{STREAK_REWARDS[st]} дн. доступа"
+            next_safe = f"\n🎁 След. сейф за серию: <b>{st}</b> дн."
             break
+    restore_hint = ""
+    if can_restore_streak(user):
+        restore_hint = f"\n👉 Жми кнопку <b>{BTN_RESTORE_STREAK}</b> ниже"
     return (
-        f"🔥 Серия дней: <b>{int(user.get('streak') or 0)}</b>{next_bonus}\n"
+        f"{streak_line}\n"
+        f"🛡️ Стрик-сейфы: <b>{safes}</b>{next_safe}{restore_hint}\n"
         f"🎯 Цель дня: {goal}\n"
         f"💎 Доступ: {prem}\n"
-        f"   (счётчик реален: время идёт само, дни убавляются)\n"
+        f"   (время доступа реальное — дни убавляются сами)\n"
         f"🎁 Друзей приглашено: {int(user.get('invite_count') or 0)}\n"
-        f"🔗 Ссылка для друга (приглашение в бота):\n<code>{link}</code>"
+        f"🔗 Ссылка для друга:\n<code>{link}</code>"
     )

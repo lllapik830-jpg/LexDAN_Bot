@@ -120,7 +120,7 @@ async def open_profile(m: Message):
         f"💬 Фраз выучено: {phrases}\n"
         f"💎 Подписка: {sub}\n\n"
         f"{growth}",
-        reply_markup=profile_menu(),
+        reply_markup=profile_menu(user),
         parse_mode="HTML",
     )
 

@@ -40,15 +40,17 @@ def back_to_menu() -> ReplyKeyboardMarkup:
     )
 
 
-def profile_menu() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="💎 Подписка")],
-            [KeyboardButton(text="🎁 Пригласить друга")],
-            [KeyboardButton(text="🔙 Вернуться в меню")],
-        ],
-        resize_keyboard=True,
-    )
+def profile_menu(user: dict | None = None) -> ReplyKeyboardMarkup:
+    from services.growth import BTN_RESTORE_STREAK, can_restore_streak
+
+    rows = [
+        [KeyboardButton(text="💎 Подписка")],
+        [KeyboardButton(text="🎁 Пригласить друга")],
+    ]
+    if user is not None and can_restore_streak(user):
+        rows.append([KeyboardButton(text=BTN_RESTORE_STREAK)])
+    rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def lessons_home_first() -> ReplyKeyboardMarkup:
