@@ -82,6 +82,41 @@ async def start_cmd(m: Message):
     )
 
 
+@router.message(Command("danil_test_messi"))
+async def danil_test_messi(m: Message):
+    """Секретная команда: разблокировать все уровни и разделы для проверки."""
+    from handlers.keyboards import lessons_home_levels
+    from services.database import MODE_LESSONS, set_mode
+    from services.lesson_state import clear_lesson
+
+    user_id = str(m.from_user.id)
+    users = load_users()
+    user = get_user(users, user_id)
+
+    user["dev_unlock"] = True
+    user["assessment_done"] = True
+    user["level"] = "C2"
+    user["step"] = "ready"
+    user["assessment"] = {}
+    user["mode"] = MODE_LESSONS
+    save_users(users)
+    clear_lesson(user_id)
+    set_mode(user_id, MODE_LESSONS)
+
+    users = load_users()
+    user = get_user(users, user_id)
+    await m.reply(
+        "🔓 <b>DEV-режим включён</b>\n\n"
+        "• тест уровня пропущен\n"
+        "• уровень профиля: <b>C2</b>\n"
+        "• открыты <b>все уровни A0–C2</b>\n"
+        "• Grammar / Vocabulary и задания по всем уровням доступны\n\n"
+        "Выбери уровень ниже и тестируй ⚽",
+        reply_markup=lessons_home_levels(user=user, show_global_tasks=True),
+        parse_mode="HTML",
+    )
+
+
 @router.message(StepFilter("awaiting_name"), F.text)
 async def save_name(m: Message):
     name = (m.text or "").strip()

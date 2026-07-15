@@ -118,11 +118,11 @@ RICO_AFTER_LEVEL = {
 
 def lessons_keyboard_for(user: dict):
     ensure_user_fields(user)
-    if user.get("assessment_done"):
+    if user.get("assessment_done") or user.get("dev_unlock"):
         from services.vocabulary_state import ensure_vocab_progress
         ensure_vocab_progress(user)
         has_learned = bool(user.get("vocabulary_progress", {}).get("words") or user.get("vocabulary_progress", {}).get("phrases"))
-        return lessons_home_levels(user.get("level"), show_global_tasks=has_learned)
+        return lessons_home_levels(user.get("level"), show_global_tasks=has_learned or user.get("dev_unlock"), user=user)
     return lessons_home_first()
 
 
@@ -133,9 +133,10 @@ async def send_lessons_home(m: Message, intro: str | None = None):
     ensure_user_fields(user)
 
     if intro is None:
-        if user.get("assessment_done"):
+        if user.get("assessment_done") or user.get("dev_unlock"):
+            unlock = " 🔓 DEV" if user.get("dev_unlock") else ""
             intro = (
-                f"📚 Уроки\n\n"
+                f"📚 Уроки{unlock}\n\n"
                 f"Твой уровень: {user.get('level', 'A1')}.\n"
                 f"Выбери уровень ниже."
             )
@@ -356,20 +357,20 @@ async def choose_level(m: Message):
     if user["assessment"].get("phase"):
         return
 
-    if not user.get("assessment_done"):
+    if not user.get("assessment_done") and not user.get("dev_unlock"):
         await m.reply("Сначала пройди проверку уровня.", reply_markup=lessons_home_first())
         return
 
     selected = m.text
     user_level = user.get("level") or "A1"
-    if not is_level_accessible(user_level, selected):
+    if not user.get("dev_unlock") and not is_level_accessible(user_level, selected):
         ceiling = max_accessible_level(user_level)
         await m.reply(
             f"🦜 <b>Рико:</b> Твой уровень по тесту — <b>{user_level}</b>.\n"
             f"Сейчас тебе доступны уровни до <b>{ceiling}</b> включительно.\n"
             f"Уровень <b>{selected}</b> пока закрыт 🔒\n\n"
             f"Сначала освой <b>{ceiling}</b> — и откроется следующий! 💪",
-            reply_markup=lessons_home_levels(user_level),
+            reply_markup=lessons_home_levels(user_level, user=user),
             parse_mode="HTML",
         )
         return

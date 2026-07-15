@@ -342,8 +342,9 @@ async def vocab_open_phrases(m: Message):
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("vocab_topic", "vocab_word_practice"), F.text)
 async def vocab_word_button(m: Message):
     text = _strip_mark(m.text or "")
-    if text in {BTN_LEARN_PHRASES, "⬅️ К темам", "🔙 Вернуться в меню", "⬅️ К словам"}:
-        return
+    # Не перехватывать навигацию — её обрабатывают отдельные хендлеры ниже.
+    if text in {BTN_LEARN_PHRASES, "⬅️ К темам", "🔙 Вернуться в меню", "⬅️ К словам", "⬅️ К теме (слова)"}:
+        raise SkipHandler
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     lesson = user["lesson"]
@@ -371,8 +372,8 @@ async def vocab_word_button(m: Message):
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("vocab_word_practice"), F.text)
 async def vocab_word_practice(m: Message):
     text = (m.text or "").strip()
-    if text in {"⬅️ К словам", "🔙 Вернуться в меню", BTN_LEARN_PHRASES}:
-        return
+    if text in {"⬅️ К словам", "🔙 Вернуться в меню", BTN_LEARN_PHRASES, "⬅️ К темам", "⬅️ К теме (слова)"}:
+        raise SkipHandler
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     lesson = user["lesson"]
@@ -428,12 +429,8 @@ async def vocab_phrase_flow(m: Message):
     text = _strip_mark(m.text or "")
     nav = {BTN_LEARN_PHRASES, "⬅️ К темам", "⬅️ К теме (слова)", "🔙 Вернуться в меню", "⬅️ К словам"}
     if text in nav or (m.text or "").startswith("⬅️"):
-        if text == "⬅️ К теме (слова)" or text == "⬅️ К словам":
-            users = load_users()
-            user = get_user(users, str(m.from_user.id))
-            set_vocab_hub(str(m.from_user.id), "vocab_topic")
-            await _send_word_story(m, user)
-        return
+        # Навигацию отдают dedicated-хендлерам (К темам / К словам / меню).
+        raise SkipHandler
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -502,7 +499,7 @@ async def vocab_phrase_flow(m: Message):
 async def global_tasks_menu(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
-    if not user.get("assessment_done"):
+    if not user.get("assessment_done") and not user.get("dev_unlock"):
         await m.reply("Сначала пройди тест уровня.")
         return
     set_vocab_hub(str(m.from_user.id), "global_drill_menu")
@@ -593,6 +590,59 @@ async def drill_answer(m: Message):
     await _send_drill_question(m, user)
 
 
+@router.message(ModeFilter(MODE_LESSONS), F.text.in_({"⬅️ К словам", "⬅️ К теме (слова)"}))
+async def vocab_back_to_words(m: Message):
+    """Вернуться к списку слов текущей темы (из практики или фраз)."""
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    hub = (user.get("lesson") or {}).get("hub") or ""
+    if not hub.startswith("vocab"):
+        raise SkipHandler
+    lesson = user.get("lesson") or {}
+    level = lesson.get("level") or "A1"
+    topic_id = lesson.get("vocab_topic_id")
+    if not topic_id:
+        raise SkipHandler
+
+    was_phrases = lesson.get("vocab_mode") == "phrases"
+    batch = list(lesson.get("vocab_batch") or [])
+    batch_are_words = bool(batch) and all(get_word_entry(level, topic_id, w) for w in batch)
+    text_en = lesson.get("vocab_text_en") or ""
+    text_ru = lesson.get("vocab_text_ru") or ""
+
+    update_vocab_lesson(
+        str(m.from_user.id),
+        hub="vocab_topic",
+        vocab_active_item=None,
+        vocab_practice_step=0,
+        vocab_mode="words",
+    )
+
+    if was_phrases or not batch_are_words:
+        users = load_users()
+        user = get_user(users, str(m.from_user.id))
+        await _send_word_story(m, user)
+        return
+
+    batch = [w for w in batch if not is_word_learned(user, level, topic_id, w)] or batch
+    update_vocab_lesson(str(m.from_user.id), vocab_batch=batch)
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    topic = get_vocab_topic(level, topic_id) or {"title": lesson.get("vocab_topic_title") or "Vocabulary"}
+    prog = topic_progress_line(user, level, topic_id)
+    if text_en:
+        body = (
+            f"📗 <b>{topic['title']}</b>\n"
+            f"{prog}\n\n"
+            f"{text_en}\n\n"
+            f"<i>{text_ru}</i>\n\n"
+            "Выбери слово 👇"
+        )
+    else:
+        body = f"📗 <b>{topic['title']}</b>\n{prog}\n\nВыбери слово 👇"
+    await m.reply(body, reply_markup=vocab_topic_kb(level, topic_id, user, batch), parse_mode="HTML")
+
+
 @router.message(ModeFilter(MODE_LESSONS), F.text == "⬅️ К темам")
 async def vocab_back_to_topics(m: Message):
     users = load_users()
@@ -608,8 +658,11 @@ async def vocab_back_to_topics(m: Message):
 
     def prog(lv, tid):
         wt = words_total(lv, tid)
+        pt = phrases_total(lv, tid)
         wl, _, _ = topic_words_progress(user, lv, tid, wt)
-        return wl, wt, False
+        pl, _, _ = topic_phrases_progress(user, lv, tid, pt)
+        done = (wt > 0 and wl >= wt) and (pt == 0 or pl >= pt)
+        return wl, wt, done
 
     await m.reply(
         format_vocab_topics_list(level, prog),

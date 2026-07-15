@@ -128,8 +128,8 @@ def _kb_for_user(user: dict) -> ReplyKeyboardMarkup:
         q = _current_test_question(test)
         opts = q.get("options") if q and q.get("kind") == "mcq" else None
         return grammar_test_kb(mcq_options=opts)
-    if user.get("assessment_done"):
-        return lessons_home_levels(user.get("level"))
+    if user.get("assessment_done") or user.get("dev_unlock"):
+        return lessons_home_levels(user.get("level"), user=user)
     return lessons_home_first()
 
 
@@ -256,7 +256,11 @@ async def back_to_levels(m: Message):
     if assessment_busy(user):
         return
     clear_lesson(str(m.from_user.id))
-    kb = lessons_home_levels(user.get("level")) if user.get("assessment_done") else lessons_home_first()
+    kb = (
+        lessons_home_levels(user.get("level"), user=user)
+        if (user.get("assessment_done") or user.get("dev_unlock"))
+        else lessons_home_first()
+    )
     await m.reply("Выбери уровень:", reply_markup=kb)
 
 
@@ -378,8 +382,11 @@ async def back_to_topics(m: Message):
     user = get_user(users, str(m.from_user.id))
     if assessment_busy(user):
         return
+    hub = (user.get("lesson") or {}).get("hub") or ""
+    # Vocabulary ловит эту же кнопку своим хендлером раньше; если сюда дошли — не для vocab.
+    if hub.startswith("vocab") or hub in {"global_drill_menu", "vocab_drill"}:
+        raise SkipHandler
     level = (user.get("lesson") or {}).get("level") or "A1"
-    hub = (user.get("lesson") or {}).get("hub")
     if hub == "grammar_test":
         clear_grammar_test(str(m.from_user.id))
     else:

@@ -9,6 +9,10 @@ from data.assessment_data import LEVELS, is_level_accessible
 BTN_ALL_LEVELS_TASKS = "📋 Задания по всем уровням"
 
 
+def is_dev_unlocked(user: dict | None) -> bool:
+    return bool(user and user.get("dev_unlock"))
+
+
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -56,8 +60,15 @@ def lessons_home_first() -> ReplyKeyboardMarkup:
     )
 
 
-def lessons_home_levels(user_level: str | None = None, *, show_global_tasks: bool = False) -> ReplyKeyboardMarkup:
-    if user_level:
+def lessons_home_levels(
+    user_level: str | None = None,
+    *,
+    show_global_tasks: bool = False,
+    user: dict | None = None,
+) -> ReplyKeyboardMarkup:
+    if is_dev_unlocked(user):
+        visible = list(LEVELS)
+    elif user_level:
         visible = [lv for lv in LEVELS if is_level_accessible(user_level, lv)]
     else:
         visible = list(LEVELS)

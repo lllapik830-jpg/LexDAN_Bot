@@ -54,6 +54,7 @@ def get_user(users: dict, user_id: str) -> dict:
             "last_bot_reply": None,
             "premium_until": 0,
             "assessment_done": False,
+            "dev_unlock": False,
             "assessment": {},
             "grammar_progress": {
                 "completed_exercises": {},
@@ -71,6 +72,7 @@ def get_user(users: dict, user_id: str) -> dict:
         "phrases_learned": 0,
         "premium_until": 0,
         "assessment_done": False,
+        "dev_unlock": False,
         "assessment": {},
         "grammar_progress": {
             "completed_exercises": {},
