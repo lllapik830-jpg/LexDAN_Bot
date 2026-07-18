@@ -118,7 +118,12 @@ async def _send_word_story(m: Message, user: dict, *, count_toward_limit: bool =
     level = user["lesson"]["level"]
     topic_id = user["lesson"]["vocab_topic_id"]
     topic = get_vocab_topic(level, topic_id)
-    batch = _pick_unlearned_words(user, level, topic_id, 5)
+    remaining = 5
+    from services.growth import vocab_items_remaining, is_paid, ensure_growth
+    ensure_growth(user)
+    if not is_paid(user):
+        remaining = min(5, max(1, vocab_items_remaining(user)))
+    batch = _pick_unlearned_words(user, level, topic_id, remaining)
     if not batch:
         users = load_users()
         user = get_user(users, str(m.from_user.id))
@@ -190,7 +195,12 @@ async def _send_phrase_story(m: Message, user: dict, *, count_toward_limit: bool
     level = user["lesson"]["level"]
     topic_id = user["lesson"]["vocab_topic_id"]
     topic = get_vocab_topic(level, topic_id)
-    batch = _pick_unlearned_phrases(user, level, topic_id, 2)
+    remaining = 2
+    from services.growth import vocab_items_remaining, is_paid, ensure_growth
+    ensure_growth(user)
+    if not is_paid(user):
+        remaining = min(2, max(1, vocab_items_remaining(user)))
+    batch = _pick_unlearned_phrases(user, level, topic_id, remaining)
     if not batch:
         pt = phrases_total(level, topic_id)
         pl, _, pd = topic_phrases_progress(user, level, topic_id, pt)
@@ -493,6 +503,17 @@ async def vocab_word_button(m: Message):
     if is_word_learned(user, level, topic_id, word["en"]):
         await m.reply("Это слово уже изучено ✅", reply_markup=vocab_topic_kb(level, topic_id, user, lesson.get("vocab_batch") or []))
         return
+
+    from services.growth import can_learn_vocab_item, ensure_growth
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
+
+    ensure_growth(user)
+    ok, tip = can_learn_vocab_item(user)
+    if not ok:
+        save_users(users)
+        await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+        return
+
     update_vocab_lesson(
         str(m.from_user.id),
         hub="vocab_word_practice",
@@ -598,7 +619,13 @@ async def vocab_word_practice(m: Message):
         return
 
     finish_word_practice(str(m.from_user.id), level, topic_id, word["en"])
-    from services.growth import note_word_learned, ensure_growth
+    from services.growth import (
+        note_word_learned,
+        ensure_growth,
+        can_learn_vocab_item,
+        is_paid,
+    )
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -610,7 +637,6 @@ async def vocab_word_practice(m: Message):
     user = get_user(users, str(m.from_user.id))
     wl, wt, _, _, _ = _topic_progress(user, level, topic_id)
     batch = list((user.get("lesson") or {}).get("vocab_batch") or [])
-    # убрать уже изученные на всякий случай
     batch = [w for w in batch if not is_word_learned(user, level, topic_id, w)]
 
     await m.reply(
@@ -618,6 +644,13 @@ async def vocab_word_practice(m: Message):
         f"Прогресс по теме: <b>{wl}/{wt}</b>\n{wrap}",
         parse_mode="HTML",
     )
+
+    ok_more, _ = can_learn_vocab_item(user)
+    if not is_paid(user) and not ok_more:
+        await m.reply("👇", reply_markup=lesson_limit_inline_kb())
+        set_vocab_hub(str(m.from_user.id), "vocab_list", level=level)
+        return
+
     if batch:
         update_vocab_lesson(str(m.from_user.id), vocab_batch=batch, hub="vocab_topic")
         story_en = (user.get("lesson") or {}).get("vocab_text_en") or ""
@@ -663,6 +696,16 @@ async def vocab_phrase_flow(m: Message):
                 break
 
     if hub == "vocab_phrases" and phrase:
+        from services.growth import can_learn_vocab_item, ensure_growth
+        from handlers.lesson_keyboards import lesson_limit_inline_kb
+
+        ensure_growth(user)
+        ok, tip = can_learn_vocab_item(user)
+        if not ok:
+            save_users(users)
+            await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+            return
+
         update_vocab_lesson(
             str(m.from_user.id),
             hub="vocab_phrase_practice",
@@ -714,7 +757,13 @@ async def vocab_phrase_flow(m: Message):
         return
 
     finish_phrase_practice(str(m.from_user.id), level, topic_id, phrase["en"])
-    from services.growth import note_phrase_learned, ensure_growth
+    from services.growth import (
+        note_phrase_learned,
+        ensure_growth,
+        can_learn_vocab_item,
+        is_paid,
+    )
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -733,6 +782,13 @@ async def vocab_phrase_flow(m: Message):
         f"✅ Фраза изучена! Прогресс: <b>{pl}/{pt}</b>\n{wrap}",
         parse_mode="HTML",
     )
+
+    ok_more, _ = can_learn_vocab_item(user)
+    if not is_paid(user) and not ok_more:
+        await m.reply("👇", reply_markup=lesson_limit_inline_kb())
+        set_vocab_hub(str(m.from_user.id), "vocab_list", level=level)
+        return
+
     if batch:
         update_vocab_lesson(str(m.from_user.id), vocab_batch=batch, hub="vocab_phrases")
         await m.reply(

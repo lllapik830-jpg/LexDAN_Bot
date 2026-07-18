@@ -294,8 +294,32 @@ def generate_grammar_exercise(
         logging.warning(f"Off-topic exercise for {topic_id}, using fallback #{exercise_num}")
         data = dict(fallback)
 
+    # Мета-задания вроде «Choose the form for «Topic»» — брак
+    sen_low = (data.get("sentence_en") or "").lower()
+    if (
+        "choose the form for" in sen_low
+        or "practice «" in sen_low
+        or "practices " + (topic_title or "").lower() in sen_low
+        or sen_low.strip() in {"", "____"}
+    ):
+        logging.warning(f"Meta/empty exercise for {topic_id}, using fallback #{exercise_num}")
+        data = dict(fallback)
+
     instruction_ru = (data.get("instruction_ru") or fallback.get("instruction_ru") or "").strip()
+    # Не оставляем пустую/мета-инструкцию
+    if instruction_ru.lower() in {"выбери правильный ответ по теме.", "выбери правильный ответ по теме"}:
+        instruction_ru = (fallback.get("instruction_ru") or instruction_ru).strip()
     sentence_en = (data.get("sentence_en") or fallback.get("sentence_en") or "").strip()
+    if "choose the form for" in sentence_en.lower():
+        sentence_en = (fallback.get("sentence_en") or "").strip()
+        instruction_ru = (fallback.get("instruction_ru") or instruction_ru).strip()
+        answer = (fallback.get("answer") or "").strip()
+        options = list(fallback.get("options") or [])
+        data = dict(fallback)
+        data["sentence_en"] = sentence_en
+        data["instruction_ru"] = instruction_ru
+        data["answer"] = answer
+        data["options"] = options
     sentence_ru = (data.get("sentence_ru") or fallback.get("sentence_ru") or "").strip()
     tip = (data.get("tip") or fallback["tip"]).strip()
     answer = (data.get("answer") or fallback["answer"]).strip()

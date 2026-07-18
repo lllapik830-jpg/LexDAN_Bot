@@ -3,11 +3,9 @@
 """
 
 import logging
-import os
-import tempfile
 
 from aiogram import Router, F
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message
 
 from handlers.filters import ModeFilter
 from handlers.keyboards import (
@@ -171,6 +169,7 @@ async def send_lessons_home(
     await m.reply(
         intro,
         reply_markup=lessons_keyboard_for(user, show_start_today=show_start_today),
+        parse_mode="HTML",
     )
 
 

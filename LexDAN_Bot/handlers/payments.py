@@ -42,7 +42,7 @@ async def tariff_full(c: CallbackQuery):
     await c.answer()
     await c.message.answer(
         f"🚀 <b>Безлимит ко всему — {PRICE_FULL_MONTH}₽/мес</b>\n\n"
-        "Уроки без лимита тем + безлимит общения.\n"
+        "Уроки без дневных лимитов + безлимит общения.\n"
         f"Оплату подключим совсем скоро. Пока напиши {contact} — активируем вручную.",
         parse_mode="HTML",
     )

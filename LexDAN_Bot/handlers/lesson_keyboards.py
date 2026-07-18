@@ -66,11 +66,13 @@ def grammar_test_kb(*, mcq_options: list[str] | None = None) -> ReplyKeyboardMar
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def exercises_menu_kb() -> ReplyKeyboardMarkup:
+def exercises_menu_kb(done: list[int] | None = None) -> ReplyKeyboardMarkup:
+    done_set = set(done or [])
     rows = []
     row = []
     for num, _title in EXERCISE_TYPES:
-        row.append(KeyboardButton(text=f"Задание {num}"))
+        label = f"Задание {num} ✅" if num in done_set else f"Задание {num}"
+        row.append(KeyboardButton(text=label))
         if len(row) == 2:
             rows.append(row)
             row = []

@@ -68,7 +68,12 @@ from services.rico_tutor import (
     is_word_lookup_question,
     rico_word_lookup,
 )
-from services.growth import can_start_new_lesson, note_lesson_completed, ensure_growth
+from services.growth import (
+    can_do_grammar_exercise,
+    note_grammar_exercise_done,
+    note_lesson_completed,
+    ensure_growth,
+)
 
 router = Router()
 
@@ -115,7 +120,8 @@ def _kb_for_user(user: dict) -> ReplyKeyboardMarkup:
     if hub == "topic":
         return _topic_kb_for(level, lesson.get("topic_id") or "")
     if hub == "exercises":
-        return exercises_menu_kb()
+        done = get_done_exercises(user, level, lesson.get("topic_id") or "")
+        return exercises_menu_kb(done)
     if hub == "exercise":
         ex = lesson.get("exercise") or {}
         if ex.get("kind") == "mcq" and ex.get("options"):
@@ -277,14 +283,7 @@ async def choose_topic_number(m: Message):
         )
         return
 
-    # Лимит: вторая новая тема в день для бесплатных
-    if not is_grammar_topic_done(user, level, topic):
-        ok, tip = can_start_new_lesson(user)
-        if not ok:
-            save_users(users)
-            await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
-            return
-
+    # Лимит — на старте задания, не на просмотре темы
     open_topic(str(m.from_user.id), topic["id"], topic["title"])
     ack = is_ack_topic(topic)
     await m.reply(
@@ -370,7 +369,7 @@ async def open_assignments(m: Message):
         "В переводах можно спросить «как переводится слово …».\n"
         "Все 8 заданий → тема с ✅. Все темы → откроется тест по Grammar."
     )
-    await m.reply("\n".join(lines), reply_markup=exercises_menu_kb(), parse_mode="HTML")
+    await m.reply("\n".join(lines), reply_markup=exercises_menu_kb(done), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == "⬅️ К темам")
@@ -433,9 +432,12 @@ async def abandon_exercise(m: Message):
     if user["lesson"].get("hub") != "exercise":
         return
     clear_active_exercise(str(m.from_user.id))
+    level = user["lesson"].get("level") or "A1"
+    topic_id = user["lesson"].get("topic_id") or ""
+    done = get_done_exercises(user, level, topic_id)
     await m.reply(
         "Задание пропущено (не засчитано). Выбери другое:",
-        reply_markup=exercises_menu_kb(),
+        reply_markup=exercises_menu_kb(done),
     )
 
 
@@ -443,11 +445,16 @@ async def _finish_exercise_ok(m: Message, user_id: str, level: str, topic_id: st
     mark_exercise_done(user_id, level, topic_id, num)
     users = load_users()
     user = get_user(users, user_id)
+    ensure_growth(user)
+    note_grammar_exercise_done(user)
+    save_users(users)
     topic_title = (user.get("lesson") or {}).get("topic_title") or "тема"
     extra = ""
     topic_just_done = False
     if is_topic_exercises_done(user, level, topic_id):
         mark_topic_done(user_id, level, topic_id)
+        users = load_users()
+        user = get_user(users, user_id)
         ensure_growth(user)
         note_lesson_completed(user)
         save_users(users)
@@ -471,7 +478,7 @@ async def _finish_exercise_ok(m: Message, user_id: str, level: str, topic_id: st
         for n, title in EXERCISE_TYPES:
             mark = "✅" if n in done else "▫️"
             lines.append(f"{mark} Задание {n} — {title}")
-        await m.reply("\n".join(lines), reply_markup=exercises_menu_kb(), parse_mode="HTML")
+        await m.reply("\n".join(lines), reply_markup=exercises_menu_kb(done), parse_mode="HTML")
         return
 
     # Автопереход к следующему заданию без возврата в список
@@ -487,6 +494,20 @@ async def _launch_exercise(
     topic_title: str,
     num: int,
 ):
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_growth(user)
+    ok, tip = can_do_grammar_exercise(user)
+    if not ok:
+        done = get_done_exercises(user, level, topic_id)
+        await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+        await m.reply(
+            "📝 Прогресс по теме сохранён — завтра продолжим с галочками:",
+            reply_markup=exercises_menu_kb(done),
+        )
+        open_exercises_menu(user_id)
+        return
+
     await m.reply("🦜 Рико готовит задание…")
     ex = generate_grammar_exercise(level, topic_title, num, topic_id=topic_id)
     start_exercise(user_id, num, ex)
@@ -514,11 +535,18 @@ async def _send_exercise_card(m: Message, num: int, ex: dict):
         await m.reply("👇 Подсказки к заданию:", reply_markup=inline)
 
 
-@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("exercises"), F.text.regexp(r"^Задание\s+[1-8]$"))
+@router.message(
+    ModeFilter(MODE_LESSONS),
+    LessonHubFilter("exercises"),
+    F.text.regexp(r"^Задание\s+[1-8](?:\s*✅)?$"),
+)
 async def start_assignment(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
-    num = int(m.text.split()[-1])
+    import re as _re
+
+    m_num = _re.search(r"[1-8]", m.text or "")
+    num = int(m_num.group(0)) if m_num else 1
     level = user["lesson"].get("level") or "A1"
     title = user["lesson"].get("topic_title") or "Grammar"
     topic_id = user["lesson"].get("topic_id")

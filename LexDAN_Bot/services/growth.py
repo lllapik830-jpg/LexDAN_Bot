@@ -14,8 +14,8 @@ from services.database import get_user
 TRIAL_DAYS = 7
 REF_BONUS_DAYS = 3
 FREE_CHAT_PER_DAY = 10
-FREE_LESSONS_PER_DAY = 1
-FREE_VOCAB_TEXTS_PER_DAY = 1
+FREE_GRAMMAR_EXERCISES_PER_DAY = 8  # суммарно по всем уровням/темам
+FREE_VOCAB_ITEMS_PER_DAY = 3  # слова + фразы, общий счётчик
 DAILY_WORDS_GOAL = 1
 DAILY_CHAT_GOAL = 3
 
@@ -60,7 +60,9 @@ def ensure_growth(user: dict) -> dict:
             "chat_count": 0,
             "chat_messages_today": 0,
             "lessons_completed_today": 0,
+            "grammar_exercises_today": 0,
             "vocab_texts_today": 0,
+            "vocab_items_today": 0,
             "words_today": 0,
             "phrases_today": 0,
             "goal_done": False,
@@ -68,8 +70,17 @@ def ensure_growth(user: dict) -> dict:
     else:
         daily.setdefault("chat_messages_today", int(daily.get("chat_count") or 0))
         daily.setdefault("lessons_completed_today", 0)
+        daily.setdefault("grammar_exercises_today", 0)
         daily.setdefault("vocab_texts_today", 0)
+        daily.setdefault("vocab_items_today", 0)
+        daily.setdefault("words_today", 0)
+        daily.setdefault("phrases_today", 0)
         daily.setdefault("chat_count", int(daily.get("chat_messages_today") or 0))
+        # общий счётчик слов+фраз
+        items = int(daily.get("vocab_items_today") or 0)
+        wp = int(daily.get("words_today") or 0) + int(daily.get("phrases_today") or 0)
+        if wp > items:
+            daily["vocab_items_today"] = wp
     # Окно восстановления — только в день возврата
     if (
         user.get("streak_burned")
@@ -343,47 +354,84 @@ def note_chat_message(user: dict) -> tuple[bool, str | None]:
     return True, None
 
 
+def _brain_rest_msg(*, what: str, limit: int, price: int = PRICE_FULL_MONTH) -> str:
+    return (
+        "🦜 <b>Мозгу нужно немного отдохнуть</b>\n\n"
+        f"Ты уже хорошо позанимался: на бесплатном тарифе — "
+        f"<b>{limit} {what}</b> в день.\n\n"
+        "Новой информации сейчас достаточно — дай мозгу её обработать. "
+        "Возвращайся через сутки и продолжим 💚\n\n"
+        f"С подпиской за <b>{price}₽/мес</b> — безлимит уроков, "
+        "можно заниматься сколько хочешь."
+    )
+
+
 def can_start_new_lesson(user: dict) -> tuple[bool, str | None]:
-    """Бесплатно — максимум 1 полноценная тема Grammar в сутки."""
+    """Совместимость: лимит Grammar = упражнения в сутки, не «темы»."""
+    return can_do_grammar_exercise(user)
+
+
+def can_do_grammar_exercise(user: dict) -> tuple[bool, str | None]:
+    """Бесплатно — максимум FREE_GRAMMAR_EXERCISES_PER_DAY заданий Grammar в сутки (все уровни)."""
     ensure_growth(user)
     if is_paid(user):
         return True, None
-    done = int(user["daily"].get("lessons_completed_today") or 0)
-    if done >= FREE_LESSONS_PER_DAY:
-        return False, (
-            "🦜 <b>Мозгу нужно отдохнуть</b>\n\n"
-            "На бесплатном тарифе — <b>1 тема в день</b>. "
-            "Ты уже хорошо позанимался сегодня!\n\n"
-            "Завтра откроется новая тема, а безлимит ко всем урокам — по кнопке ниже 👇"
+    done = int(user["daily"].get("grammar_exercises_today") or 0)
+    if done >= FREE_GRAMMAR_EXERCISES_PER_DAY:
+        return False, _brain_rest_msg(
+            what="заданий Grammar",
+            limit=FREE_GRAMMAR_EXERCISES_PER_DAY,
+        )
+    return True, None
+
+
+def note_grammar_exercise_done(user: dict) -> None:
+    ensure_growth(user)
+    if is_paid(user):
+        return
+    daily = user["daily"]
+    daily["grammar_exercises_today"] = int(daily.get("grammar_exercises_today") or 0) + 1
+
+
+def vocab_items_used_today(user: dict) -> int:
+    ensure_growth(user)
+    daily = user["daily"]
+    items = int(daily.get("vocab_items_today") or 0)
+    wp = int(daily.get("words_today") or 0) + int(daily.get("phrases_today") or 0)
+    return max(items, wp)
+
+
+def vocab_items_remaining(user: dict) -> int:
+    if is_paid(user):
+        return 999
+    return max(0, FREE_VOCAB_ITEMS_PER_DAY - vocab_items_used_today(user))
+
+
+def can_learn_vocab_item(user: dict) -> tuple[bool, str | None]:
+    """Бесплатно — 3 слова/фразы в сутки (общий счётчик)."""
+    ensure_growth(user)
+    if is_paid(user):
+        return True, None
+    if vocab_items_used_today(user) >= FREE_VOCAB_ITEMS_PER_DAY:
+        return False, _brain_rest_msg(
+            what="слов или фраз Vocabulary",
+            limit=FREE_VOCAB_ITEMS_PER_DAY,
         )
     return True, None
 
 
 def can_start_vocab_text(user: dict) -> tuple[bool, str | None]:
-    """Бесплатно — 1 текст Vocabulary в сутки (обычно 4–5 новых слов)."""
-    ensure_growth(user)
-    if is_paid(user):
-        return True, None
-    used = int(user["daily"].get("vocab_texts_today") or 0)
-    if used >= FREE_VOCAB_TEXTS_PER_DAY:
-        return False, (
-            "🦜 <b>На сегодня хватит слов</b>\n\n"
-            "Бесплатно — <b>1 текст</b> Vocabulary в день (несколько новых слов).\n"
-            "Завтра будет новый текст. Безлимит — по кнопке ниже 👇"
-        )
-    return True, None
+    """Старт текста: нужен хотя бы 1 свободный слот в дневном лимите."""
+    return can_learn_vocab_item(user)
 
 
 def note_vocab_text_started(user: dict) -> None:
+    """Больше не списываем «текст» — лимит по изученным словам/фразам."""
     ensure_growth(user)
-    if is_paid(user):
-        return
-    daily = user["daily"]
-    daily["vocab_texts_today"] = int(daily.get("vocab_texts_today") or 0) + 1
 
 
 def note_lesson_completed(user: dict) -> None:
-    """Засчитать завершённую тему Grammar в суточный лимит."""
+    """Тема Grammar закрыта — для статистики; дневной лимит идёт по упражнениям."""
     ensure_growth(user)
     if is_paid(user):
         return
@@ -397,10 +445,18 @@ def note_word_learned(user: dict) -> str:
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["words_today"] = int(daily.get("words_today") or 0) + 1
+    if not is_paid(user):
+        daily["vocab_items_today"] = vocab_items_used_today(user)
     goal_just = _maybe_complete_goal(user)
-    return format_session_wrap(
+    wrap = format_session_wrap(
         user, kind="word", streak_info=streak_info, goal_just_done=goal_just
     )
+    if not is_paid(user) and vocab_items_used_today(user) >= FREE_VOCAB_ITEMS_PER_DAY:
+        wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(
+            what="слов или фраз Vocabulary",
+            limit=FREE_VOCAB_ITEMS_PER_DAY,
+        )
+    return wrap
 
 
 def note_phrase_learned(user: dict) -> str:
@@ -409,10 +465,18 @@ def note_phrase_learned(user: dict) -> str:
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["phrases_today"] = int(daily.get("phrases_today") or 0) + 1
+    if not is_paid(user):
+        daily["vocab_items_today"] = vocab_items_used_today(user)
     goal_just = _maybe_complete_goal(user)
-    return format_session_wrap(
+    wrap = format_session_wrap(
         user, kind="phrase", streak_info=streak_info, goal_just_done=goal_just
     )
+    if not is_paid(user) and vocab_items_used_today(user) >= FREE_VOCAB_ITEMS_PER_DAY:
+        wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(
+            what="слов или фраз Vocabulary",
+            limit=FREE_VOCAB_ITEMS_PER_DAY,
+        )
+    return wrap
 
 
 def note_lesson_activity(user: dict) -> None:
@@ -511,14 +575,14 @@ def subscription_blurb(user: dict) -> str:
         "💎 <b>Тарифы LexDAN</b>\n\n"
         f"Сейчас: {status}\n\n"
         "<b>Бесплатно</b>\n"
-        f"• 1 текст Vocabulary в день (несколько новых слов)\n"
-        f"• 1 тема Grammar в день\n"
+        f"• Vocabulary — до {FREE_VOCAB_ITEMS_PER_DAY} слов/фраз в день\n"
+        f"• Grammar — до {FREE_GRAMMAR_EXERCISES_PER_DAY} заданий в день (все уровни)\n"
         f"• общение — до {FREE_CHAT_PER_DAY} сообщ./день\n"
         "• тест уровня\n\n"
         f"<b>💬 Только общение</b> — <b>{PRICE_CHAT_MONTH}₽/мес</b>\n"
         "• безлимит чата (текст + голос)\n\n"
         f"<b>🚀 Безлимит ко всему</b> — <b>{PRICE_FULL_MONTH}₽/мес</b>\n"
-        "• уроки без лимита тем\n"
+        "• уроки без лимита\n"
         "• безлимит общения\n\n"
         f"🎁 Пробный период — <b>{TRIAL_DAYS} дней</b>. Успей попробовать всё!\n"
         f"Приведи друга — оба +<b>{REF_BONUS_DAYS}</b> дня."

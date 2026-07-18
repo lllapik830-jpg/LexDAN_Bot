@@ -495,6 +495,30 @@ def judge_writing(topic: str, user_text: str, current_level: str) -> dict:
     return _ask_json([prompt, user], fallback, temperature=0.0)
 
 
+_BAD_PLACEHOLDERS = (
+    "пустая строка",
+    "грамматическая/лексическая",
+    "дружелюбное объяснение",
+    "естественный вариант",
+    "живой ответ",
+    "лёгкий follow-up",
+    "short friendly",
+    "correct natural",
+    "warm 1-2",
+)
+
+
+def _clean_field(text: str) -> str:
+    t = (text or "").strip()
+    low = t.lower()
+    if low in {"нет", "no", "none", "n/a", "na", "-", "—", "пусто", "empty", "null"}:
+        return ""
+    for bad in _BAD_PLACEHOLDERS:
+        if bad.lower() in low:
+            return ""
+    return t
+
+
 def format_tutor_message(result: dict, heard_text: str | None = None) -> str:
     """Красивое HTML-сообщение для Telegram."""
     parts = []
@@ -503,13 +527,9 @@ def format_tutor_message(result: dict, heard_text: str | None = None) -> str:
         parts.append(f"🗣 <b>Услышал:</b> <i>{_esc(heard_text)}</i>")
         parts.append("")
 
-    has_error = bool(result.get("has_error"))
     better = _clean_field(result.get("better_en") or "")
     errors = _clean_field(result.get("errors_ru") or "")
     tips = _clean_field(result.get("tips_ru") or result.get("rule_ru") or "")
-
-    if has_error and not better and not errors and not tips:
-        has_error = False
 
     if better or errors or tips:
         parts.append("✏️ <b>Как сказал бы носитель</b>")
@@ -540,28 +560,6 @@ def format_tutor_message(result: dict, heard_text: str | None = None) -> str:
     parts.append(f"💬 {_esc(reply)}")
 
     return "\n".join(parts)
-
-
-_BAD_PLACEHOLDERS = (
-    "пустая строка",
-    "грамматическая/лексическая",
-    "дружелюбное объяснение",
-    "естественный вариант",
-    "живой ответ",
-    "лёгкий follow-up",
-    "short friendly",
-    "correct natural",
-    "warm 1-2",
-)
-
-
-def _clean_field(text: str) -> str:
-    t = (text or "").strip()
-    low = t.lower()
-    for bad in _BAD_PLACEHOLDERS:
-        if bad.lower() in low:
-            return ""
-    return t
 
 
 def _esc(text: str) -> str:
