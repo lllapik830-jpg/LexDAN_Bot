@@ -90,6 +90,7 @@ def finish_word_practice(user_id: str, level: str, topic_id: str, en: str) -> di
         u["lesson"]["vocab_practice_done"] = 0
         u["lesson"]["vocab_practice_step"] = 0
         u["lesson"]["vocab_last_sentence"] = ""
+        u["lesson"]["vocab_used_sentences"] = []
         u["lesson"]["vocab_mode"] = "words"
 
     return update_lesson(user_id, mut)
@@ -117,6 +118,7 @@ def finish_phrase_practice(user_id: str, level: str, topic_id: str, en: str) -> 
         u["lesson"]["vocab_practice_done"] = 0
         u["lesson"]["vocab_practice_step"] = 0
         u["lesson"]["vocab_last_sentence"] = ""
+        u["lesson"]["vocab_used_sentences"] = []
         u["lesson"]["vocab_mode"] = "phrases"
 
     return update_lesson(user_id, mut)

@@ -107,18 +107,22 @@ def _pick_unlearned_phrases(user: dict, level: str, topic_id: str, n: int = 2) -
     return pool[:n]
 
 
-async def _send_word_story(m: Message, user: dict):
+async def _send_word_story(m: Message, user: dict, *, count_toward_limit: bool = True):
+    from services.growth import (
+        can_start_vocab_text,
+        note_vocab_text_started,
+        ensure_growth,
+    )
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
+
     level = user["lesson"]["level"]
     topic_id = user["lesson"]["vocab_topic_id"]
     topic = get_vocab_topic(level, topic_id)
     batch = _pick_unlearned_words(user, level, topic_id, 5)
     if not batch:
-        from services.growth import note_lesson_completed, ensure_growth
-
         users = load_users()
         user = get_user(users, str(m.from_user.id))
         ensure_growth(user)
-        note_lesson_completed(user)
         save_users(users)
         wt = words_total(level, topic_id)
         wl, _, _, _, _ = _topic_progress(user, level, topic_id)
@@ -131,21 +135,36 @@ async def _send_word_story(m: Message, user: dict):
         set_vocab_hub(str(m.from_user.id), "vocab_list")
         return
 
+    if count_toward_limit:
+        users = load_users()
+        user = get_user(users, str(m.from_user.id))
+        ensure_growth(user)
+        ok, tip = can_start_vocab_text(user)
+        if not ok:
+            save_users(users)
+            await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+            set_vocab_hub(str(m.from_user.id), "vocab_list", level=level)
+            return
+        note_vocab_text_started(user)
+        save_users(users)
+
     await m.reply("🦜 Пишу текст…")
     story = generate_vocab_text(level, topic["title"], batch, kind="words")
-    highlighted = story.get("highlighted") or [w["en"] for w in batch]
-    batch_en = [h for h in highlighted if get_word_entry(level, topic_id, h)]
-    if not batch_en:
-        batch_en = [w["en"] for w in batch]
+    # ВАЖНО: кнопки = выбранный батч слов, а не «highlighted» от ИИ (там часто 1 слово)
+    batch_en = [w["en"] for w in batch]
 
     update_vocab_lesson(
         str(m.from_user.id),
+        hub="vocab_topic",
         vocab_mode="words",
         vocab_batch=batch_en,
         vocab_text_en=story["text_en"],
         vocab_text_ru=story["text_ru"],
         vocab_active_item=None,
         vocab_practice_step=0,
+        vocab_practice_done=0,
+        vocab_last_sentence="",
+        vocab_used_sentences=[],
     )
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -154,13 +173,20 @@ async def _send_word_story(m: Message, user: dict):
         f"📗 <b>{topic['title']}</b> · {prog}\n\n"
         f"{story['text_en']}\n\n"
         f"{story['text_ru']}\n\n"
-        "🦜 Посмотри на выделенные слова и нажми кнопку со словом, "
-        "чтобы изучить его подробнее."
+        f"🦜 В этом тексте <b>{len(batch_en)}</b> новых слов. "
+        "Нажми слово на кнопке, чтобы изучить его."
     )
     await m.reply(text, reply_markup=vocab_topic_kb(level, topic_id, user, batch_en), parse_mode="HTML")
 
 
-async def _send_phrase_story(m: Message, user: dict):
+async def _send_phrase_story(m: Message, user: dict, *, count_toward_limit: bool = True):
+    from services.growth import (
+        can_start_vocab_text,
+        note_vocab_text_started,
+        ensure_growth,
+    )
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
+
     level = user["lesson"]["level"]
     topic_id = user["lesson"]["vocab_topic_id"]
     topic = get_vocab_topic(level, topic_id)
@@ -176,19 +202,34 @@ async def _send_phrase_story(m: Message, user: dict):
         set_vocab_hub(str(m.from_user.id), "vocab_list")
         return
 
+    if count_toward_limit:
+        users = load_users()
+        user = get_user(users, str(m.from_user.id))
+        ensure_growth(user)
+        ok, tip = can_start_vocab_text(user)
+        if not ok:
+            save_users(users)
+            await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+            return
+        note_vocab_text_started(user)
+        save_users(users)
+
     await m.reply("🦜 Готовлю текст с фразами…")
     story = generate_vocab_text(level, topic["title"], batch, kind="phrases")
-    highlighted = story.get("highlighted") or [p["en"] for p in batch]
-    batch_en = highlighted[:2]
+    batch_en = [p["en"] for p in batch]
 
     update_vocab_lesson(
         str(m.from_user.id),
+        hub="vocab_phrases",
         vocab_mode="phrases",
         vocab_batch=batch_en,
         vocab_text_en=story["text_en"],
         vocab_text_ru=story["text_ru"],
         vocab_active_item=None,
         vocab_practice_step=0,
+        vocab_practice_done=0,
+        vocab_last_sentence="",
+        vocab_used_sentences=[],
     )
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -302,7 +343,7 @@ async def start_today(m: Message):
         )
         return
 
-    from services.growth import can_start_new_lesson, ensure_growth
+    from services.growth import can_start_vocab_text, ensure_growth
     from handlers.lesson_keyboards import lesson_limit_inline_kb
 
     users = load_users()
@@ -311,7 +352,7 @@ async def start_today(m: Message):
     wt = words_total(level, pick["id"])
     _, _, wd = topic_words_progress(user, level, pick["id"], wt)
     if not wd:
-        ok, tip = can_start_new_lesson(user)
+        ok, tip = can_start_vocab_text(user)
         if not ok:
             await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
             return
@@ -376,7 +417,7 @@ async def open_vocabulary(m: Message):
 async def vocab_choose_topic(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
-    from services.growth import can_start_new_lesson, ensure_growth
+    from services.growth import can_start_vocab_text, ensure_growth
     from handlers.lesson_keyboards import lesson_limit_inline_kb
 
     ensure_growth(user)
@@ -397,7 +438,7 @@ async def vocab_choose_topic(m: Message):
         )
         return
 
-    ok, tip = can_start_new_lesson(user)
+    ok, tip = can_start_vocab_text(user)
     if not ok:
         save_users(users)
         await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
@@ -412,7 +453,7 @@ async def vocab_choose_topic(m: Message):
     )
     users = load_users()
     user = get_user(users, str(m.from_user.id))
-    await _send_word_story(m, user)
+    await _send_word_story(m, user, count_toward_limit=True)
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == BTN_LEARN_PHRASES)
@@ -459,6 +500,7 @@ async def vocab_word_button(m: Message):
         vocab_practice_done=0,
         vocab_practice_step=0,
         vocab_last_sentence="",
+        vocab_used_sentences=[],
     )
     card = rico_word_card(level, topic_title, word)
     await m.reply(card, reply_markup=vocab_practice_kb(), parse_mode="HTML")
@@ -466,11 +508,49 @@ async def vocab_word_button(m: Message):
 
 def _vocab_check_reply(result: dict) -> str:
     fb = (result.get("feedback_ru") or "Попробуй ещё раз.").strip()
+    errors = (result.get("errors_ru") or "").strip()
     better = (result.get("better_en") or "").strip()
     lines = [f"🦜 {fb}"]
+    if errors:
+        lines.append(f"<b>Что не так:</b> {errors}")
     if better:
-        lines.append(f"Так естественнее: <b>{better}</b>")
+        lines.append(f"<b>Исправленный вариант:</b> <i>{better}</i>")
+        lines.append("Напиши <b>своё новое</b> предложение — не копируй это и не повторяй прошлое.")
+    else:
+        lines.append("Напиши другое предложение с этим словом.")
     return "\n".join(lines)
+
+
+def _normalize_sentence(text: str) -> str:
+    return " ".join((text or "").strip().lower().split())
+
+
+def _is_repeat_sentence(lesson: dict, text: str) -> bool:
+    norm = _normalize_sentence(text)
+    if not norm:
+        return True
+    last = _normalize_sentence(lesson.get("vocab_last_sentence") or "")
+    if last and norm == last:
+        return True
+    used = lesson.get("vocab_used_sentences") or []
+    return norm in {_normalize_sentence(x) for x in used}
+
+
+def _remember_sentence(user_id: str, text: str, *, done: int | None = None) -> None:
+    users = load_users()
+    user = get_user(users, user_id)
+    lesson = user.get("lesson") or {}
+    used = list(lesson.get("vocab_used_sentences") or [])
+    norm = _normalize_sentence(text)
+    if norm and norm not in used:
+        used.append(norm)
+    fields = {
+        "vocab_last_sentence": text,
+        "vocab_used_sentences": used[-20:],
+    }
+    if done is not None:
+        fields["vocab_practice_done"] = done
+    update_vocab_lesson(user_id, **fields)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("vocab_word_practice"), F.text)
@@ -488,13 +568,12 @@ async def vocab_word_practice(m: Message):
     done = int(lesson.get("vocab_practice_done") or 0)
     word = get_word_entry(level, topic_id, active) if active else None
     if not word:
-        await _send_word_story(m, user)
+        await _send_word_story(m, user, count_toward_limit=False)
         return
 
-    last = (lesson.get("vocab_last_sentence") or "").strip().lower()
-    if last and text.lower() == last:
+    if _is_repeat_sentence(lesson, text):
         await m.reply(
-            "🦜 Напиши <b>новое</b> предложение — не копируй предыдущее.",
+            "🦜 Это уже было. Напиши <b>другое</b> предложение — не копируй прошлое.",
             reply_markup=vocab_practice_kb(),
             parse_mode="HTML",
         )
@@ -502,19 +581,17 @@ async def vocab_word_practice(m: Message):
 
     result = check_vocab_sentence(level, word["en"], text)
     if not result.get("correct"):
+        _remember_sentence(str(m.from_user.id), text)
         await m.reply(_vocab_check_reply(result), reply_markup=vocab_practice_kb(), parse_mode="HTML")
         return
 
     done += 1
+    _remember_sentence(str(m.from_user.id), text, done=done)
     if done < 2:
-        update_vocab_lesson(
-            str(m.from_user.id),
-            vocab_practice_done=done,
-            vocab_last_sentence=text,
-        )
         await m.reply(
             f"✅ Молодец! ({done}/2)\n"
-            "Теперь напиши <b>ещё одно новое</b> предложение с этим словом.",
+            "Теперь напиши <b>ещё одно новое</b> предложение с этим словом "
+            "(не повторяй предыдущее).",
             reply_markup=vocab_practice_kb(),
             parse_mode="HTML",
         )
@@ -522,7 +599,6 @@ async def vocab_word_practice(m: Message):
 
     finish_word_practice(str(m.from_user.id), level, topic_id, word["en"])
     from services.growth import note_word_learned, ensure_growth
-    from services.database import save_users
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -530,19 +606,32 @@ async def vocab_word_practice(m: Message):
     wrap = note_word_learned(user)
     save_users(users)
 
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
     wl, wt, _, _, _ = _topic_progress(user, level, topic_id)
     batch = list((user.get("lesson") or {}).get("vocab_batch") or [])
+    # убрать уже изученные на всякий случай
+    batch = [w for w in batch if not is_word_learned(user, level, topic_id, w)]
+
     await m.reply(
-        f"✅ Отлично! Слово <b>{word['en']}</b> изучено! ({wl}/{wt})\n{wrap}",
+        f"✅ Отлично! Слово <b>{word['en']}</b> изучено! "
+        f"Прогресс по теме: <b>{wl}/{wt}</b>\n{wrap}",
         parse_mode="HTML",
     )
     if batch:
+        update_vocab_lesson(str(m.from_user.id), vocab_batch=batch, hub="vocab_topic")
+        story_en = (user.get("lesson") or {}).get("vocab_text_en") or ""
+        tip = f"Осталось в этом тексте: <b>{len(batch)}</b> — выбери следующее слово 👇"
+        if story_en:
+            tip = f"{tip}\n\n<i>Текст тот же — можно опереться на него.</i>"
         await m.reply(
-            "Выбери следующее слово 👇",
+            tip,
             reply_markup=vocab_topic_kb(level, topic_id, user, batch),
+            parse_mode="HTML",
         )
     else:
-        await _send_word_story(m, user)
+        await m.reply("Все слова из этого текста изучены ✅")
+        await _send_word_story(m, user, count_toward_limit=True)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("vocab_phrases", "vocab_phrase_practice"), F.text)
@@ -581,6 +670,7 @@ async def vocab_phrase_flow(m: Message):
             vocab_practice_done=0,
             vocab_practice_step=0,
             vocab_last_sentence="",
+            vocab_used_sentences=[],
         )
         await m.reply(rico_phrase_card(level, topic_title, phrase), reply_markup=vocab_practice_kb(), parse_mode="HTML")
         return
@@ -593,15 +683,14 @@ async def vocab_phrase_flow(m: Message):
     active = lesson.get("vocab_active_item")
     phrase = get_phrase_entry(level, topic_id, active) if active else None
     if not phrase:
-        await _send_phrase_story(m, user)
+        await _send_phrase_story(m, user, count_toward_limit=False)
         return
 
     done = int(lesson.get("vocab_practice_done") or 0)
-    last = (lesson.get("vocab_last_sentence") or "").strip().lower()
     raw = (m.text or "").strip()
-    if last and raw.lower() == last:
+    if _is_repeat_sentence(lesson, raw):
         await m.reply(
-            "🦜 Напиши <b>новое</b> предложение — не копируй предыдущее.",
+            "🦜 Это уже было. Напиши <b>другое</b> предложение — не копируй прошлое.",
             reply_markup=vocab_practice_kb(),
             parse_mode="HTML",
         )
@@ -609,16 +698,13 @@ async def vocab_phrase_flow(m: Message):
 
     result = check_vocab_sentence(level, phrase["en"], raw, is_phrase=True)
     if not result.get("correct"):
+        _remember_sentence(str(m.from_user.id), raw)
         await m.reply(_vocab_check_reply(result), reply_markup=vocab_practice_kb(), parse_mode="HTML")
         return
 
     done += 1
+    _remember_sentence(str(m.from_user.id), raw, done=done)
     if done < 2:
-        update_vocab_lesson(
-            str(m.from_user.id),
-            vocab_practice_done=done,
-            vocab_last_sentence=raw,
-        )
         await m.reply(
             f"✅ Молодец! ({done}/2)\n"
             "Теперь напиши <b>ещё одно новое</b> предложение с этой фразой.",
@@ -629,7 +715,6 @@ async def vocab_phrase_flow(m: Message):
 
     finish_phrase_practice(str(m.from_user.id), level, topic_id, phrase["en"])
     from services.growth import note_phrase_learned, ensure_growth
-    from services.database import save_users
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -637,17 +722,27 @@ async def vocab_phrase_flow(m: Message):
     wrap = note_phrase_learned(user)
     save_users(users)
 
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
     pt = phrases_total(level, topic_id)
     pl, _, _ = topic_phrases_progress(user, level, topic_id, pt)
     batch = list((user.get("lesson") or {}).get("vocab_batch") or [])
-    await m.reply(f"✅ Фраза изучена! ({pl}/{pt})\n{wrap}", parse_mode="HTML")
+    batch = [p for p in batch if not is_phrase_learned(user, level, topic_id, p)]
+
+    await m.reply(
+        f"✅ Фраза изучена! Прогресс: <b>{pl}/{pt}</b>\n{wrap}",
+        parse_mode="HTML",
+    )
     if batch:
+        update_vocab_lesson(str(m.from_user.id), vocab_batch=batch, hub="vocab_phrases")
         await m.reply(
-            "Следующая фраза 👇",
+            f"Осталось фраз в тексте: <b>{len(batch)}</b> 👇",
             reply_markup=vocab_phrase_topic_kb(level, topic_id, user, batch),
+            parse_mode="HTML",
         )
     else:
-        await _send_phrase_story(m, user)
+        await m.reply("Все фразы из этого текста изучены ✅")
+        await _send_phrase_story(m, user, count_toward_limit=True)
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == BTN_ALL_LEVELS)
@@ -786,7 +881,7 @@ async def vocab_back_to_words(m: Message):
     if was_phrases or not batch_are_words:
         users = load_users()
         user = get_user(users, str(m.from_user.id))
-        await _send_word_story(m, user)
+        await _send_word_story(m, user, count_toward_limit=True)
         return
 
     batch = [w for w in batch if not is_word_learned(user, level, topic_id, w)] or batch

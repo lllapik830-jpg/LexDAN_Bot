@@ -15,6 +15,7 @@ TRIAL_DAYS = 7
 REF_BONUS_DAYS = 3
 FREE_CHAT_PER_DAY = 10
 FREE_LESSONS_PER_DAY = 1
+FREE_VOCAB_TEXTS_PER_DAY = 1
 DAILY_WORDS_GOAL = 1
 DAILY_CHAT_GOAL = 3
 
@@ -59,6 +60,7 @@ def ensure_growth(user: dict) -> dict:
             "chat_count": 0,
             "chat_messages_today": 0,
             "lessons_completed_today": 0,
+            "vocab_texts_today": 0,
             "words_today": 0,
             "phrases_today": 0,
             "goal_done": False,
@@ -66,6 +68,7 @@ def ensure_growth(user: dict) -> dict:
     else:
         daily.setdefault("chat_messages_today", int(daily.get("chat_count") or 0))
         daily.setdefault("lessons_completed_today", 0)
+        daily.setdefault("vocab_texts_today", 0)
         daily.setdefault("chat_count", int(daily.get("chat_messages_today") or 0))
     # Окно восстановления — только в день возврата
     if (
@@ -341,7 +344,7 @@ def note_chat_message(user: dict) -> tuple[bool, str | None]:
 
 
 def can_start_new_lesson(user: dict) -> tuple[bool, str | None]:
-    """Бесплатно — максимум 1 полноценная тема (урок) в сутки."""
+    """Бесплатно — максимум 1 полноценная тема Grammar в сутки."""
     ensure_growth(user)
     if is_paid(user):
         return True, None
@@ -356,8 +359,31 @@ def can_start_new_lesson(user: dict) -> tuple[bool, str | None]:
     return True, None
 
 
+def can_start_vocab_text(user: dict) -> tuple[bool, str | None]:
+    """Бесплатно — 1 текст Vocabulary в сутки (обычно 4–5 новых слов)."""
+    ensure_growth(user)
+    if is_paid(user):
+        return True, None
+    used = int(user["daily"].get("vocab_texts_today") or 0)
+    if used >= FREE_VOCAB_TEXTS_PER_DAY:
+        return False, (
+            "🦜 <b>На сегодня хватит слов</b>\n\n"
+            "Бесплатно — <b>1 текст</b> Vocabulary в день (несколько новых слов).\n"
+            "Завтра будет новый текст. Безлимит — по кнопке ниже 👇"
+        )
+    return True, None
+
+
+def note_vocab_text_started(user: dict) -> None:
+    ensure_growth(user)
+    if is_paid(user):
+        return
+    daily = user["daily"]
+    daily["vocab_texts_today"] = int(daily.get("vocab_texts_today") or 0) + 1
+
+
 def note_lesson_completed(user: dict) -> None:
-    """Засчитать завершённую тему (Grammar/Vocabulary) в суточный лимит."""
+    """Засчитать завершённую тему Grammar в суточный лимит."""
     ensure_growth(user)
     if is_paid(user):
         return
@@ -485,7 +511,8 @@ def subscription_blurb(user: dict) -> str:
         "💎 <b>Тарифы LexDAN</b>\n\n"
         f"Сейчас: {status}\n\n"
         "<b>Бесплатно</b>\n"
-        f"• 1 тема уроков в день (Grammar / Vocabulary)\n"
+        f"• 1 текст Vocabulary в день (несколько новых слов)\n"
+        f"• 1 тема Grammar в день\n"
         f"• общение — до {FREE_CHAT_PER_DAY} сообщ./день\n"
         "• тест уровня\n\n"
         f"<b>💬 Только общение</b> — <b>{PRICE_CHAT_MONTH}₽/мес</b>\n"

@@ -274,73 +274,73 @@ def check_vocab_sentence(
             return val.strip().lower() in {"1", "true", "yes", "да", "ok", "верно"}
         return False
 
-    def _local_uses_target() -> bool:
-        if not target or not sentence:
-            return False
-        s = sentence.lower()
-        t = target.lower()
-        if t in s:
-            return True
-        # to walk → walk / walks / walking / walked
-        if t.startswith("to ") and len(t) > 3:
-            base = t[3:].strip()
-            if not base:
-                return False
-            import re
+    import re
 
-            tokens = re.findall(r"[a-zA-Z']+", s)
-            for tok in tokens:
-                if tok == base or tok.startswith(base) or base.startswith(tok) and len(tok) >= 3:
-                    return True
-        return False
+    tokens = re.findall(r"[a-zA-Z']+", sentence)
+    # Одно слово / просто цель — это не предложение
+    if len(tokens) < 3:
+        return {
+            "correct": False,
+            "feedback_ru": (
+                "Это не предложение. Напиши полное предложение на английском "
+                f"(минимум 3 слова) с {kind} «{target}»."
+            ),
+            "better_en": "",
+            "errors_ru": "Слишком коротко — нужна целая фраза.",
+        }
 
     data = _ask_json(
         [
             {
                 "role": "system",
                 "content": (
-                    f"You check a Russian student's English sentence that must use the target {kind}. "
-                    "Be friendly like a tutor. "
-                    "Accept minor grammar issues if the target is used correctly and meaning is clear. "
-                    "Return ONLY JSON: "
-                    '{"correct":true/false,"feedback_ru":"краткий отзыв по-русски",'
-                    '"better_en":"исправленный вариант или пустая строка"}\n'
-                    "If correct: correct=true, feedback_ru хвалит кратко, better_en=\"\". "
-                    "If wrong: correct=false, feedback_ru объясняет проблему по-русски, "
-                    "better_en = natural corrected English sentence WITH the target."
+                    f"You are Rico 🦜, a careful English tutor. Check the student's sentence.\n"
+                    f"The sentence MUST use the target {kind} naturally and make LOGICAL sense.\n"
+                    "Find grammar mistakes AND nonsense/logic problems "
+                    "(wrong meaning, impossible situation, word salad).\n"
+                    "Return ONLY JSON:\n"
+                    "{"
+                    '"correct":true/false,'
+                    '"feedback_ru":"по-русски: что не так или краткая похвала",'
+                    '"errors_ru":"по-русски коротко перечисли ошибки (или пусто если всё ок)",'
+                    '"better_en":"исправленное естественное предложение С целевым словом/фразой"'
+                    "}\n"
+                    "correct=true ONLY if: target is used, grammar is basically ok for the level, "
+                    "and the sentence is meaningful. "
+                    "If student only stuffed the target with broken English → correct=false.\n"
+                    "If wrong: always fill better_en with a natural corrected sentence."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"Level {level}. Target {kind}: {target}\n"
+                    f"Level {level}. Target {kind}: «{target}»\n"
                     f"Student sentence: {sentence}"
                 ),
             },
         ],
         {
             "correct": False,
-            "feedback_ru": "Попробуй ещё раз — используй целевое слово/фразу в предложении.",
+            "feedback_ru": f"Исправь предложение и обязательно используй «{target}».",
+            "errors_ru": "",
             "better_en": "",
         },
-        temperature=0.0,
+        temperature=0.1,
+        max_tokens=320,
     )
     if not isinstance(data, dict):
         data = {
             "correct": False,
             "feedback_ru": "Попробуй ещё раз.",
+            "errors_ru": "",
             "better_en": "",
         }
 
     ok = _coerce_correct(data.get("correct"))
-    # Если модель упала/строго отказала, но цель есть в предложении — засчитываем
-    if not ok and _local_uses_target():
-        ok = True
-        data["feedback_ru"] = data.get("feedback_ru") or "Отлично, цель использована!"
-        data["better_en"] = ""
-
+    # Не засчитываем автоматически только из-за наличия слова — ошибки должны ловиться
     data["correct"] = ok
     data["feedback_ru"] = str(data.get("feedback_ru") or "").strip()
+    data["errors_ru"] = str(data.get("errors_ru") or "").strip()
     data["better_en"] = "" if ok else str(data.get("better_en") or "").strip()
     return data
 
