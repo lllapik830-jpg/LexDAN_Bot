@@ -304,25 +304,33 @@ def touch_activity(user: dict) -> None:
 
 def note_chat_message(user: dict) -> tuple[bool, str | None]:
     """
-    Учёт сообщений в «Общаться».
-    Лимит бесплатным не анонсируем заранее — блокируем на (FREE_CHAT_PER_DAY + 1).
+    Учёт сообщений в «Общаться» (текст + голос в одном счётчике).
+    Бесплатно: ровно FREE_CHAT_PER_DAY сообщений в сутки, на следующем — блок.
+    Триал / полный доступ / chat_pass — без лимита.
     """
     ensure_growth(user)
     touch_activity(user)
     touch_streak(user)
     daily = user["daily"]
 
+    # Синхронизация старого поля chat_count ↔ chat_messages_today
+    used = int(daily.get("chat_messages_today") or 0)
+    legacy = int(daily.get("chat_count") or 0)
+    if legacy > used:
+        used = legacy
+        daily["chat_messages_today"] = used
+
     if has_chat_pass(user):
-        daily["chat_messages_today"] = int(daily.get("chat_messages_today") or 0) + 1
+        daily["chat_messages_today"] = used + 1
         daily["chat_count"] = daily["chat_messages_today"]
         _maybe_complete_goal(user)
         return True, None
 
-    used = int(daily.get("chat_messages_today") or daily.get("chat_count") or 0)
     if used >= FREE_CHAT_PER_DAY:
         return False, (
             "🦜 <b>Мы здорово поболтали!</b>\n\n"
             "На сегодня хватит — мозгу и языку полезно отдохнуть.\n"
+            f"(Лимит бесплатного чата: <b>{FREE_CHAT_PER_DAY}</b> сообщ. текст+голос.)\n"
             "Завтра снова можно продолжить, а полный безлимит — по кнопке ниже 👇"
         )
 
