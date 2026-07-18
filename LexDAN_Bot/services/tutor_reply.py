@@ -7,10 +7,10 @@ import logging
 import os
 import tempfile
 
-from aiogram.types import FSInputFile, Message
+from aiogram.types import Message
 
 from services.database import load_users, get_user, save_users, set_last_bot_reply
-from services.elevenlabs import elevenlabs_tts, mp3_to_ogg_opus
+from services.elevenlabs import send_voice_reply
 from services.gpt import ask_tutor, format_tutor_message
 
 
@@ -26,7 +26,6 @@ async def reply_as_tutor(
 
     recent = list(user.get("chat_recent_replies") or [])
     if user.get("last_bot_reply"):
-        # на всякий случай подмешаем последний ответ
         if not recent or recent[-1] != user["last_bot_reply"]:
             recent = (recent + [user["last_bot_reply"]])[-5:]
 
@@ -41,27 +40,4 @@ async def reply_as_tutor(
     text_out = format_tutor_message(result, heard_text=heard_text)
     await message.reply(text_out, parse_mode="HTML")
 
-    mp3_bytes = elevenlabs_tts(reply_en)
-    if not mp3_bytes:
-        await message.reply("⚠️ Текст готов, но голос сейчас не отправился.")
-        return
-
-    ogg_bytes = mp3_to_ogg_opus(mp3_bytes)
-    path = None
-    try:
-        if ogg_bytes:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as f:
-                f.write(ogg_bytes)
-                path = f.name
-            await message.reply_voice(FSInputFile(path))
-        else:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-                f.write(mp3_bytes)
-                path = f.name
-            await message.reply_audio(FSInputFile(path), title="LexDAN reply")
-    except Exception as e:
-        logging.error(f"Send voice error: {e}")
-        await message.reply("⚠️ Не удалось отправить голосовое сообщение.")
-    finally:
-        if path and os.path.exists(path):
-            os.unlink(path)
+    await send_voice_reply(message, reply_en, title="LexDAN reply")

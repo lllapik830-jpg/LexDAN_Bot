@@ -37,7 +37,7 @@ from services.assessment import (
 )
 from services.assessment_gen import estimate_level_from_translation
 from services.gpt import judge_translation, judge_vocab, judge_listening, judge_writing
-from services.elevenlabs import elevenlabs_tts, mp3_to_ogg_opus
+from services.elevenlabs import send_voice_reply
 
 router = Router()
 
@@ -556,27 +556,7 @@ async def _start_listen_flow(m: Message, level: str):
 
 async def _send_listen_audio(m: Message, text: str, number: int):
     await m.reply(f"🎧 {number}/3", reply_markup=assess_dont_know_kb())
-    mp3 = elevenlabs_tts(text)
-    if not mp3:
-        logging.error("Listen TTS failed")
-        await m.reply("Аудио не создалось. Напиши ответ или нажми «Не знаю».")
-        return
-
-    ogg = mp3_to_ogg_opus(mp3)
-    path = None
-    try:
-        data = ogg or mp3
-        suffix = ".ogg" if ogg else ".mp3"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
-            f.write(data)
-            path = f.name
-        if ogg:
-            await m.reply_voice(FSInputFile(path))
-        else:
-            await m.reply_audio(FSInputFile(path), title=f"Listen {number}")
-    finally:
-        if path and os.path.exists(path):
-            os.unlink(path)
+    await send_voice_reply(m, text, title=f"Listen {number}")
 
 
 async def _handle_listen_answer(m: Message, user: dict, text: str):
