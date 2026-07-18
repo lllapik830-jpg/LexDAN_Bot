@@ -45,7 +45,7 @@ from data.vocabulary_phrases import (
     get_phrase_entry,
     phrases_total,
 )
-from services.database import MODE_LESSONS, get_user, load_users
+from services.database import MODE_LESSONS, get_user, load_users, save_users, set_mode
 from services.lesson_state import assessment_busy, ensure_lesson
 from services.vocabulary_state import (
     ensure_vocab_progress,
@@ -71,9 +71,10 @@ from services.vocabulary_tutor import (
     check_vocab_sentence,
     rico_dont_remember,
 )
+from handlers.keyboards import BTN_START_TODAY
+from services.growth import note_lesson_activity, touch_activity
 
 router = Router()
-
 VOCAB_INTRO = (
     "📗 <b>Vocabulary</b>\n\n"
     "🦜 Учим слова по темам: текст → карточки → 2 предложения.\n"
@@ -112,6 +113,13 @@ async def _send_word_story(m: Message, user: dict):
     topic = get_vocab_topic(level, topic_id)
     batch = _pick_unlearned_words(user, level, topic_id, 5)
     if not batch:
+        from services.growth import note_lesson_completed, ensure_growth
+
+        users = load_users()
+        user = get_user(users, str(m.from_user.id))
+        ensure_growth(user)
+        note_lesson_completed(user)
+        save_users(users)
         wt = words_total(level, topic_id)
         wl, _, _, _, _ = _topic_progress(user, level, topic_id)
         await m.reply(
@@ -253,6 +261,78 @@ async def _send_drill_question(m: Message, user: dict):
     await m.reply(prompt, reply_markup=drill_kb(), parse_mode="HTML")
 
 
+@router.message(F.text == BTN_START_TODAY)
+async def start_today(m: Message):
+    """Онбординг после теста / из напоминания: сразу Vocabulary → первая незакрытая тема."""
+    uid = str(m.from_user.id)
+    set_mode(uid, MODE_LESSONS)
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_lesson(user)
+    ensure_vocab_progress(user)
+    touch_activity(user)
+    note_lesson_activity(user)
+    save_users(users)
+
+    level = user.get("level") or user.get("lesson", {}).get("level") or "A1"
+    if not get_vocab_topics(level):
+        for lv in ("A0", "A1", "A2", "B1"):
+            if get_vocab_topics(lv):
+                level = lv
+                break
+    has_vocabulary_level(level)
+
+    topics = get_vocab_topics(level) or []
+    pick = None
+    for topic in topics:
+        wt = words_total(level, topic["id"])
+        if wt <= 0:
+            continue
+        wl, _, wd = topic_words_progress(user, level, topic["id"], wt)
+        if not wd:
+            pick = topic
+            break
+    if pick is None and topics:
+        pick = topics[0]
+
+    if not pick:
+        await m.reply(
+            "🦜 Пока нет тем Vocabulary. Открой 📚 Уроки и выбери уровень.",
+            parse_mode="HTML",
+        )
+        return
+
+    from services.growth import can_start_new_lesson, ensure_growth
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
+
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_growth(user)
+    wt = words_total(level, pick["id"])
+    _, _, wd = topic_words_progress(user, level, pick["id"], wt)
+    if not wd:
+        ok, tip = can_start_new_lesson(user)
+        if not ok:
+            await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+            return
+
+    set_vocab_hub(
+        uid,
+        "vocab_topic",
+        level=level,
+        vocab_topic_id=pick["id"],
+        vocab_topic_title=pick["title"],
+    )
+    users = load_users()
+    user = get_user(users, uid)
+    await m.reply(
+        f"🦜 Отлично! Старт дня: Vocabulary · <b>{level}</b> · «{pick['title']}».\n"
+        "Читай текст и жми слова — 15 минут, и день засчитан 💪",
+        parse_mode="HTML",
+    )
+    await _send_word_story(m, user)
+
+
 @router.message(ModeFilter(MODE_LESSONS), F.text == BTN_VOCABULARY)
 async def open_vocabulary(m: Message):
     users = load_users()
@@ -296,6 +376,10 @@ async def open_vocabulary(m: Message):
 async def vocab_choose_topic(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
+    from services.growth import can_start_new_lesson, ensure_growth
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
+
+    ensure_growth(user)
     level = user["lesson"]["level"] or "A1"
     topic = get_vocab_topic_by_index(level, int(m.text))
     if not topic:
@@ -311,6 +395,12 @@ async def vocab_choose_topic(m: Message):
             reply_markup=vocab_topics_kb(level, user),
             parse_mode="HTML",
         )
+        return
+
+    ok, tip = can_start_new_lesson(user)
+    if not ok:
+        save_users(users)
+        await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
         return
 
     set_vocab_hub(

@@ -116,17 +116,27 @@ RICO_AFTER_LEVEL = {
 }
 
 
-def lessons_keyboard_for(user: dict):
+def lessons_keyboard_for(user: dict, *, show_start_today: bool = False):
     ensure_user_fields(user)
     if user.get("assessment_done") or user.get("dev_unlock"):
         from services.vocabulary_state import ensure_vocab_progress
         ensure_vocab_progress(user)
         has_learned = bool(user.get("vocabulary_progress", {}).get("words") or user.get("vocabulary_progress", {}).get("phrases"))
-        return lessons_home_levels(user.get("level"), show_global_tasks=has_learned or user.get("dev_unlock"), user=user)
+        return lessons_home_levels(
+            user.get("level"),
+            show_global_tasks=has_learned or user.get("dev_unlock"),
+            user=user,
+            show_start_today=show_start_today,
+        )
     return lessons_home_first()
 
 
-async def send_lessons_home(m: Message, intro: str | None = None):
+async def send_lessons_home(
+    m: Message,
+    intro: str | None = None,
+    *,
+    show_start_today: bool = False,
+):
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
@@ -157,7 +167,10 @@ async def send_lessons_home(m: Message, intro: str | None = None):
                 "Когда будешь готов — жми «Проверить уровень»."
             )
 
-    await m.reply(intro, reply_markup=lessons_keyboard_for(user))
+    await m.reply(
+        intro,
+        reply_markup=lessons_keyboard_for(user, show_start_today=show_start_today),
+    )
 
 
 
@@ -200,14 +213,16 @@ def _write_prompt(topic: str, left: int) -> str:
 
 
 async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
-    from services.growth import start_trial, ensure_growth, TRIAL_DAYS
+    from services.growth import start_trial, ensure_growth, TRIAL_DAYS, touch_activity
     from services.database import load_users, get_user, save_users
+    from handlers.keyboards import BTN_START_TODAY
 
     finish_assessment(user_id, final)
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
     start_trial(user, days=TRIAL_DAYS)
+    touch_activity(user)
     save_users(users)
 
     rico = RICO_AFTER_LEVEL.get(final, RICO_AFTER_LEVEL["A1"])
@@ -218,13 +233,15 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         f"Можно брать и уровень ниже — для закрепления.\n\n"
         f"{rico}\n\n"
         f"🎁 Рико открыл тебе <b>{TRIAL_DAYS} дней</b> полного доступа без лимита чата.\n"
-        "Рецепт на каждый день: <b>~15 минут</b> — Vocabulary или Grammar, потом можно поболтать.\n"
-        "Прогресс и серия дней — в 📊 Профиле."
+        "Рецепт: <b>~15 минут в день</b>.\n\n"
+        f"👇 Лучший старт прямо сейчас — жми <b>{BTN_START_TODAY}</b>\n"
+        "(открою Vocabulary и первую тему твоего уровня)."
     )
     await m.reply(msg, parse_mode="HTML")
     await send_lessons_home(
         m,
-        intro=f"📚 Уроки\n\nТвой уровень: {final}.\nВыбери уровень ниже — и погнали 🚀",
+        intro=f"📚 Уроки\n\nТвой уровень: {final}.\nЖми «Начать сегодня» или выбери уровень 👇",
+        show_start_today=True,
     )
 
 
@@ -250,9 +267,9 @@ async def start_level_test(m: Message):
     await m.reply(
         "🎯 Тест уровня — задание 1/4: перевод\n\n"
         "Переведи текст на русский.\n"
-        "Если сложно — нажми «Дай текст проще».\n\n"
+        "Если сложно — нажми «Дай текст проще» или «Пропустить задание».\n\n"
         f"🇬🇧 Текст:\n{a['translate_source_en']}",
-        reply_markup=assess_translate_kb(show_skip=False),
+        reply_markup=assess_translate_kb(show_skip=True),
     )
 
 
@@ -290,7 +307,7 @@ async def easier_text(m: Message):
     a = user["assessment"]
     await m.reply(
         f"🇬🇧 Текст:\n{a['translate_source_en']}",
-        reply_markup=assess_translate_kb(show_skip=False),
+        reply_markup=assess_translate_kb(show_skip=True),
     )
 
 
@@ -305,15 +322,11 @@ async def skip_translate(m: Message):
         await m.reply("Сейчас нечего пропускать.", reply_markup=lessons_keyboard_for(user))
         return
 
-    if a.get("translate_level") != "A0" or not a.get("a0_second_shown"):
-        await m.reply(
-            "Пропуск доступен после второго текста.",
-            reply_markup=assess_translate_kb(show_skip=bool(a.get("a0_second_shown"))),
-        )
-        return
-
-    set_translate_estimate(str(m.from_user.id), "A0")
-    await _start_vocab_flow(m, "A0")
+    # Пропуск без оценки — берём текущий уровень текста как оценку
+    est = a.get("translate_level") or "A1"
+    set_translate_estimate(str(m.from_user.id), est)
+    await m.reply("⏭️ Ок, пропускаем перевод без оценки.")
+    await _start_vocab_flow(m, est)
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == BTN_DONT_KNOW)
@@ -325,6 +338,10 @@ async def dont_know(m: Message):
     phase = a.get("phase")
 
     if phase == "vocab":
+        a = user["assessment"]
+        ru = a.get("vocab_ru") or []
+        hint = ru[0] if ru else "—"
+        await m.reply(f"❌ Не совсем, правильно: <b>{hint}</b>", parse_mode="HTML")
         await _advance_vocab(m, user, success=False)
     elif phase == "listen":
         await _advance_listen(m, user, success=False)
@@ -501,6 +518,12 @@ async def _handle_vocab_answer(m: Message, user: dict, text: str):
     a = user["assessment"]
     result = judge_vocab(a["vocab_en"], a.get("vocab_ru") or [], text)
     correct = _as_bool(result.get("correct"))
+    if correct:
+        await m.reply("✅ Верно!")
+    else:
+        ru = a.get("vocab_ru") or []
+        hint = ru[0] if ru else "—"
+        await m.reply(f"❌ Не совсем, правильно: <b>{hint}</b>", parse_mode="HTML")
     await _advance_vocab(m, user, success=correct)
 
 

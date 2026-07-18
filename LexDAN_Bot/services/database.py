@@ -74,6 +74,10 @@ def get_user(users: dict, user_id: str) -> dict:
             "streak_safe_milestones_claimed": [],
             "streak_pending_restore": 0,
             "streak_burned": False,
+            "streak_burn_date": "",
+            "last_active_at": "",
+            "reminder_sent_date": "",
+            "chat_until": 0,
         }
     # На всякий случай дописываем новые поля старым пользователям
     defaults = {
@@ -105,6 +109,10 @@ def get_user(users: dict, user_id: str) -> dict:
         "streak_safe_milestones_claimed": [],
         "streak_pending_restore": 0,
         "streak_burned": False,
+        "streak_burn_date": "",
+        "last_active_at": "",
+        "reminder_sent_date": "",
+        "chat_until": 0,
     }
     for key, value in defaults.items():
         users[user_id].setdefault(key, value)

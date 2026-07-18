@@ -28,10 +28,15 @@ async def voice_in_chat(m: Message, bot: Bot):
     ok, tip = note_chat_message(user)
     save_users(users)
     if not ok:
-        await m.reply(tip or "Лимит на сегодня.", reply_markup=chat_menu(), parse_mode="HTML")
+        from handlers.lesson_keyboards import chat_limit_inline_kb
+
+        await m.reply(
+            tip or "Мы здорово поболтали!",
+            reply_markup=chat_menu(),
+            parse_mode="HTML",
+        )
+        await m.reply("👇", reply_markup=chat_limit_inline_kb())
         return
-    if tip:
-        await m.reply(tip, parse_mode="HTML")
 
     await m.reply("🎧 Слушаю…", reply_markup=chat_menu())
 

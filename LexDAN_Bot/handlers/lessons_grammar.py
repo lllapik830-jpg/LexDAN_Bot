@@ -3,7 +3,7 @@
 """
 
 from aiogram import Router, F
-from aiogram.types import Message, ReplyKeyboardMarkup
+from aiogram.types import Message, ReplyKeyboardMarkup, CallbackQuery
 from aiogram.dispatcher.event.bases import SkipHandler
 
 from handlers.filters import ModeFilter
@@ -15,8 +15,10 @@ from handlers.lesson_keyboards import (
     exercises_menu_kb,
     exercise_mcq_kb,
     exercise_write_kb,
+    exercise_help_inline_kb,
     grammar_test_kb,
     BTN_GRAMMAR_TEST,
+    lesson_limit_inline_kb,
 )
 from handlers.keyboards import lessons_home_levels, lessons_home_first
 from data.assessment_data import LEVELS
@@ -29,7 +31,7 @@ from data.grammar_curriculum import (
     get_grammar_section_intro,
 )
 from data.level_intros import get_level_welcome
-from services.database import MODE_LESSONS, load_users, get_user
+from services.database import MODE_LESSONS, load_users, get_user, save_users
 from services.lesson_state import (
     ensure_lesson,
     ensure_progress,
@@ -66,18 +68,14 @@ from services.rico_tutor import (
     is_word_lookup_question,
     rico_word_lookup,
 )
+from services.growth import can_start_new_lesson, note_lesson_completed, ensure_growth
 
 router = Router()
 
 BTN_GRAMMAR = "📘 Grammar"
 BTN_ACK = "✅ Ознакомился"
 BTN_TRANSLATE = "🌍 Перевести"
-SECTION_STUBS = {
-    "🎧 Listening",
-    "📖 Reading",
-    "🗣 Speaking",
-    "✍️ Writing",
-}
+
 
 VOICE_ONLY_TEXT = (
     "🦜 Здесь пока только <b>текстом</b>!\n"
@@ -234,23 +232,6 @@ async def start_grammar_section_test(m: Message):
     await _show_grammar_test_question(m, user)
 
 
-@router.message(ModeFilter(MODE_LESSONS), F.text.in_(SECTION_STUBS))
-async def section_stub(m: Message):
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
-    if assessment_busy(user):
-        return
-    ensure_lesson(user)
-    if (user.get("lesson") or {}).get("hub") != "level_hub":
-        return
-    await m.reply(
-        f"{m.text}\n\n🦜 Раздел ещё в мастерской у Рико. Скоро откроем!\n"
-        "Пока залетай в <b>Grammar</b> — там уже полно мяса ✨",
-        reply_markup=level_sections_kb(),
-        parse_mode="HTML",
-    )
-
-
 @router.message(ModeFilter(MODE_LESSONS), F.text == "⬅️ К уровням")
 async def back_to_levels(m: Message):
     users = load_users()
@@ -285,6 +266,7 @@ async def back_to_sections(m: Message):
 async def choose_topic_number(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
     level = user["lesson"].get("level") or "A1"
     idx = int(m.text)
     topic = get_topic_by_index(level, idx)
@@ -294,6 +276,14 @@ async def choose_topic_number(m: Message):
             reply_markup=grammar_topics_kb(level, user),
         )
         return
+
+    # Лимит: вторая новая тема в день для бесплатных
+    if not is_grammar_topic_done(user, level, topic):
+        ok, tip = can_start_new_lesson(user)
+        if not ok:
+            save_users(users)
+            await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+            return
 
     open_topic(str(m.from_user.id), topic["id"], topic["title"])
     ack = is_ack_topic(topic)
@@ -324,6 +314,11 @@ async def acknowledge_topic(m: Message):
         return
 
     mark_topic_done(str(m.from_user.id), level, topic_id)
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
+    note_lesson_completed(user)
+    save_users(users)
     set_grammar_list(str(m.from_user.id), level)
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -450,20 +445,73 @@ async def _finish_exercise_ok(m: Message, user_id: str, level: str, topic_id: st
     user = get_user(users, user_id)
     topic_title = (user.get("lesson") or {}).get("topic_title") or "тема"
     extra = ""
+    topic_just_done = False
     if is_topic_exercises_done(user, level, topic_id):
         mark_topic_done(user_id, level, topic_id)
+        ensure_growth(user)
+        note_lesson_completed(user)
+        save_users(users)
+        topic_just_done = True
         extra = f"\n\n🎉 <b>Тема «{topic_title}» полностью пройдена!</b> ✅"
         users = load_users()
         user = get_user(users, user_id)
         if all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
             extra += "\n\n🔓 Все темы пройдены — открой <b>🎯 Тест по Grammar</b> в списке тем!"
-    clear_active_exercise(user_id)
+
     done = get_done_exercises(user, level, topic_id)
-    lines = [text + extra, "", "📝 Прогресс:"]
-    for n, title in EXERCISE_TYPES:
-        mark = "✅" if n in done else "▫️"
-        lines.append(f"{mark} Задание {n} — {title}")
-    await m.reply("\n".join(lines), reply_markup=exercises_menu_kb(), parse_mode="HTML")
+    next_num = None
+    for n, _title in EXERCISE_TYPES:
+        if n not in done:
+            next_num = n
+            break
+
+    if topic_just_done or next_num is None:
+        clear_active_exercise(user_id)
+        lines = [text + extra, "", "📝 Прогресс:"]
+        for n, title in EXERCISE_TYPES:
+            mark = "✅" if n in done else "▫️"
+            lines.append(f"{mark} Задание {n} — {title}")
+        await m.reply("\n".join(lines), reply_markup=exercises_menu_kb(), parse_mode="HTML")
+        return
+
+    # Автопереход к следующему заданию без возврата в список
+    await m.reply(text + extra, parse_mode="HTML")
+    await _launch_exercise(m, user_id, level, topic_id, topic_title, next_num)
+
+
+async def _launch_exercise(
+    m: Message,
+    user_id: str,
+    level: str,
+    topic_id: str,
+    topic_title: str,
+    num: int,
+):
+    await m.reply("🦜 Рико готовит задание…")
+    ex = generate_grammar_exercise(level, topic_title, num, topic_id=topic_id)
+    start_exercise(user_id, num, ex)
+    await _send_exercise_card(m, num, ex)
+
+
+async def _send_exercise_card(m: Message, num: int, ex: dict):
+    inline = exercise_help_inline_kb()
+    if ex["kind"] == "mcq":
+        body = ex.get("prompt") or ""
+        text = (
+            f"<b>Задание {num}/8</b>\n\n{body}\n\n"
+            "Выбери ответ кнопкой. Не понимаешь фразу — жми <b>🌍 Перевести</b> под сообщением."
+        )
+        await m.reply(text, reply_markup=exercise_mcq_kb(ex["options"]), parse_mode="HTML")
+        await m.reply("👇 Подсказки к заданию:", reply_markup=inline)
+    else:
+        body = ex.get("prompt") or ""
+        text = f"<b>Задание {num}/8</b>\n\n{body}"
+        if ex.get("subtype") in {"translate_en", "translate_ru"}:
+            text += "\n\nНе понятно слово — спроси: «как переводится …»"
+        else:
+            text += "\n\nНе понятно — жми кнопки под этим сообщением."
+        await m.reply(text, reply_markup=exercise_write_kb(), parse_mode="HTML")
+        await m.reply("👇 Подсказки к заданию:", reply_markup=inline)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("exercises"), F.text.regexp(r"^Задание\s+[1-8]$"))
@@ -479,25 +527,7 @@ async def start_assignment(m: Message):
         await m.reply("У этой темы нет заданий.", reply_markup=topic_chat_kb(ack=True))
         return
 
-    await m.reply("🦜 Рико готовит задание…")
-    ex = generate_grammar_exercise(level, title, num, topic_id=topic_id)
-    start_exercise(str(m.from_user.id), num, ex)
-
-    if ex["kind"] == "mcq":
-        body = ex.get("prompt") or ""
-        text = (
-            f"<b>Задание {num}/8</b>\n\n{body}\n\n"
-            "Выбери ответ кнопкой. Не понимаешь фразу — жми <b>🌍 Перевести</b>."
-        )
-        await m.reply(text, reply_markup=exercise_mcq_kb(ex["options"]), parse_mode="HTML")
-    else:
-        body = ex.get("prompt") or ""
-        text = f"<b>Задание {num}/8</b>\n\n{body}"
-        if ex.get("subtype") in {"translate_en", "translate_ru"}:
-            text += "\n\nНе понятно слово — спроси: «как переводится …»"
-        else:
-            text += "\n\nНе понятно — <b>🌍 Перевести</b> или помощь Рико."
-        await m.reply(text, reply_markup=exercise_write_kb(), parse_mode="HTML")
+    await _launch_exercise(m, str(m.from_user.id), level, topic_id, title, num)
 
 
 def _exercise_kb(ex: dict) -> ReplyKeyboardMarkup:
@@ -520,6 +550,7 @@ async def _show_exercise_translation(m: Message, user: dict):
         reply_markup=_exercise_kb(ex),
         parse_mode="HTML",
     )
+    await m.reply("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("exercise"), F.text == BTN_TRANSLATE)
@@ -529,10 +560,7 @@ async def exercise_translate(m: Message):
     await _show_exercise_translation(m, user)
 
 
-@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("exercise"), F.text == "🦜 Помощь Рико")
-async def exercise_help(m: Message):
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+async def _do_exercise_help(m: Message, user: dict, uid: str):
     lesson = user["lesson"]
     ex = dict(lesson.get("exercise") or {})
     level = lesson.get("level") or "A1"
@@ -552,7 +580,7 @@ async def exercise_help(m: Message):
         )
         await _finish_exercise_ok(
             m,
-            str(m.from_user.id),
+            uid,
             level,
             topic_id,
             num,
@@ -568,8 +596,38 @@ async def exercise_help(m: Message):
         reveal=False,
     )
     ex["help_count"] = help_count + 1
-    update_active_exercise(str(m.from_user.id), ex)
+    update_active_exercise(uid, ex)
     await m.reply(tip, reply_markup=_exercise_kb(ex), parse_mode="HTML")
+    await m.reply("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("exercise"), F.text == "🦜 Помощь Рико")
+async def exercise_help(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    await _do_exercise_help(m, user, str(m.from_user.id))
+
+
+@router.callback_query(F.data == "ex:translate")
+async def cb_exercise_translate(c: CallbackQuery):
+    users = load_users()
+    user = get_user(users, str(c.from_user.id))
+    if (user.get("lesson") or {}).get("hub") != "exercise":
+        await c.answer("Сейчас нет активного задания", show_alert=True)
+        return
+    await c.answer()
+    await _show_exercise_translation(c.message, user)
+
+
+@router.callback_query(F.data == "ex:help")
+async def cb_exercise_help(c: CallbackQuery):
+    users = load_users()
+    user = get_user(users, str(c.from_user.id))
+    if (user.get("lesson") or {}).get("hub") != "exercise":
+        await c.answer("Сейчас нет активного задания", show_alert=True)
+        return
+    await c.answer()
+    await _do_exercise_help(c.message, user, str(c.from_user.id))
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("exercise"))
@@ -639,6 +697,7 @@ async def exercise_answer(m: Message):
             "🦜 Неправильно, попробуй ещё раз!",
             reply_markup=_exercise_kb(ex),
         )
+        await m.reply("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
         return
 
     # write
@@ -646,6 +705,7 @@ async def exercise_answer(m: Message):
     if subtype in {"translate_en", "translate_ru"} and is_word_lookup_question(m.text):
         tip = rico_word_lookup(level, title, m.text, ex)
         await m.reply(tip, reply_markup=exercise_write_kb(), parse_mode="HTML")
+        await m.reply("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
         return
 
     result = check_write_answer(
@@ -658,10 +718,24 @@ async def exercise_answer(m: Message):
     )
     if _as_bool(result.get("correct")):
         fb = result.get("feedback_ru") or "Отлично!"
+        # Не хвалим «Nice choice!» за ошибочный ввод — только за реально верный
         await _finish_exercise_ok(m, uid, level, topic_id, num, f"✅ {fb}")
     else:
-        fb = result.get("feedback_ru") or "Попробуй ещё раз."
-        await m.reply(f"❌ {fb}", reply_markup=exercise_write_kb())
+        better = (result.get("better_en") or result.get("answer") or "").strip()
+        fb = result.get("feedback_ru") or ""
+        if better or fb:
+            msg = "Мы исправили ошибку. Продолжаем!"
+            if better:
+                msg += f"\nПравильнее: <b>{better}</b>"
+            if fb and "nice" not in fb.lower() and "молодец" not in fb.lower():
+                msg += f"\n{fb}"
+            await m.reply(f"❌ {msg}", reply_markup=exercise_write_kb(), parse_mode="HTML")
+        else:
+            await m.reply(
+                "❌ Мы исправили ошибку. Продолжаем! Попробуй ещё раз.",
+                reply_markup=exercise_write_kb(),
+            )
+        await m.reply("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
 
 
 async def _advance_grammar_test(m: Message, user: dict, correct: bool):

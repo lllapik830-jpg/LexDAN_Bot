@@ -13,9 +13,14 @@ from services.database import get_user
 
 TRIAL_DAYS = 7
 REF_BONUS_DAYS = 3
-FREE_CHAT_PER_DAY = 12
+FREE_CHAT_PER_DAY = 10
+FREE_LESSONS_PER_DAY = 1
 DAILY_WORDS_GOAL = 1
 DAILY_CHAT_GOAL = 3
+
+# Тарифы (мягкий paywall — оплата подключим отдельно)
+PRICE_CHAT_MONTH = 399  # безлимит только «Общение»
+PRICE_FULL_MONTH = 799  # безлимит ко всему
 
 MSK = timezone(timedelta(hours=3))
 
@@ -43,6 +48,8 @@ def ensure_growth(user: dict) -> dict:
     user.setdefault("streak_pending_restore", 0)
     user.setdefault("streak_burned", False)
     user.setdefault("streak_burn_date", "")
+    user.setdefault("last_active_at", "")
+    user.setdefault("reminder_sent_date", "")
     if not isinstance(user.get("daily"), dict):
         user["daily"] = {}
     daily = user["daily"]
@@ -50,10 +57,16 @@ def ensure_growth(user: dict) -> dict:
         user["daily"] = {
             "date": _today(),
             "chat_count": 0,
+            "chat_messages_today": 0,
+            "lessons_completed_today": 0,
             "words_today": 0,
             "phrases_today": 0,
             "goal_done": False,
         }
+    else:
+        daily.setdefault("chat_messages_today", int(daily.get("chat_count") or 0))
+        daily.setdefault("lessons_completed_today", 0)
+        daily.setdefault("chat_count", int(daily.get("chat_messages_today") or 0))
     # Окно восстановления — только в день возврата
     if (
         user.get("streak_burned")
@@ -76,10 +89,24 @@ def bind_referral_code(user_id: str, user: dict) -> str:
 
 
 def is_premium(user: dict) -> bool:
+    """Полный доступ (триал / подписка «ко всему» / DEV)."""
     ensure_growth(user)
     if user.get("dev_unlock"):
         return True
     return float(user.get("premium_until") or 0) > _now_ts()
+
+
+def is_paid(user: dict) -> bool:
+    """Платный/триальный полный доступ — оба суточных лимита игнорируются."""
+    return is_premium(user)
+
+
+def has_chat_pass(user: dict) -> bool:
+    """Безлимит только на «Общение» (отдельный тариф) или полный доступ."""
+    ensure_growth(user)
+    if is_paid(user):
+        return True
+    return float(user.get("chat_until") or 0) > _now_ts()
 
 
 def premium_days_left(user: dict) -> int:
@@ -99,7 +126,9 @@ def premium_time_label(user: dict) -> str:
     if user.get("dev_unlock"):
         return "DEV ∞"
     if left <= 0:
-        return "бесплатно (лимит чата)"
+        if has_chat_pass(user):
+            return "безлимит общения"
+        return "бесплатно"
     days = int(left // 86400)
     hours = int((left % 86400) // 3600)
     if days <= 0:
@@ -267,34 +296,70 @@ def touch_streak(user: dict) -> dict:
     return info
 
 
-def note_chat_message(user: dict) -> tuple[bool, str | None]:
+def touch_activity(user: dict) -> None:
+    """Отметить, что пользователь сейчас активен (для напоминаний)."""
     ensure_growth(user)
+    user["last_active_at"] = datetime.now(MSK).isoformat()
+
+
+def note_chat_message(user: dict) -> tuple[bool, str | None]:
+    """
+    Учёт сообщений в «Общаться».
+    Лимит бесплатным не анонсируем заранее — блокируем на (FREE_CHAT_PER_DAY + 1).
+    """
+    ensure_growth(user)
+    touch_activity(user)
     touch_streak(user)
     daily = user["daily"]
-    daily["chat_count"] = int(daily.get("chat_count") or 0) + 1
-    _maybe_complete_goal(user)
 
-    if is_premium(user):
+    if has_chat_pass(user):
+        daily["chat_messages_today"] = int(daily.get("chat_messages_today") or 0) + 1
+        daily["chat_count"] = daily["chat_messages_today"]
+        _maybe_complete_goal(user)
         return True, None
 
-    used = int(daily.get("chat_count") or 0)
-    if used > FREE_CHAT_PER_DAY:
+    used = int(daily.get("chat_messages_today") or daily.get("chat_count") or 0)
+    if used >= FREE_CHAT_PER_DAY:
         return False, (
-            f"🦜 <b>Лимит на сегодня</b>\n\n"
-            f"На бесплатном тарифе — <b>{FREE_CHAT_PER_DAY}</b> сообщений в чате в день.\n"
-            "Завтра лимит обновится.\n\n"
-            "💎 Полный доступ без лимита — в профиле → <b>Подписка</b>.\n"
-            f"После теста уровня даём <b>{TRIAL_DAYS} дней</b> без лимитов."
+            "🦜 <b>Мы здорово поболтали!</b>\n\n"
+            "На сегодня хватит — мозгу и языку полезно отдохнуть.\n"
+            "Завтра снова можно продолжить, а полный безлимит — по кнопке ниже 👇"
         )
-    left = FREE_CHAT_PER_DAY - used
-    tip = None
-    if left in (3, 1):
-        tip = f"🦜 Осталось сообщений в чате сегодня: <b>{left}</b>."
-    return True, tip
+
+    daily["chat_messages_today"] = used + 1
+    daily["chat_count"] = daily["chat_messages_today"]
+    _maybe_complete_goal(user)
+    return True, None
+
+
+def can_start_new_lesson(user: dict) -> tuple[bool, str | None]:
+    """Бесплатно — максимум 1 полноценная тема (урок) в сутки."""
+    ensure_growth(user)
+    if is_paid(user):
+        return True, None
+    done = int(user["daily"].get("lessons_completed_today") or 0)
+    if done >= FREE_LESSONS_PER_DAY:
+        return False, (
+            "🦜 <b>Мозгу нужно отдохнуть</b>\n\n"
+            "На бесплатном тарифе — <b>1 тема в день</b>. "
+            "Ты уже хорошо позанимался сегодня!\n\n"
+            "Завтра откроется новая тема, а безлимит ко всем урокам — по кнопке ниже 👇"
+        )
+    return True, None
+
+
+def note_lesson_completed(user: dict) -> None:
+    """Засчитать завершённую тему (Grammar/Vocabulary) в суточный лимит."""
+    ensure_growth(user)
+    if is_paid(user):
+        return
+    daily = user["daily"]
+    daily["lessons_completed_today"] = int(daily.get("lessons_completed_today") or 0) + 1
 
 
 def note_word_learned(user: dict) -> str:
     ensure_growth(user)
+    touch_activity(user)
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["words_today"] = int(daily.get("words_today") or 0) + 1
@@ -306,6 +371,7 @@ def note_word_learned(user: dict) -> str:
 
 def note_phrase_learned(user: dict) -> str:
     ensure_growth(user)
+    touch_activity(user)
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["phrases_today"] = int(daily.get("phrases_today") or 0) + 1
@@ -317,6 +383,7 @@ def note_phrase_learned(user: dict) -> str:
 
 def note_lesson_activity(user: dict) -> None:
     ensure_growth(user)
+    touch_activity(user)
     touch_streak(user)
     _maybe_complete_goal(user)
 
@@ -394,36 +461,39 @@ def grant_referral_bonuses(new_user_id: str, users: dict) -> None:
 def invite_link(bot_username: str, code: str) -> str:
     uname = (bot_username or "").lstrip("@")
     if not uname:
-        return f"код: {code} (добавь BOT_USERNAME в env)"
+        return ""
     return f"https://t.me/{uname}?start=ref_{code}"
 
 
 def subscription_blurb(user: dict) -> str:
     ensure_growth(user)
     if is_premium(user):
-        status = f"✅ Активен ещё ≈ <b>{premium_days_left(user)}</b> дн."
+        status = f"✅ Полный доступ ещё ≈ <b>{premium_days_left(user)}</b> дн."
+    elif has_chat_pass(user):
+        status = "✅ Безлимит «Общение» активен"
     else:
-        status = "🆓 Бесплатный тариф (лимит чата)"
+        status = "🆓 Бесплатный тариф"
     return (
-        "💎 <b>Подписка LexDAN</b>\n\n"
+        "💎 <b>Тарифы LexDAN</b>\n\n"
         f"Сейчас: {status}\n\n"
         "<b>Бесплатно</b>\n"
-        f"• чат до {FREE_CHAT_PER_DAY} сообщ./день\n"
-        "• тест уровня\n"
-        "• Vocabulary + Grammar\n\n"
-        "<b>Полный доступ (оплата скоро)</b>\n"
-        "• без лимита чата\n"
-        "• ориентир: <b>399₽/мес</b>\n\n"
-        f"🎁 После теста — <b>{TRIAL_DAYS} дней</b> полного доступа.\n"
-        f"Приведи друга — оба +<b>{REF_BONUS_DAYS}</b> дня.\n\n"
-        "Кнопка оплаты появится здесь позже."
+        f"• 1 тема уроков в день (Grammar / Vocabulary)\n"
+        f"• общение — до {FREE_CHAT_PER_DAY} сообщ./день\n"
+        "• тест уровня\n\n"
+        f"<b>💬 Только общение</b> — <b>{PRICE_CHAT_MONTH}₽/мес</b>\n"
+        "• безлимит чата (текст + голос)\n\n"
+        f"<b>🚀 Безлимит ко всему</b> — <b>{PRICE_FULL_MONTH}₽/мес</b>\n"
+        "• уроки без лимита тем\n"
+        "• безлимит общения\n\n"
+        f"🎁 Пробный период — <b>{TRIAL_DAYS} дней</b>. Успей попробовать всё!\n"
+        f"Приведи друга — оба +<b>{REF_BONUS_DAYS}</b> дня."
     )
 
 
 def profile_growth_lines(user: dict, bot_username: str = "") -> str:
     ensure_growth(user)
     code = user.get("referral_code") or "—"
-    link = invite_link(bot_username, code) if code != "—" else "—"
+    link = invite_link(bot_username, code) if code != "—" else ""
     daily = user["daily"]
     goal = "✅ выполнена" if daily.get("goal_done") else "⏳ выучи слово/фразу или 3 сообщ. в чате"
     prem = premium_time_label(user)
@@ -441,12 +511,16 @@ def profile_growth_lines(user: dict, bot_username: str = "") -> str:
     restore_hint = ""
     if can_restore_streak(user):
         restore_hint = f"\n👉 Жми кнопку <b>{BTN_RESTORE_STREAK}</b> ниже"
+    if link:
+        ref_line = f"Твоя ссылка для друга:\n<code>{link}</code>"
+    else:
+        ref_line = "Твоя ссылка для друга: скоро появится"
     return (
         f"{streak_line}\n"
         f"🛡️ Стрик-сейфы: <b>{safes}</b>{next_safe}{restore_hint}\n"
         f"🎯 Цель дня: {goal}\n"
         f"💎 Доступ: {prem}\n"
-        f"   (время доступа реальное — дни убавляются сами)\n"
+        f"🎁 Пробный период — {TRIAL_DAYS} дней. Успей попробовать всё!\n"
         f"🎁 Друзей приглашено: {int(user.get('invite_count') or 0)}\n"
-        f"🔗 Ссылка для друга:\n<code>{link}</code>"
+        f"{ref_line}"
     )

@@ -7,6 +7,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from data.assessment_data import LEVELS, is_level_accessible
 
 BTN_ALL_LEVELS_TASKS = "📋 Задания по всем уровням"
+BTN_START_TODAY = "🚀 Начать сегодня"
 
 
 def is_dev_unlocked(user: dict | None) -> bool:
@@ -68,6 +69,7 @@ def lessons_home_levels(
     *,
     show_global_tasks: bool = False,
     user: dict | None = None,
+    show_start_today: bool = False,
 ) -> ReplyKeyboardMarkup:
     if is_dev_unlocked(user):
         visible = list(LEVELS)
@@ -76,6 +78,8 @@ def lessons_home_levels(
     else:
         visible = list(LEVELS)
     rows = []
+    if show_start_today:
+        rows.append([KeyboardButton(text=BTN_START_TODAY)])
     row = []
     for lv in visible:
         row.append(KeyboardButton(text=lv))
@@ -90,7 +94,7 @@ def lessons_home_levels(
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def assess_translate_kb(show_skip: bool = False) -> ReplyKeyboardMarkup:
+def assess_translate_kb(show_skip: bool = True) -> ReplyKeyboardMarkup:
     rows = [[KeyboardButton(text="⬇️ Дай текст проще")]]
     if show_skip:
         rows.append([KeyboardButton(text="⏭️ Пропустить задание")])

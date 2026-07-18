@@ -12,6 +12,9 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 # Username бота без @ — для реф-ссылок (пример: LexDAN_bot)
 BOT_USERNAME = (os.getenv("BOT_USERNAME") or "").lstrip("@")
 
+# Контакт поддержки без @ (можно переопределить через SUPPORT_USERNAME в env)
+SUPPORT_USERNAME = (os.getenv("SUPPORT_USERNAME") or "lllapik").lstrip("@")
+
 # Файл-«база» пользователей (лежит в корне проекта)
 USER_DATA_FILE = "users.json"
 

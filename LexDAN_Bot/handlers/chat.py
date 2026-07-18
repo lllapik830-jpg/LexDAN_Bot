@@ -57,7 +57,14 @@ def _esc_html(text: str) -> str:
 @router.message(
     ModeFilter(MODE_CHAT),
     F.text,
-    ~F.text.func(lambda t: bool(t) and ("Перевести" in t or "Вернуться в меню" in t)),
+    ~F.text.func(
+        lambda t: bool(t)
+        and (
+            "Перевести" in t
+            or "Вернуться в меню" in t
+            or t == "🚀 Начать сегодня"
+        )
+    ),
 )
 async def chat_text(m: Message):
     text = (m.text or "").strip()
@@ -66,6 +73,11 @@ async def chat_text(m: Message):
 
     from services.database import save_users
     from services.growth import note_chat_message, ensure_growth
+    from aiogram.dispatcher.event.bases import SkipHandler
+    from handlers.keyboards import BTN_START_TODAY
+
+    if text == BTN_START_TODAY:
+        raise SkipHandler
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -73,10 +85,15 @@ async def chat_text(m: Message):
     ok, tip = note_chat_message(user)
     save_users(users)
     if not ok:
-        await m.reply(tip or "Лимит на сегодня.", reply_markup=chat_menu(), parse_mode="HTML")
+        from handlers.lesson_keyboards import chat_limit_inline_kb
+
+        await m.reply(
+            tip or "Мы здорово поболтали!",
+            reply_markup=chat_menu(),
+            parse_mode="HTML",
+        )
+        await m.reply("👇", reply_markup=chat_limit_inline_kb())
         return
-    if tip:
-        await m.reply(tip, parse_mode="HTML")
 
     await m.reply("✨ …")
     await reply_as_tutor(m, user_text=text)

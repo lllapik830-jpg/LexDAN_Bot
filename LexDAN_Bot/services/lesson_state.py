@@ -201,6 +201,16 @@ def set_level_hub(user_id: str, level: str) -> dict:
     return update_lesson(user_id, mut)
 
 
+def set_section_stub(user_id: str, section_key: str) -> dict:
+    """Заготовка будущего раздела (listening/reading/speaking/writing)."""
+
+    def mut(u):
+        ensure_lesson(u)
+        u["lesson"]["hub"] = f"stub_{section_key}"
+
+    return update_lesson(user_id, mut)
+
+
 def set_grammar_list(user_id: str, level: str | None = None) -> dict:
     def mut(u):
         ensure_lesson(u)

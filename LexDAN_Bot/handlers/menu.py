@@ -98,6 +98,8 @@ async def open_profile(m: Message):
     users = load_users()
     user = get_user(users, user_id)
     from services.vocabulary_state import sync_vocab_counters
+    from handlers.lesson_keyboards import paywall_inline_kb
+    from services.growth import PRICE_CHAT_MONTH, PRICE_FULL_MONTH
 
     ensure_growth(user)
     bind_referral_code(user_id, user)
@@ -119,24 +121,39 @@ async def open_profile(m: Message):
         f"📝 Слов выучено: {words}\n"
         f"💬 Фраз выучено: {phrases}\n"
         f"💎 Подписка: {sub}\n\n"
-        f"{growth}",
+        f"{growth}\n\n"
+        f"💳 Тарифы: общение <b>{PRICE_CHAT_MONTH}₽/мес</b> · "
+        f"всё <b>{PRICE_FULL_MONTH}₽/мес</b>\n\n"
+        "Если тебе понравилось — нажми «Выбрать тариф» и оплати доступ.",
         reply_markup=profile_menu(user),
         parse_mode="HTML",
     )
+    await m.reply("👇", reply_markup=paywall_inline_kb())
 
 
 @router.message(F.text == "🆘 Поддержка")
 async def open_support(m: Message):
+    from config import SUPPORT_USERNAME
+
     set_mode(str(m.from_user.id), MODE_MENU)
-    await m.reply(
-        "🆘 По вопросам пиши: @твой_ник\n\n"
-        "(Замени на свой Telegram перед рекламой 😉)",
-        reply_markup=main_menu(),
-    )
+    if SUPPORT_USERNAME:
+        contact = f"@{SUPPORT_USERNAME}"
+        tip = f"🆘 По вопросам пиши: {contact}"
+    else:
+        tip = (
+            "🆘 Поддержка скоро будет с личным контактом.\n"
+            "Пока добавь в Render переменную <code>SUPPORT_USERNAME</code>."
+        )
+    await m.reply(tip, reply_markup=main_menu(), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_MENU), StepFilter("ready"), F.text)
 async def menu_foolproof(m: Message):
+    from handlers.keyboards import BTN_START_TODAY
+    from aiogram.dispatcher.event.bases import SkipHandler
+
+    if (m.text or "") == BTN_START_TODAY:
+        raise SkipHandler
     await m.reply(
         "🙂 Пожалуйста, выбери действие кнопкой ниже.",
         reply_markup=main_menu(),

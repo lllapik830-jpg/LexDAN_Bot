@@ -25,7 +25,10 @@ async def subscription_info(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     save_users(users)
+    from handlers.lesson_keyboards import tariffs_inline_kb
+
     await m.reply(subscription_blurb(user), reply_markup=profile_menu(user), parse_mode="HTML")
+    await m.reply("Выбери тариф:", reply_markup=tariffs_inline_kb())
 
 
 @router.message(ModeFilter(MODE_PROFILE), F.text == "🎁 Пригласить друга")
@@ -37,11 +40,15 @@ async def invite_friend(m: Message):
     code = bind_referral_code(user_id, user)
     save_users(users)
     link = invite_link(BOT_USERNAME, code)
+    if link:
+        link_block = f"Твоя ссылка для друга:\n<code>{link}</code>"
+    else:
+        link_block = "Твоя ссылка для друга: скоро появится"
     await m.reply(
         "🎁 <b>Приведи друга</b>\n\n"
         "Отправь ссылку другу. Когда он запустит бота и напишет имя — "
         "вы оба получите <b>+3 дня</b> полного доступа.\n\n"
-        f"🔗 <code>{link}</code>\n\n"
+        f"{link_block}\n\n"
         "Можно кинуть в чат/сторис: "
         "«Учу английский 15 мин/день с Рико 🦜»",
         reply_markup=profile_menu(user),

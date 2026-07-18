@@ -25,23 +25,27 @@ CRITICAL — how corrections work:
 5) Ignore capitalization and missing punctuation completely.
 6) If the student message is already correct (example: "hello") → has_error=false, better_en="", rule_ru="".
 7) Spelling typos still count (hallo → hello). Grammar counts (I likes → I like).
+8) Catch BASIC errors: wrong tense, subject-verb agreement, articles a/an, was/were, go/went, don't/doesn't.
+9) If has_error=true: NEVER praise the original message. Do NOT say "Молодец", "Nice!", "Great!", "Awesome!", "Well done" about what they wrote wrong. reply_en may be warm about the TOPIC, but not celebrate the mistake.
+10) If has_error=false: you MAY briefly encourage.
 
 Examples:
 Student: "hello"
 → {"has_error":false,"better_en":"","rule_ru":"","reply_en":"Hey! How are you today?"}
 
 Student: "hallo"
-→ {"has_error":true,"better_en":"hello","rule_ru":"Это опечатка: правильно hello (привет).","reply_en":"Hey! Nice to meet you — how are you?"}
+→ {"has_error":true,"better_en":"hello","rule_ru":"Это опечатка: правильно hello (привет).","reply_en":"Hey! How are you today?"}
 
 Student: "i likes cow"
-→ {"has_error":true,"better_en":"I like cow","rule_ru":"После I глагол без -s: I like (не likes).","reply_en":"Cool! Do you like milk too?"}
+→ {"has_error":true,"better_en":"I like cow","rule_ru":"После I глагол без -s: I like (не likes).","reply_en":"Cool topic — do you like milk too?"}
 
 Student: "I go to school yesterday"
-→ {"has_error":true,"better_en":"I went to school yesterday","rule_ru":"Yesterday = прошедшее время: went, не go.","reply_en":"Nice! What did you do there?"}
+→ {"has_error":true,"better_en":"I went to school yesterday","rule_ru":"Yesterday = прошедшее время: went, не go.","reply_en":"Oh, school yesterday — what did you do there?"}
 
 BAD (never do this):
 Student: "hello" → better_en "Hi! How are you today?"  ❌
 Student: "i likes cow" → better_en "I love playing chess" ❌
+Student: "I go yesterday" → reply_en "Молодец! Nice choice!" ❌
 
 reply_en = separate warm tutor reply about what they said + one easy question.
 Never say "As an AI".
@@ -264,13 +268,24 @@ def format_tutor_message(result: dict, heard_text: str | None = None) -> str:
         if rule:
             parts.append("")
             parts.append(f"💡 <b>Почему:</b>\n{_esc(rule)}")
+        parts.append("")
+        parts.append("Мы исправили ошибку. Продолжаем!")
     else:
         parts.append("✅ <b>Ошибки отсутствуют — молодец!</b> 🎉")
+
+    reply = _clean_field(result.get("reply_en") or "")
+    if has_error:
+        # Убираем случайную похвалу из reply_en при ошибке
+        low = reply.lower()
+        for bad in ("молодец", "nice!", "great!", "awesome", "well done", "nice choice"):
+            if bad in low:
+                reply = "Got it — let's keep chatting."
+                break
 
     parts.append("")
     parts.append("────────")
     parts.append("")
-    parts.append(f"💬 {_esc(result.get('reply_en') or '')}")
+    parts.append(f"💬 {_esc(reply)}")
 
     return "\n".join(parts)
 
