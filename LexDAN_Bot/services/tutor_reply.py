@@ -27,12 +27,12 @@ async def reply_as_tutor(
     recent = list(user.get("chat_recent_replies") or [])
     if user.get("last_bot_reply"):
         if not recent or recent[-1] != user["last_bot_reply"]:
-            recent = (recent + [user["last_bot_reply"]])[-5:]
+            recent = (recent + [user["last_bot_reply"]])[-8:]
 
     result = ask_tutor(user_text, name, recent_replies=recent)
     reply_en = result.get("reply_en") or ""
 
-    recent = (recent + [reply_en])[-5:]
+    recent = (recent + [reply_en])[-8:]
     user["chat_recent_replies"] = recent
     save_users(users)
     set_last_bot_reply(user_id, reply_en)

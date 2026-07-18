@@ -4,41 +4,59 @@
 
 import json
 import logging
+import random
 import re
 import requests
 from config import OPENROUTER_API_KEY
 
 SYSTEM_PROMPT = """
-You are LexDAN / Rico — a warm, talkative human English tutor in Telegram chat.
-Student is Russian-speaking. Messages may be from voice transcripts.
-You chat mostly in simple English; corrections explained in Russian fields.
+You are LexDAN / Rico — a warm English tutor in Telegram for Russian-speaking students.
+You check structure carefully and rewrite toward NATURAL native English, keeping the student's meaning.
 
 Return ONLY JSON (no markdown).
 
 Schema:
-{"has_error":bool,"better_en":"","rule_ru":"","reply_en":""}
+{
+  "has_error": true/false,
+  "better_en": "native natural English with the SAME meaning",
+  "errors_ru": "конкретно что не так в структуре/грамматике/словах (по-русски), или пусто",
+  "tips_ru": "почему носитель сказал бы так; 1-3 полезных слова/фразы которые стоит добавить или заменить (по-русски)",
+  "reply_en": "short chatty English reply + ONE fresh question"
+}
 
-CRITICAL — corrections:
-1) better_en = MINIMAL fix of the student's OWN words (same meaning).
-2) Do NOT invent new content. Ignore capitalization/punctuation.
-3) If already correct → has_error=false, better_en="", rule_ru="".
-4) Catch basic grammar/spelling errors.
-5) If has_error=true: NEVER praise the mistake (no "Молодец", "Nice!", "Great!" about the wrong sentence).
+CORRECTION RULES (strict):
+1) Analyze word order, tenses, articles, prepositions, agreement, awkward phrasing.
+2) better_en = how a native speaker would naturally say the SAME idea.
+   - Keep the student's meaning/facts. Do NOT invent a new story.
+   - If the message is long, heavy, or textbook-like → simplify to natural spoken English.
+   - Fix logic only when the sentence is nonsense; otherwise preserve intent.
+3) has_error=true if there are real mistakes OR the phrasing is clearly unnatural for a native.
+4) If the sentence is already natural and correct → has_error=false, better_en="", errors_ru="", tips_ru="".
+5) Ignore ONLY capitalization and ending punctuation as "errors", but you MAY still polish wording in better_en if unnatural.
+6) Never praise mistakes. No "Молодец/Nice/Great" about wrong English.
+7) tips_ru should teach: name concrete words/phrases to use next time.
 
-CRITICAL — conversation style (reply_en):
-1) Be a real chatty friend-tutor: react to what they said, share a tiny opinion/story, THEN ask 1 easy question.
-2) Lead the dialogue: if the student is short ("ok", "yes", "hello"), YOU propose a concrete topic (food, day, hobbies, city, weekend, pets, work/study, travel) and invite them in.
-3) Prefer open questions: what / how / why / tell me about… — not yes/no only.
-4) Vary wording EVERY turn. NEVER reuse the same opener or the same question as in recent replies.
-5) Keep reply_en short: 1–3 sentences + one question. Natural spoken English for A1–B1.
-6) Do NOT lecture. Do NOT dump grammar rules inside reply_en (rules go in rule_ru only).
-7) Never say "As an AI". Never sound like a textbook.
-
-Examples of good reply_en energy:
-- "Nice! I love coffee too — do you drink it in the morning or only when you're tired?"
-- "Oh cool. Yesterday I watched a silly film. What did YOU do after work?"
-- "Hey! Random question: pizza or sushi tonight — which one wins?"
+CHAT RULES (reply_en):
+1) React to THEIR topic, then ask ONE new open question.
+2) NEVER reuse openers/questions from "recent replies" — change topic and wording every turn.
+3) Never repeat: "Tell me something about your day", "what was the best part", "How was your day".
+4) Rotate topics each turn: food, hobbies, city, work/study, weekend, sports, music, travel, friends, weather, plans, books, games.
+5) 1–3 short sentences + one question. Spoken A2–B1 English.
+6) Never sound like a textbook or an AI.
 """
+
+_FALLBACK_REPLIES = [
+    "Hey! What made you smile today?",
+    "Nice chatting! Do you like cooking or ordering food more?",
+    "Cool. What's one song you can't stop listening to?",
+    "Okay! Are you more of a morning person or a night owl?",
+    "Got it. What do you usually do after work or school?",
+    "Interesting! Coffee or tea — what's your go-to?",
+    "Alright. Tell me about your favorite place in your city.",
+    "Hey! If you had a free Saturday, how would you spend it?",
+    "Nice. Do you prefer movies at home or going out with friends?",
+    "Okay! What's something small you want to learn this week?",
+]
 
 
 def ask_tutor(
@@ -49,15 +67,17 @@ def ask_tutor(
     fallback = {
         "has_error": False,
         "better_en": "",
+        "errors_ru": "",
+        "tips_ru": "",
         "rule_ru": "",
-        "reply_en": "Hey! Tell me something about your day — what was the best part?",
+        "reply_en": random.choice(_FALLBACK_REPLIES),
     }
 
-    recent = [r for r in (recent_replies or []) if r][-5:]
+    recent = [r for r in (recent_replies or []) if r][-8:]
     recent_block = ""
     if recent:
         recent_block = (
-            "\n\nYour recent reply_en (DO NOT repeat these phrases or questions):\n- "
+            "\n\nFORBIDDEN to reuse (recent reply_en). Invent a DIFFERENT question:\n- "
             + "\n- ".join(recent)
         )
 
@@ -75,28 +95,33 @@ def ask_tutor(
                         "role": "system",
                         "content": (
                             SYSTEM_PROMPT
-                            + f"\nStudent's name: {user_name}. Use the name naturally sometimes."
+                            + f"\nStudent's name: {user_name}. Use the name lightly sometimes."
                             + recent_block
                         ),
                     },
                     {
                         "role": "user",
                         "content": (
-                            "Correct minimally if needed. Then write a lively chat reply_en "
-                            "that continues the conversation and asks one fresh question.\n\n"
+                            "1) Strictly check the student's English structure.\n"
+                            "2) If anything is wrong OR unnatural, rewrite as a native would "
+                            "(same meaning; simplify if too long/complex).\n"
+                            "3) Explain mistakes and useful phrases in Russian fields.\n"
+                            "4) Then reply_en with a fresh non-repeating question.\n\n"
                             f"Student message: {user_text}"
                         ),
                     },
                 ],
-                "max_tokens": 380,
-                "temperature": 0.75,
+                "max_tokens": 520,
+                "temperature": 0.55,
             },
-            timeout=25,
+            timeout=30,
         )
         response.raise_for_status()
         raw = response.json()["choices"][0]["message"]["content"].strip()
-        parsed = _parse_tutor_json(raw) or fallback
-        return _sanitize_correction(user_text, parsed)
+        parsed = _parse_tutor_json(raw) or dict(fallback)
+        parsed = _sanitize_correction(user_text, parsed)
+        parsed = _ensure_diverse_reply(parsed, recent)
+        return parsed
     except Exception as e:
         logging.error(f"GPT error: {e}")
         return fallback
@@ -108,62 +133,99 @@ def _normalize_tokens(text: str) -> list[str]:
     return [t for t in text.split() if t]
 
 
-def _is_minimal_correction(user_text: str, better_en: str) -> bool:
-    """Проверка: правка близка к исходной фразе, а не новый смысл."""
+def _token_overlap_ratio(a: str, b: str) -> float:
+    sa, sb = set(_normalize_tokens(a)), set(_normalize_tokens(b))
+    if not sa or not sb:
+        return 0.0
+    return len(sa & sb) / max(len(sa | sb), 1)
+
+
+def _same_ignoring_noise(user_text: str, better_en: str) -> bool:
+    return _normalize_tokens(user_text) == _normalize_tokens(better_en)
+
+
+def _keeps_meaning(user_text: str, better_en: str) -> bool:
+    """Разрешаем «как носитель» (можно короче/естественнее), но не смену темы."""
     u = _normalize_tokens(user_text)
     b = _normalize_tokens(better_en)
     if not u or not b:
         return False
-
-    # короткие реплики (hello/hallo): правка тоже короткая
     if len(u) <= 2:
-        if len(b) > 4:
-            return False
-        return (u[0][:2] == b[0][:2]) or (
-            abs(len(u[0]) - len(b[0])) <= 2 and u[0][0] == b[0][0]
+        return len(b) <= 8 and (
+            u[0][:2] == b[0][:2] or _token_overlap_ratio(user_text, better_en) >= 0.3
         )
-
-    # для фраз: много общих слов И похожая длина
+    # достаточно общих смысловых слов ИЛИ высокая доля overlap
     overlap = len(set(u) & set(b))
-    if overlap >= max(1, len(set(u)) - 2):
+    if overlap >= max(1, min(3, len(set(u)) // 2)):
         return True
-    if overlap / max(len(set(u)), 1) >= 0.5 and abs(len(u) - len(b)) <= 3:
-        return True
-    return False
-
-
-def _same_ignoring_noise(user_text: str, better_en: str) -> bool:
-    """Одинаковый смысл без учёта регистра/пунктуации."""
-    return _normalize_tokens(user_text) == _normalize_tokens(better_en)
+    return _token_overlap_ratio(user_text, better_en) >= 0.28
 
 
 def _sanitize_correction(user_text: str, result: dict) -> dict:
-    """Если модель переписала смысл — считаем, что ошибки нет."""
-    if not result.get("has_error"):
-        result["better_en"] = ""
-        result["rule_ru"] = ""
-        return result
+    """Оставляем native-правку, если смысл сохранён; иначе чистим."""
+    better = _clean_field(result.get("better_en") or "")
+    errors = _clean_field(result.get("errors_ru") or "")
+    tips = _clean_field(result.get("tips_ru") or result.get("rule_ru") or "")
+    has_error = bool(result.get("has_error"))
 
-    better = (result.get("better_en") or "").strip()
-    if not better:
-        result["has_error"] = False
-        result["rule_ru"] = ""
-        return result
+    if better and _same_ignoring_noise(user_text, better):
+        better = ""
 
-    # "hello" → "Hello" не ошибка
-    if _same_ignoring_noise(user_text, better):
-        result["has_error"] = False
-        result["better_en"] = ""
-        result["rule_ru"] = ""
-        return result
+    if better and not _keeps_meaning(user_text, better):
+        logging.info(f"Dropped off-topic rewrite: '{user_text}' -> '{better}'")
+        better = ""
+        has_error = False
+        errors = ""
+        tips = ""
 
-    if not _is_minimal_correction(user_text, better):
-        logging.info(
-            f"Dropped non-minimal correction: '{user_text}' -> '{better}'"
-        )
-        result["has_error"] = False
-        result["better_en"] = ""
-        result["rule_ru"] = ""
+    # Если есть улучшение — показываем блок правки
+    if better:
+        has_error = True
+    elif has_error and not better and not errors and not tips:
+        has_error = False
+
+    result["has_error"] = has_error
+    result["better_en"] = better
+    result["errors_ru"] = errors
+    result["tips_ru"] = tips
+    result["rule_ru"] = tips  # совместимость
+    return result
+
+
+def _ensure_diverse_reply(result: dict, recent: list[str]) -> dict:
+    reply = _clean_field(result.get("reply_en") or "")
+    banned_bits = (
+        "tell me something about your day",
+        "what was the best part",
+        "best part of your day",
+        "how was your day",
+        "what did you do today",
+    )
+    low = reply.lower()
+    recent_low = [(r or "").lower() for r in recent]
+    repeated = False
+
+    # один и тот же «шаблонный» вопрос уже был недавно
+    for b in banned_bits:
+        if b in low and any(b in r for r in recent_low):
+            repeated = True
+            break
+
+    # почти тот же текст ответа, что уже отправляли
+    for r in recent:
+        if reply and _token_overlap_ratio(reply, r) >= 0.55:
+            repeated = True
+            break
+
+    if not reply or repeated:
+        pool = [
+            x
+            for x in _FALLBACK_REPLIES
+            if all(_token_overlap_ratio(x, r) < 0.5 for r in recent)
+            and not any(b in x.lower() and any(b in rl for rl in recent_low) for b in banned_bits)
+        ]
+        reply = random.choice(pool or _FALLBACK_REPLIES)
+    result["reply_en"] = reply
     return result
 
 
@@ -258,26 +320,29 @@ def format_tutor_message(result: dict, heard_text: str | None = None) -> str:
 
     has_error = bool(result.get("has_error"))
     better = _clean_field(result.get("better_en") or "")
-    rule = _clean_field(result.get("rule_ru") or "")
+    errors = _clean_field(result.get("errors_ru") or "")
+    tips = _clean_field(result.get("tips_ru") or result.get("rule_ru") or "")
 
-    if has_error and not better and not rule:
+    if has_error and not better and not errors and not tips:
         has_error = False
 
-    if has_error:
-        parts.append("✏️ <b>Не совсем так</b>")
+    if better or errors or tips:
+        parts.append("✏️ <b>Как сказал бы носитель</b>")
         if better:
-            parts.append(f"Правильно будет: <b>{_esc(better)}</b>")
-        if rule:
+            parts.append(f"<b>{_esc(better)}</b>")
+        if errors:
             parts.append("")
-            parts.append(f"💡 <b>Почему:</b>\n{_esc(rule)}")
+            parts.append(f"<b>Что поправить:</b>\n{_esc(errors)}")
+        if tips:
+            parts.append("")
+            parts.append(f"💡 <b>Полезно запомнить:</b>\n{_esc(tips)}")
         parts.append("")
-        parts.append("Мы исправили ошибку. Продолжаем!")
+        parts.append("Суть твоей мысли сохранили — просто сделали естественнее. Продолжаем!")
     else:
-        parts.append("✅ <b>Ошибки отсутствуют — молодец!</b> 🎉")
+        parts.append("✅ <b>Звучит естественно — молодец!</b> 🎉")
 
     reply = _clean_field(result.get("reply_en") or "")
-    if has_error:
-        # Убираем случайную похвалу из reply_en при ошибке
+    if better or errors:
         low = reply.lower()
         for bad in ("молодец", "nice!", "great!", "awesome", "well done", "nice choice"):
             if bad in low:
@@ -381,27 +446,31 @@ def _parse_tutor_json(raw: str) -> dict | None:
 
     reply = (data.get("reply_en") or "").strip()
     if not reply or _clean_field(reply) == "":
-        # если reply сам похож на плейсхолдер — отбрасываем
         if not reply or any(b.lower() in reply.lower() for b in _BAD_PLACEHOLDERS):
             return None
 
     better = _clean_field(data.get("better_en") or "")
-    rule = _clean_field(data.get("rule_ru") or "")
+    errors = _clean_field(data.get("errors_ru") or data.get("mistakes_ru") or "")
+    tips = _clean_field(
+        data.get("tips_ru") or data.get("rule_ru") or ""
+    )
 
     has_error = data.get("has_error")
     if isinstance(has_error, str):
         has_error = has_error.strip().lower() in {"1", "true", "yes"}
     elif has_error is None:
-        has_error = bool(better or rule)
+        has_error = bool(better or errors or tips)
     else:
         has_error = bool(has_error)
 
-    if has_error and not better and not rule:
+    if has_error and not better and not errors and not tips:
         has_error = False
 
     return {
         "has_error": has_error,
         "better_en": better,
-        "rule_ru": rule,
+        "errors_ru": errors,
+        "tips_ru": tips,
+        "rule_ru": tips,
         "reply_en": reply,
     }
