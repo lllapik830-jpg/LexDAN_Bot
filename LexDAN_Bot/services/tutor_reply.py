@@ -3,10 +3,6 @@
 текст ученика → ИИ → сообщение → голосовое (OGG).
 """
 
-import logging
-import os
-import tempfile
-
 from aiogram.types import Message
 
 from services.database import load_users, get_user, save_users, set_last_bot_reply
@@ -29,11 +25,21 @@ async def reply_as_tutor(
         if not recent or recent[-1] != user["last_bot_reply"]:
             recent = (recent + [user["last_bot_reply"]])[-8:]
 
-    result = ask_tutor(user_text, name, recent_replies=recent)
+    turns = list(user.get("chat_recent_turns") or [])
+    turns = (turns + [{"role": "user", "text": user_text}])[-10:]
+
+    result = ask_tutor(
+        user_text,
+        name,
+        recent_replies=recent,
+        recent_turns=turns[:-1],  # история до текущего сообщения
+    )
     reply_en = result.get("reply_en") or ""
 
     recent = (recent + [reply_en])[-8:]
+    turns = (turns + [{"role": "bot", "text": reply_en}])[-10:]
     user["chat_recent_replies"] = recent
+    user["chat_recent_turns"] = turns
     save_users(users)
     set_last_bot_reply(user_id, reply_en)
 

@@ -39,6 +39,9 @@ async def open_chat(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     note_lesson_activity(user)
+    # новая сессия общения — без старой темы
+    user["chat_recent_turns"] = []
+    user["chat_recent_replies"] = []
     save_users(users)
     await m.reply(
         "🔥 <b>Погнали общаться!</b> 🙂\n\n"

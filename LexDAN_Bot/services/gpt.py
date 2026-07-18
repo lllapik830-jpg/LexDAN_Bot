@@ -41,13 +41,18 @@ CORRECTION RULES (strict):
    - Example: "can explain" without you → say: нужно «you»: can you explain.
 8) tips_ru: only useful words/phrases that are NEW vs what the student already wrote.
 
-CHAT RULES (reply_en):
-1) React to THEIR topic, then ask ONE new open question.
-2) NEVER reuse openers/questions from "recent replies" — change topic and wording every turn.
-3) Never repeat: "Tell me something about your day", "what was the best part", "How was your day".
-4) Rotate topics each turn: food, hobbies, city, work/study, weekend, sports, music, travel, friends, weather, plans, books, games.
-5) 1–3 short sentences + one question. Spoken A2–B1 English.
-6) Never sound like a textbook or an AI.
+CHAT RULES (reply_en) — topic continuity is CRITICAL:
+1) If the student started a topic (football, work, food, a story, an opinion) → STAY on it.
+   React to their words, then ask ONE follow-up that deepens THE SAME topic.
+2) Do NOT jump to a random new topic (music, food, day, etc.) while their topic is alive.
+3) Suggest a NEW topic ONLY when:
+   - greeting / small talk with no content ("hi", "hello", "how are you", "what's up"), OR
+   - student says they don't know what to talk about, OR
+   - the thread is clearly finished / one-word dead-end ("ok", "yes", "no", "idk") with nothing left to ask on the old topic.
+4) On pure small talk: answer briefly, then offer ONE concrete topic to start (not a list of 5).
+5) If recent dialogue shows an active topic, continue that topic — do not "rotate topics".
+6) Never reuse the exact same question from recent replies; rephrase if needed, but keep the topic.
+7) 1–3 short sentences + one question. Spoken A2–B1 English. Never sound like a textbook.
 """
 
 _FALLBACK_REPLIES = [
@@ -63,11 +68,21 @@ _FALLBACK_REPLIES = [
     "Okay! What's something small you want to learn this week?",
 ]
 
+_SMALLTALK_RE = re.compile(
+    r"^\s*(hi|hey|hello|hola|yo|sup|hiya|"
+    r"how are you( doing)?|how'?s it going|what'?s up|"
+    r"good morning|good evening|good night|"
+    r"i don'?t know|idk|nothing|no idea|"
+    r"ok|okay|yes|no|yeah|yep|nope|hmm|hm)\s*[.!?]*\s*$",
+    re.I,
+)
+
 
 def ask_tutor(
     user_text: str,
     user_name: str = "Student",
     recent_replies: list[str] | None = None,
+    recent_turns: list[dict] | None = None,
 ) -> dict:
     fallback = {
         "has_error": False,
@@ -75,16 +90,36 @@ def ask_tutor(
         "errors_ru": "",
         "tips_ru": "",
         "rule_ru": "",
-        "reply_en": random.choice(_FALLBACK_REPLIES),
+        "reply_en": _fallback_reply_for(user_text, recent_replies or []),
     }
 
     recent = [r for r in (recent_replies or []) if r][-8:]
+    turns = [t for t in (recent_turns or []) if t.get("text")][-10:]
+
     recent_block = ""
     if recent:
         recent_block = (
-            "\n\nFORBIDDEN to reuse (recent reply_en). Invent a DIFFERENT question:\n- "
+            "\n\nDo NOT repeat these questions word-for-word "
+            "(rephrase OK, but KEEP the same topic if one is active):\n- "
             + "\n- ".join(recent)
         )
+
+    dialogue_block = ""
+    if turns:
+        lines = []
+        for t in turns:
+            who = "Student" if t.get("role") == "user" else "Tutor"
+            lines.append(f"{who}: {t.get('text')}")
+        dialogue_block = (
+            "\n\nRecent dialogue (continue the student's topic unless it is dead):\n"
+            + "\n".join(lines)
+        )
+
+    topic_hint = (
+        "Student has NO clear topic yet → answer briefly and suggest ONE topic."
+        if _looks_like_no_topic(user_text) and not _active_topic_in_turns(turns)
+        else "Student has a topic → stay on it and deepen it. Do NOT switch topics."
+    )
 
     try:
         response = requests.post(
@@ -102,6 +137,7 @@ def ask_tutor(
                             SYSTEM_PROMPT
                             + f"\nStudent's name: {user_name}. Use the name lightly sometimes."
                             + recent_block
+                            + dialogue_block
                         ),
                     },
                     {
@@ -111,13 +147,13 @@ def ask_tutor(
                             "2) If real issues: rewrite as a native (same meaning).\n"
                             "3) errors_ru/tips_ru in Russian: ONLY real changes "
                             "(do not claim a word is missing if the student already used it).\n"
-                            "4) reply_en: fresh non-repeating question.\n\n"
+                            f"4) reply_en: {topic_hint}\n\n"
                             f"Student message: {user_text}"
                         ),
                     },
                 ],
                 "max_tokens": 520,
-                "temperature": 0.35,
+                "temperature": 0.4,
             },
             timeout=30,
         )
@@ -125,11 +161,47 @@ def ask_tutor(
         raw = response.json()["choices"][0]["message"]["content"].strip()
         parsed = _parse_tutor_json(raw) or dict(fallback)
         parsed = _sanitize_correction(user_text, parsed)
-        parsed = _ensure_diverse_reply(parsed, recent)
+        parsed = _ensure_diverse_reply(parsed, recent, user_text=user_text, turns=turns)
         return parsed
     except Exception as e:
         logging.error(f"GPT error: {e}")
         return fallback
+
+
+def _looks_like_no_topic(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return True
+    if _SMALLTALK_RE.match(t):
+        return True
+    # очень короткое «пустое» сообщение без существительных темы
+    tokens = _normalize_tokens(t)
+    return len(tokens) <= 2 and tokens[0] in {
+        "hi", "hey", "hello", "ok", "okay", "yes", "no", "yeah", "idk", "thanks", "thank",
+    }
+
+
+def _active_topic_in_turns(turns: list[dict]) -> bool:
+    """Есть ли в недавнем диалоге содержательные реплики ученика (не small talk)."""
+    for t in reversed(turns or []):
+        if t.get("role") != "user":
+            continue
+        if not _looks_like_no_topic(t.get("text") or ""):
+            return True
+    return False
+
+
+def _fallback_reply_for(user_text: str, recent: list[str]) -> str:
+    # small talk / нет темы → предложить тему
+    if _looks_like_no_topic(user_text):
+        pool = [
+            x
+            for x in _FALLBACK_REPLIES
+            if all(_token_overlap_ratio(x, r) < 0.5 for r in recent)
+        ]
+        return random.choice(pool or _FALLBACK_REPLIES)
+    # есть тема — продолжить, не менять
+    return "Interesting! Tell me more about that — what do you like most about it?"
 
 
 def _normalize_tokens(text: str) -> list[str]:
@@ -308,39 +380,36 @@ def _sanitize_correction(user_text: str, result: dict) -> dict:
     return result
 
 
-def _ensure_diverse_reply(result: dict, recent: list[str]) -> dict:
+def _ensure_diverse_reply(
+    result: dict,
+    recent: list[str],
+    user_text: str = "",
+    turns: list[dict] | None = None,
+) -> dict:
+    """Не повторять тот же вопрос; тему ученика не ломать случайным fallback."""
     reply = _clean_field(result.get("reply_en") or "")
     banned_bits = (
         "tell me something about your day",
         "what was the best part",
         "best part of your day",
-        "how was your day",
-        "what did you do today",
     )
     low = reply.lower()
     recent_low = [(r or "").lower() for r in recent]
     repeated = False
 
-    # один и тот же «шаблонный» вопрос уже был недавно
     for b in banned_bits:
         if b in low and any(b in r for r in recent_low):
             repeated = True
             break
 
-    # почти тот же текст ответа, что уже отправляли
     for r in recent:
-        if reply and _token_overlap_ratio(reply, r) >= 0.55:
+        if reply and _token_overlap_ratio(reply, r) >= 0.72:
             repeated = True
             break
 
     if not reply or repeated:
-        pool = [
-            x
-            for x in _FALLBACK_REPLIES
-            if all(_token_overlap_ratio(x, r) < 0.5 for r in recent)
-            and not any(b in x.lower() and any(b in rl for rl in recent_low) for b in banned_bits)
-        ]
-        reply = random.choice(pool or _FALLBACK_REPLIES)
+        # при активной теме не подсовываем случайную «песню»
+        reply = _fallback_reply_for(user_text, recent)
     result["reply_en"] = reply
     return result
 
