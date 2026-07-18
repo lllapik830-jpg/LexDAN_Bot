@@ -35,10 +35,24 @@ async def section_stub_open(m: Message):
     if (user.get("lesson") or {}).get("hub") != "level_hub":
         return
     set_section_stub(str(m.from_user.id), SECTION_BUTTONS[m.text])
-    await m.reply(
-        f"{m.text}\n\nЭтот раздел скоро появится! 🚀",
-        reply_markup=_stub_kb(),
-    )
+    from services.rewards import has_sections_unlock
+    from services.growth import ensure_growth
+
+    ensure_growth(user)
+    if has_sections_unlock(user):
+        await m.reply(
+            f"{m.text}\n\n"
+            "🔓 У тебя открыт эксклюзивный доступ к разделам (награда за серию)!\n"
+            "Контент раздела ещё собираем — совсем скоро здесь появятся задания. "
+            "Место за тобой забронировано 🦜",
+            reply_markup=_stub_kb(),
+        )
+    else:
+        await m.reply(
+            f"{m.text}\n\nЭтот раздел скоро появится! 🚀\n"
+            "На тарифе 799 за серию 14 дней можно получить ранний доступ.",
+            reply_markup=_stub_kb(),
+        )
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == "⬅️ Назад")

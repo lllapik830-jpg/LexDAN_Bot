@@ -1,4 +1,4 @@
-﻿"""Раздел «Профиль» — статистика, подписка, рефералка, стрик-сейф."""
+﻿"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
 
 from aiogram import Router, F
 from aiogram.types import Message
@@ -10,9 +10,14 @@ from services.growth import (
     BTN_RESTORE_STREAK,
     bind_referral_code,
     ensure_growth,
-    invite_link,
     restore_streak,
     subscription_blurb,
+)
+from services.rewards import (
+    BTN_STREAK,
+    BTN_REFERRAL,
+    format_streak_rewards_message,
+    format_referral_rewards_message,
 )
 from config import BOT_USERNAME
 
@@ -31,26 +36,29 @@ async def subscription_info(m: Message):
     await m.reply("Выбери тариф:", reply_markup=tariffs_inline_kb())
 
 
-@router.message(ModeFilter(MODE_PROFILE), F.text == "🎁 Пригласить друга")
+@router.message(ModeFilter(MODE_PROFILE), F.text == BTN_STREAK)
+async def streak_rewards_info(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
+    save_users(users)
+    await m.reply(
+        format_streak_rewards_message(user),
+        reply_markup=profile_menu(user),
+        parse_mode="HTML",
+    )
+
+
+@router.message(ModeFilter(MODE_PROFILE), F.text == BTN_REFERRAL)
 async def invite_friend(m: Message):
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
-    code = bind_referral_code(user_id, user)
+    bind_referral_code(user_id, user)
     save_users(users)
-    link = invite_link(BOT_USERNAME, code)
-    if link:
-        link_block = f"Твоя ссылка для друга:\n<code>{link}</code>"
-    else:
-        link_block = "Твоя ссылка для друга: скоро появится"
     await m.reply(
-        "🎁 <b>Приведи друга</b>\n\n"
-        "Отправь ссылку другу. Когда он запустит бота и напишет имя — "
-        "вы оба получите <b>+3 дня</b> полного доступа.\n\n"
-        f"{link_block}\n\n"
-        "Можно кинуть в чат/сторис: "
-        "«Учу английский 15 мин/день с Рико 🦜»",
+        format_referral_rewards_message(user, BOT_USERNAME),
         reply_markup=profile_menu(user),
         parse_mode="HTML",
     )
@@ -73,6 +81,6 @@ async def profile_foolproof(m: Message):
     ensure_growth(user)
     save_users(users)
     await m.reply(
-        "🙂 В профиле доступны кнопки ниже.",
+        "🙂 В профиле: Подписка, Серия дней, Пригласить друга.",
         reply_markup=profile_menu(user),
     )

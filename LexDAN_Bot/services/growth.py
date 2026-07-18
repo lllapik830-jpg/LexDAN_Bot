@@ -65,6 +65,8 @@ def ensure_growth(user: dict) -> dict:
             "vocab_items_today": 0,
             "words_today": 0,
             "phrases_today": 0,
+            "grammar_cap": FREE_GRAMMAR_EXERCISES_PER_DAY,
+            "vocab_cap": FREE_VOCAB_ITEMS_PER_DAY,
             "goal_done": False,
         }
     else:
@@ -75,12 +77,17 @@ def ensure_growth(user: dict) -> dict:
         daily.setdefault("vocab_items_today", 0)
         daily.setdefault("words_today", 0)
         daily.setdefault("phrases_today", 0)
+        daily.setdefault("grammar_cap", FREE_GRAMMAR_EXERCISES_PER_DAY)
+        daily.setdefault("vocab_cap", FREE_VOCAB_ITEMS_PER_DAY)
         daily.setdefault("chat_count", int(daily.get("chat_messages_today") or 0))
-        # общий счётчик слов+фраз
         items = int(daily.get("vocab_items_today") or 0)
         wp = int(daily.get("words_today") or 0) + int(daily.get("phrases_today") or 0)
         if wp > items:
             daily["vocab_items_today"] = wp
+    user.setdefault("streak_rewards_claimed", [])
+    user.setdefault("referral_qualified", 0)
+    user.setdefault("lessons_until", 0)
+    user.setdefault("discount_percent", 0)
     # Окно восстановления — только в день возврата
     if (
         user.get("streak_burned")
@@ -174,11 +181,7 @@ def extend_premium(user: dict, days: int) -> None:
 
 
 STREAK_SAFE_MILESTONES = {
-    7: 1,
-    14: 1,
-    30: 1,
-    50: 1,
-    100: 1,
+    7: 1,  # один сейф на 7-й день; остальное — в rewards.py
 }
 
 BTN_RESTORE_STREAK = "🛡️ Восстановить серию"
@@ -307,6 +310,19 @@ def touch_streak(user: dict) -> dict:
             f"🛡️ Бонус серии <b>{st}</b> дн.! +<b>{n}</b> стрик-сейф "
             f"(всего: {int(user['streak_safes'])})"
         )
+
+    # Награды лестницы (бустеры / скидки / розыгрыши)
+    try:
+        from services.rewards import claim_streak_rewards
+
+        reward_msgs = claim_streak_rewards(user)
+        if reward_msgs:
+            extra = "\n".join(reward_msgs)
+            info["reward_msg"] = (
+                (info["reward_msg"] + "\n" + extra) if info.get("reward_msg") else extra
+            )
+    except Exception:
+        pass
     return info
 
 
@@ -372,22 +388,27 @@ def can_start_new_lesson(user: dict) -> tuple[bool, str | None]:
 
 
 def can_do_grammar_exercise(user: dict) -> tuple[bool, str | None]:
-    """Бесплатно — максимум FREE_GRAMMAR_EXERCISES_PER_DAY заданий Grammar в сутки (все уровни)."""
+    """Бесплатно — дневной лимит Grammar (с учётом бустов streak/реф)."""
     ensure_growth(user)
-    if is_paid(user):
+    from services.rewards import grammar_daily_cap, has_lessons_pass
+
+    if has_lessons_pass(user):
         return True, None
+    cap = grammar_daily_cap(user)
     done = int(user["daily"].get("grammar_exercises_today") or 0)
-    if done >= FREE_GRAMMAR_EXERCISES_PER_DAY:
-        return False, _brain_rest_msg(
-            what="заданий Grammar",
-            limit=FREE_GRAMMAR_EXERCISES_PER_DAY,
-        )
+    if done >= cap:
+        return False, _brain_rest_msg(what="заданий Grammar", limit=cap)
     return True, None
 
 
 def note_grammar_exercise_done(user: dict) -> None:
     ensure_growth(user)
-    if is_paid(user):
+    from services.rewards import has_lessons_pass
+
+    if has_lessons_pass(user):
+        # всё равно считаем для реферальной квалификации
+        daily = user["daily"]
+        daily["grammar_exercises_today"] = int(daily.get("grammar_exercises_today") or 0) + 1
         return
     daily = user["daily"]
     daily["grammar_exercises_today"] = int(daily.get("grammar_exercises_today") or 0) + 1
@@ -402,21 +423,23 @@ def vocab_items_used_today(user: dict) -> int:
 
 
 def vocab_items_remaining(user: dict) -> int:
-    if is_paid(user):
+    from services.rewards import has_lessons_pass, vocab_daily_cap
+
+    if has_lessons_pass(user):
         return 999
-    return max(0, FREE_VOCAB_ITEMS_PER_DAY - vocab_items_used_today(user))
+    return max(0, vocab_daily_cap(user) - vocab_items_used_today(user))
 
 
 def can_learn_vocab_item(user: dict) -> tuple[bool, str | None]:
-    """Бесплатно — 3 слова/фразы в сутки (общий счётчик)."""
+    """Бесплатно — дневной лимит слов/фраз (с бустами)."""
     ensure_growth(user)
-    if is_paid(user):
+    from services.rewards import has_lessons_pass, vocab_daily_cap
+
+    if has_lessons_pass(user):
         return True, None
-    if vocab_items_used_today(user) >= FREE_VOCAB_ITEMS_PER_DAY:
-        return False, _brain_rest_msg(
-            what="слов или фраз Vocabulary",
-            limit=FREE_VOCAB_ITEMS_PER_DAY,
-        )
+    cap = vocab_daily_cap(user)
+    if vocab_items_used_today(user) >= cap:
+        return False, _brain_rest_msg(what="слов или фраз Vocabulary", limit=cap)
     return True, None
 
 
@@ -445,16 +468,18 @@ def note_word_learned(user: dict) -> str:
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["words_today"] = int(daily.get("words_today") or 0) + 1
-    if not is_paid(user):
+    from services.rewards import has_lessons_pass, vocab_daily_cap
+
+    if not has_lessons_pass(user):
         daily["vocab_items_today"] = vocab_items_used_today(user)
     goal_just = _maybe_complete_goal(user)
     wrap = format_session_wrap(
         user, kind="word", streak_info=streak_info, goal_just_done=goal_just
     )
-    if not is_paid(user) and vocab_items_used_today(user) >= FREE_VOCAB_ITEMS_PER_DAY:
+    if not has_lessons_pass(user) and vocab_items_used_today(user) >= vocab_daily_cap(user):
         wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(
             what="слов или фраз Vocabulary",
-            limit=FREE_VOCAB_ITEMS_PER_DAY,
+            limit=vocab_daily_cap(user),
         )
     return wrap
 
@@ -465,16 +490,18 @@ def note_phrase_learned(user: dict) -> str:
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["phrases_today"] = int(daily.get("phrases_today") or 0) + 1
-    if not is_paid(user):
+    from services.rewards import has_lessons_pass, vocab_daily_cap
+
+    if not has_lessons_pass(user):
         daily["vocab_items_today"] = vocab_items_used_today(user)
     goal_just = _maybe_complete_goal(user)
     wrap = format_session_wrap(
         user, kind="phrase", streak_info=streak_info, goal_just_done=goal_just
     )
-    if not is_paid(user) and vocab_items_used_today(user) >= FREE_VOCAB_ITEMS_PER_DAY:
+    if not has_lessons_pass(user) and vocab_items_used_today(user) >= vocab_daily_cap(user):
         wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(
             what="слов или фраз Vocabulary",
-            limit=FREE_VOCAB_ITEMS_PER_DAY,
+            limit=vocab_daily_cap(user),
         )
     return wrap
 
@@ -542,17 +569,19 @@ def apply_referral_on_start(new_user: dict, ref_code: str, all_users: dict) -> s
 
 
 def grant_referral_bonuses(new_user_id: str, users: dict) -> None:
+    """При регистрации по ссылке: считаем старт + welcome-буст другу (без +3 дней премиума)."""
     user = get_user(users, new_user_id)
     ensure_growth(user)
     ref = user.get("referred_by")
     if not ref or user.get("referral_bonus_granted"):
         return
     user["referral_bonus_granted"] = True
-    extend_premium(user, REF_BONUS_DAYS)
+    from services.rewards import grant_invitee_welcome_boost
+
+    grant_invitee_welcome_boost(user)
     if str(ref) in users:
         inviter = get_user(users, str(ref))
         ensure_growth(inviter)
-        extend_premium(inviter, REF_BONUS_DAYS)
         inviter["invite_count"] = int(inviter.get("invite_count") or 0) + 1
 
 
@@ -585,7 +614,7 @@ def subscription_blurb(user: dict) -> str:
         "• уроки без лимита\n"
         "• безлимит общения\n\n"
         f"🎁 Пробный период — <b>{TRIAL_DAYS} дней</b>. Успей попробовать всё!\n"
-        f"Приведи друга — оба +<b>{REF_BONUS_DAYS}</b> дня."
+        "Приведи друга — бустеры в профиле (кнопка «Пригласить друга»)."
     )
 
 

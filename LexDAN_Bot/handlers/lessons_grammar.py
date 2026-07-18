@@ -447,7 +447,22 @@ async def _finish_exercise_ok(m: Message, user_id: str, level: str, topic_id: st
     user = get_user(users, user_id)
     ensure_growth(user)
     note_grammar_exercise_done(user)
+
+    # Рефералка: друг закрыл 24 задания → награда пригласившему
+    from services.rewards import maybe_qualify_referral
+
+    to_inviter, to_friend = maybe_qualify_referral(user, users)
     save_users(users)
+    if to_friend:
+        await m.reply(to_friend, parse_mode="HTML")
+    if to_inviter:
+        ref = user.get("referred_by")
+        if ref and str(ref) != user_id:
+            try:
+                await m.bot.send_message(int(ref), to_inviter, parse_mode="HTML")
+            except Exception:
+                pass
+
     topic_title = (user.get("lesson") or {}).get("topic_title") or "тема"
     extra = ""
     topic_just_done = False
