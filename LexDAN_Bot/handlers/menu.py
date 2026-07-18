@@ -139,6 +139,9 @@ async def open_support(m: Message):
     from config import SUPPORT_USERNAME
 
     set_mode(str(m.from_user.id), MODE_MENU)
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
     if SUPPORT_USERNAME:
         contact = f"@{SUPPORT_USERNAME}"
         tip = f"🆘 По вопросам пиши: {contact}"
@@ -147,7 +150,7 @@ async def open_support(m: Message):
             "🆘 Поддержка скоро будет с личным контактом.\n"
             "Пока добавь в Render переменную <code>SUPPORT_USERNAME</code>."
         )
-    await m.reply(tip, reply_markup=main_menu(), parse_mode="HTML")
+    await m.reply(tip, reply_markup=main_menu(user), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_MENU), StepFilter("ready"), F.text)
@@ -157,7 +160,9 @@ async def menu_foolproof(m: Message):
 
     if (m.text or "") == BTN_START_TODAY:
         raise SkipHandler
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
     await m.reply(
         "🙂 Пожалуйста, выбери действие кнопкой ниже.",
-        reply_markup=main_menu(),
+        reply_markup=main_menu(user),
     )

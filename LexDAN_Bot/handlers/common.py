@@ -15,8 +15,17 @@ router = Router()
 
 @router.message(F.text == "🔙 Вернуться в меню")
 async def back_to_main(m: Message):
+    from services.database import load_users, get_user
+    from services.growth import ensure_growth
+
     user_id = str(m.from_user.id)
     clear_assessment_phase(user_id)
     clear_lesson(user_id)
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_growth(user)
     set_mode(user_id, MODE_MENU)
-    await m.reply("🏠 Главное меню. Выбери кнопку ниже.", reply_markup=main_menu())
+    await m.reply(
+        "🏠 Главное меню. Выбери кнопку ниже.",
+        reply_markup=main_menu(user),
+    )

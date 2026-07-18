@@ -14,14 +14,18 @@ def is_dev_unlocked(user: dict | None) -> bool:
     return bool(user and user.get("dev_unlock"))
 
 
-def main_menu() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🗣️ Общаться"), KeyboardButton(text="📚 Уроки")],
-            [KeyboardButton(text="📊 Профиль"), KeyboardButton(text="🆘 Поддержка")],
-        ],
-        resize_keyboard=True,
+def main_menu(user: dict | None = None) -> ReplyKeyboardMarkup:
+    from services.secret_missions import BTN_SECRET, has_secret_entry
+
+    rows = [
+        [KeyboardButton(text="🗣️ Общаться"), KeyboardButton(text="📚 Уроки")],
+    ]
+    if user is not None and has_secret_entry(user):
+        rows.append([KeyboardButton(text=BTN_SECRET)])
+    rows.append(
+        [KeyboardButton(text="📊 Профиль"), KeyboardButton(text="🆘 Поддержка")]
     )
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def chat_menu() -> ReplyKeyboardMarkup:

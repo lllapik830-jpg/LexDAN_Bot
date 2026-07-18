@@ -23,6 +23,7 @@ MODE_MENU = "menu"
 MODE_CHAT = "chat"
 MODE_LESSONS = "lessons"
 MODE_PROFILE = "profile"
+MODE_SECRET = "secret"
 
 
 def load_users() -> dict:

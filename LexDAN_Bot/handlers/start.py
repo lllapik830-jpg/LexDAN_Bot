@@ -19,7 +19,6 @@ from services.growth import (
     bind_referral_code,
     ensure_growth,
     grant_referral_bonuses,
-    REF_BONUS_DAYS,
 )
 
 router = Router()
@@ -37,7 +36,7 @@ WELCOME_AFTER_NAME = (
     "Я тут придумал для тебя план:\n\n"
     "Сначала проверим, что ты уже знаешь. Потом будем по чуть-чуть, минут по 15 в день, "
     "разбирать слова и грамматику. И обязательно разговаривать — это самое важное!\n\n"
-    "А когда пройдёшь тест — получишь от меня 7 дней полного доступа без ограничений.\n\n"
+    "Серия дней и друзья дают бустеры и секреты Рико — смотри в профиле 🔥\n\n"
     "Ну что, готов начать? 👇"
 )
 
@@ -72,7 +71,7 @@ async def start_cmd(m: Message, command: CommandObject = None):
     save_users(users)
     await m.reply(
         WELCOME_AGAIN.format(name=user["name"]),
-        reply_markup=main_menu(),
+        reply_markup=main_menu(user),
         parse_mode="HTML",
     )
 
@@ -147,11 +146,13 @@ async def save_name(m: Message):
 
     extra = ""
     if user.get("referred_by"):
-        extra = f"\n\n🎁 Бонус за друга: +{REF_BONUS_DAYS} дня полного доступа!"
+        extra = (
+            "\n\n🎁 Ты пришёл по ссылке друга — сегодня Grammar до <b>12</b> заданий!"
+        )
 
     await m.reply(
         WELCOME_AFTER_NAME.format(name=_esc(name)) + extra,
-        reply_markup=main_menu(),
+        reply_markup=main_menu(user),
         parse_mode="HTML",
     )
 
