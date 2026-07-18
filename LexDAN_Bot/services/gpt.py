@@ -25,16 +25,21 @@ Schema:
 }
 
 CORRECTION RULES (strict):
-1) Analyze word order, tenses, articles, prepositions, agreement, awkward phrasing.
+1) Analyze word order, tenses, articles, prepositions, agreement, awkward phrasing, missing words.
 2) better_en = how a native speaker would naturally say the SAME idea.
    - Keep the student's meaning/facts. Do NOT invent a new story.
    - If the message is long, heavy, or textbook-like → simplify to natural spoken English.
    - Fix logic only when the sentence is nonsense; otherwise preserve intent.
-3) has_error=true if there are real mistakes OR the phrasing is clearly unnatural for a native.
+3) has_error=true ONLY for real word/grammar/structure problems (not style-only nitpicking).
 4) If the sentence is already natural and correct → has_error=false, better_en="", errors_ru="", tips_ru="".
-5) Ignore ONLY capitalization and ending punctuation as "errors", but you MAY still polish wording in better_en if unnatural.
+5) NEVER check or mention punctuation or capitalization (., ,, ?, !, ;, quotes, Caps).
+   You may silently put normal punctuation in better_en, but errors_ru/tips_ru must NOT talk about it.
 6) Never praise mistakes. No "Молодец/Nice/Great" about wrong English.
-7) tips_ru should teach: name concrete words/phrases to use next time.
+7) errors_ru MUST be factually true vs the student's words:
+   - Before saying a word is missing, CHECK the student message (ignore case).
+   - Example: student wrote "... and Translate" → do NOT say translate is missing.
+   - Example: "can explain" without you → say: нужно «you»: can you explain.
+8) tips_ru: only useful words/phrases that are NEW vs what the student already wrote.
 
 CHAT RULES (reply_en):
 1) React to THEIR topic, then ask ONE new open question.
@@ -102,17 +107,17 @@ def ask_tutor(
                     {
                         "role": "user",
                         "content": (
-                            "1) Strictly check the student's English structure.\n"
-                            "2) If anything is wrong OR unnatural, rewrite as a native would "
-                            "(same meaning; simplify if too long/complex).\n"
-                            "3) Explain mistakes and useful phrases in Russian fields.\n"
-                            "4) Then reply_en with a fresh non-repeating question.\n\n"
+                            "1) Check grammar/structure/words. Ignore punctuation and capitalization.\n"
+                            "2) If real issues: rewrite as a native (same meaning).\n"
+                            "3) errors_ru/tips_ru in Russian: ONLY real changes "
+                            "(do not claim a word is missing if the student already used it).\n"
+                            "4) reply_en: fresh non-repeating question.\n\n"
                             f"Student message: {user_text}"
                         ),
                     },
                 ],
                 "max_tokens": 520,
-                "temperature": 0.55,
+                "temperature": 0.35,
             },
             timeout=30,
         )
@@ -161,15 +166,114 @@ def _keeps_meaning(user_text: str, better_en: str) -> bool:
     return _token_overlap_ratio(user_text, better_en) >= 0.28
 
 
+def _token_diff(user_text: str, better_en: str) -> tuple[list[str], list[str]]:
+    """Слова, которые добавили / убрали (без учёта пунктуации и регистра)."""
+    from collections import Counter
+
+    cu = Counter(_normalize_tokens(user_text))
+    cb = Counter(_normalize_tokens(better_en))
+    added = list((cb - cu).elements())
+    removed = list((cu - cb).elements())
+    return added, removed
+
+
+def _auto_errors_ru(user_text: str, better_en: str) -> str:
+    """Честное объяснение по реальной разнице слов — без выдумок модели."""
+    added, removed = _token_diff(user_text, better_en)
+    if not added and not removed:
+        return ""
+
+    bits = []
+    # типичный случай: can explain → can you explain
+    u = _normalize_tokens(user_text)
+    if "you" in added and "can" in u and "explain" in u:
+        bits.append('После «can» нужно «you»: can you explain (не «can explain»).')
+        added = [w for w in added if w != "you"]
+
+    if removed and added:
+        bits.append(
+            "Замени: "
+            + ", ".join(f"«{w}»" for w in removed[:4])
+            + " → "
+            + ", ".join(f"«{w}»" for w in added[:4])
+            + "."
+        )
+    elif removed:
+        bits.append("Убери лишнее: " + ", ".join(f"«{w}»" for w in removed[:5]) + ".")
+    elif added:
+        bits.append("Добавь: " + ", ".join(f"«{w}»" for w in added[:5]) + ".")
+
+    return " ".join(bits)
+
+
+def _mentions_already_present_word(text: str, user_text: str, better_en: str) -> bool:
+    """True, если объяснение врёт: говорит про слово, которое ученик уже написал и оно осталось."""
+    if not text:
+        return False
+    added, removed = _token_diff(user_text, better_en)
+    user_set = set(_normalize_tokens(user_text))
+    low = text.lower()
+    # «отсутствует / пропущено / добавь … X» при том что X уже был у ученика и не в removed
+    claim_missing = any(
+        m in low
+        for m in (
+            "отсутств",
+            "пропущ",
+            "добав",
+            "нужно добавить",
+            "нет глагол",
+            "нет слов",
+        )
+    )
+    if not claim_missing:
+        return False
+    for w in user_set:
+        if len(w) < 3:
+            continue
+        if w in low and w not in removed and w not in added:
+            # слово уже было у ученика и не менялось — нельзя говорить что его нет
+            return True
+    return False
+
+
+def _strip_punctuation_talk(text: str) -> str:
+    if not text:
+        return ""
+    low = text.lower()
+    bad = (
+        "пунктуац",
+        "запят",
+        "точк",
+        "восклиц",
+        "вопросительн",
+        "заглавн",
+        "регистр",
+        "capital",
+        "punctuation",
+        "comma",
+        "period",
+        "question mark",
+    )
+    if any(b in low for b in bad):
+        return ""
+    return text
+
+
 def _sanitize_correction(user_text: str, result: dict) -> dict:
     """Оставляем native-правку, если смысл сохранён; иначе чистим."""
     better = _clean_field(result.get("better_en") or "")
-    errors = _clean_field(result.get("errors_ru") or "")
-    tips = _clean_field(result.get("tips_ru") or result.get("rule_ru") or "")
+    errors = _strip_punctuation_talk(_clean_field(result.get("errors_ru") or ""))
+    tips = _strip_punctuation_talk(
+        _clean_field(result.get("tips_ru") or result.get("rule_ru") or "")
+    )
     has_error = bool(result.get("has_error"))
 
+    # только пунктуация/регистр — не ошибка
     if better and _same_ignoring_noise(user_text, better):
         better = ""
+        errors = ""
+        tips = ""
+        has_error = False
 
     if better and not _keeps_meaning(user_text, better):
         logging.info(f"Dropped off-topic rewrite: '{user_text}' -> '{better}'")
@@ -178,9 +282,21 @@ def _sanitize_correction(user_text: str, result: dict) -> dict:
         errors = ""
         tips = ""
 
-    # Если есть улучшение — показываем блок правки
     if better:
         has_error = True
+        auto = _auto_errors_ru(user_text, better)
+        # если модель соврала про уже написанное слово — берём авто-объяснение
+        if (
+            not errors
+            or _mentions_already_present_word(errors, user_text, better)
+            or _mentions_already_present_word(tips, user_text, better)
+        ):
+            errors = auto or errors
+            if _mentions_already_present_word(tips, user_text, better):
+                tips = ""
+        elif auto and len(auto) < len(errors) + 40:
+            # короткое честное описание предпочтительнее длинной путаницы
+            errors = auto
     elif has_error and not better and not errors and not tips:
         has_error = False
 
