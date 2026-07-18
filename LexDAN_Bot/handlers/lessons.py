@@ -139,14 +139,11 @@ async def send_lessons_home(
     user = get_user(users, user_id)
     ensure_user_fields(user)
 
-    from services.growth import ensure_growth, start_trial, TRIAL_DAYS
+    from services.growth import ensure_growth
     from services.database import save_users
 
     ensure_growth(user)
-    # Старым пользователям после уже пройденного теста — один раз дать триал
-    if user.get("assessment_done") and not user.get("trial_started_at") and not user.get("dev_unlock"):
-        start_trial(user, days=TRIAL_DAYS)
-        save_users(users)
+    save_users(users)
 
     if intro is None:
         if user.get("assessment_done") or user.get("dev_unlock"):
@@ -213,7 +210,7 @@ def _write_prompt(topic: str, left: int) -> str:
 
 
 async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
-    from services.growth import start_trial, ensure_growth, TRIAL_DAYS, touch_activity
+    from services.growth import ensure_growth, touch_activity, grant_safe
     from services.database import load_users, get_user, save_users
     from handlers.keyboards import BTN_START_TODAY
 
@@ -221,7 +218,10 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
-    start_trial(user, days=TRIAL_DAYS)
+    # Стартовый сейф один раз после теста (без 7-дневного безлимита)
+    if not user.get("post_test_safe_granted"):
+        grant_safe(user, 1)
+        user["post_test_safe_granted"] = True
     touch_activity(user)
     save_users(users)
 
@@ -232,8 +232,8 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         f"Ваш предполагаемый уровень — <b>{final}</b>.\n"
         f"Можно брать и уровень ниже — для закрепления.\n\n"
         f"{rico}\n\n"
-        f"🎁 Рико открыл тебе <b>{TRIAL_DAYS} дней</b> полного доступа без лимита чата.\n"
-        "Рецепт: <b>~15 минут в день</b>.\n\n"
+        "Рецепт: <b>~15 минут в день</b>. Серия дней и друзья дают бустеры — смотри в профиле 🔥\n"
+        "🛡️ В подарок: <b>+1 стрик-сейф</b> на случай пропуска дня.\n\n"
         f"👇 Лучший старт прямо сейчас — жми <b>{BTN_START_TODAY}</b>\n"
         "(открою Vocabulary и первую тему твоего уровня)."
     )

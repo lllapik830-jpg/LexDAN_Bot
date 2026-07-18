@@ -160,6 +160,7 @@ def premium_time_label(user: dict) -> str:
 
 
 def start_trial(user: dict, days: int = TRIAL_DAYS) -> None:
+    """Выдать полный доступ на N дней (сейчас — только DEV / ручные акции)."""
     ensure_growth(user)
     now = _now_ts()
     until = float(user.get("premium_until") or 0)
@@ -168,7 +169,6 @@ def start_trial(user: dict, days: int = TRIAL_DAYS) -> None:
         user["premium_until"] = target
     if not user.get("trial_started_at"):
         user["trial_started_at"] = now
-        # Стартовый сейф «на дорожку» (один раз с триалом)
         if int(user.get("streak_safes") or 0) < 1:
             user["streak_safes"] = 1
 
@@ -613,8 +613,7 @@ def subscription_blurb(user: dict) -> str:
         f"<b>🚀 Безлимит ко всему</b> — <b>{PRICE_FULL_MONTH}₽/мес</b>\n"
         "• уроки без лимита\n"
         "• безлимит общения\n\n"
-        f"🎁 Пробный период — <b>{TRIAL_DAYS} дней</b>. Успей попробовать всё!\n"
-        "Приведи друга — бустеры в профиле (кнопка «Пригласить друга»)."
+        "🔥 Серия дней и 🎁 друзья дают бустеры — смотри в профиле."
     )
 
 
@@ -648,7 +647,7 @@ def profile_growth_lines(user: dict, bot_username: str = "") -> str:
         f"🛡️ Стрик-сейфы: <b>{safes}</b>{next_safe}{restore_hint}\n"
         f"🎯 Цель дня: {goal}\n"
         f"💎 Доступ: {prem}\n"
-        f"🎁 Пробный период — {TRIAL_DAYS} дней. Успей попробовать всё!\n"
-        f"🎁 Друзей приглашено: {int(user.get('invite_count') or 0)}\n"
+        f"🎁 Друзей приглашено: {int(user.get('invite_count') or 0)} "
+        f"(засчитано: {int(user.get('referral_qualified') or 0)})\n"
         f"{ref_line}"
     )
