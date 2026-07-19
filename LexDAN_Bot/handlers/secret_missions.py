@@ -69,7 +69,7 @@ async def open_secret_hub(m: Message):
     ensure_growth(user)
     ensure_missions(user)
     if not has_secret_entry(user):
-        await m.reply(
+        await m.answer(
             "🔐 Пока секретов нет.\n"
             "Они открываются за серию дней — смотри <b>🔥 Серия дней</b> в профиле.",
             reply_markup=_menu_for(user),
@@ -95,7 +95,7 @@ async def open_secret_hub(m: Message):
             f"<i>{meta['blurb']}</i>\n"
             f"⏱ {meta['mins']}\n"
         )
-    await m.reply("\n".join(lines), reply_markup=_hub_kb(user), parse_mode="HTML")
+    await m.answer("\n".join(lines), reply_markup=_hub_kb(user), parse_mode="HTML")
 
 
 async def _resume_active(m: Message, user: dict):
@@ -110,11 +110,13 @@ async def _resume_active(m: Message, user: dict):
 async def start_week(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
-    await m.reply("🦜 Рико готовит разбор…")
-    active = start_mission(user, MISSION_WEEK)
-    save_users(users)
+    from services.tg_out import status
+
+    async with status(m, "🦜 Рико готовит разбор…"):
+        active = start_mission(user, MISSION_WEEK)
+        save_users(users)
     if not active:
-        await m.reply("Это задание уже недоступно.", reply_markup=_hub_kb(user))
+        await m.answer("Это задание уже недоступно.", reply_markup=_hub_kb(user))
         return
     await _send_week_card(m, user)
 
@@ -123,11 +125,13 @@ async def start_week(m: Message):
 async def start_voice(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
-    await m.reply("🦜 Рико готовит фразы…")
-    active = start_mission(user, MISSION_VOICE)
-    save_users(users)
+    from services.tg_out import status
+
+    async with status(m, "🦜 Рико готовит фразы…"):
+        active = start_mission(user, MISSION_VOICE)
+        save_users(users)
     if not active:
-        await m.reply("Это задание уже недоступно.", reply_markup=_hub_kb(user))
+        await m.answer("Это задание уже недоступно.", reply_markup=_hub_kb(user))
         return
     await _send_voice_prompt(m, user)
 
@@ -142,10 +146,10 @@ async def _send_week_card(m: Message, user: dict):
         msg = complete_mission(user)
         save_users(users)
         set_mode(str(m.from_user.id), MODE_MENU)
-        await m.reply(msg, reply_markup=_menu_for(user), parse_mode="HTML")
+        await m.answer(msg, reply_markup=_menu_for(user), parse_mode="HTML")
         return
     card = cards[step]
-    await m.reply(
+    await m.answer(
         format_card(step + 1, len(cards), card),
         reply_markup=_hub_kb(user),
         parse_mode="HTML",
@@ -158,7 +162,7 @@ async def week_next(m: Message):
     user = get_user(users, str(m.from_user.id))
     active = get_active(user)
     if not active or active.get("type") != MISSION_WEEK:
-        await m.reply("Выбери задание ниже.", reply_markup=_hub_kb(user))
+        await m.answer("Выбери задание ниже.", reply_markup=_hub_kb(user))
         return
     active["step"] = int(active.get("step") or 0) + 1
     ensure_missions(user)["active"] = active
@@ -176,10 +180,10 @@ async def _send_voice_prompt(m: Message, user: dict):
         msg = complete_mission(user)
         save_users(users)
         set_mode(str(m.from_user.id), MODE_MENU)
-        await m.reply(msg, reply_markup=_menu_for(user), parse_mode="HTML")
+        await m.answer(msg, reply_markup=_menu_for(user), parse_mode="HTML")
         return
     phrase = phrases[step]
-    await m.reply(
+    await m.answer(
         f"🗣 <b>Фраза {step + 1}/{len(phrases)}</b>\n\n"
         f"<b>{phrase}</b>\n\n"
         "Скажи её <b>голосом</b> (или напиши текстом). "
@@ -210,7 +214,7 @@ async def exit_secret(m: Message):
     # не сбрасываем inbox — можно продолжить; active сохраняем
     set_mode(str(m.from_user.id), MODE_MENU)
     save_users(users)
-    await m.reply(
+    await m.answer(
         "Ок! Секрет ждёт в меню — кнопка <b>🔐 Секрет Рико</b>.",
         reply_markup=_menu_for(user),
         parse_mode="HTML",
@@ -223,7 +227,7 @@ async def voice_secret(m: Message, bot: Bot):
     user = get_user(users, str(m.from_user.id))
     active = get_active(user)
     if not active or active.get("type") != MISSION_VOICE:
-        await m.reply("Сейчас голосовое здесь не нужно.", reply_markup=_hub_kb(user))
+        await m.answer("Сейчас голосовое здесь не нужно.", reply_markup=_hub_kb(user))
         return
 
     phrases = active.get("phrases") or []
@@ -232,7 +236,7 @@ async def voice_secret(m: Message, bot: Bot):
         return
     target = phrases[step]
 
-    await m.reply("🎧 Слушаю…", reply_markup=_hub_kb(user))
+    await m.answer("🎧 Слушаю…", reply_markup=_hub_kb(user))
     try:
         file = await bot.get_file(m.voice.file_id)
         buf = await bot.download_file(file.file_path)
@@ -241,7 +245,7 @@ async def voice_secret(m: Message, bot: Bot):
         heard = ""
 
     if not heard:
-        await m.reply(
+        await m.answer(
             "Не разобрал речь — попробуй ещё раз или напиши текстом.",
             reply_markup=_hub_kb(user),
         )
@@ -257,7 +261,7 @@ async def voice_secret(m: Message, bot: Bot):
 
     tip = result.get("tip_ru") or ""
     better = result.get("better") or target
-    await m.reply(
+    await m.answer(
         f"Услышал: <i>{heard}</i>\n"
         f"Цель: <b>{target}</b>\n"
         f"Естественнее: <b>{better}</b>\n"
@@ -287,7 +291,7 @@ async def secret_text(m: Message):
     user = get_user(users, str(m.from_user.id))
     active = get_active(user)
     if not active:
-        await m.reply("Выбери задание кнопкой.", reply_markup=_hub_kb(user))
+        await m.answer("Выбери задание кнопкой.", reply_markup=_hub_kb(user))
         return
 
     if active.get("type") == MISSION_VOICE:
@@ -305,7 +309,7 @@ async def secret_text(m: Message):
         save_users(users)
         tip = result.get("tip_ru") or ""
         better = result.get("better") or target
-        await m.reply(
+        await m.answer(
             f"Ты написал: <i>{text}</i>\n"
             f"Цель: <b>{target}</b>\n"
             f"Естественнее: <b>{better}</b>\n"
@@ -316,4 +320,4 @@ async def secret_text(m: Message):
         await _send_voice_prompt(m, user)
         return
 
-    await m.reply("Жми «Далее» для следующей карточки.", reply_markup=_hub_kb(user))
+    await m.answer("Жми «Далее» для следующей карточки.", reply_markup=_hub_kb(user))

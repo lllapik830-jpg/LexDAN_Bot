@@ -545,18 +545,122 @@ def check_write_answer(
 
 
 def generate_grammar_test(level: str, topic_titles: list[str], topic_ids: list[str] | None = None) -> list[dict]:
-    """8 вопросов для итогового теста по Grammar уровня."""
-    questions = []
-    titles = topic_titles or ["Grammar"]
-    ids = topic_ids or [None] * len(titles)
-    for i in range(8):
-        title = titles[i % len(titles)]
-        tid = ids[i % len(ids)] if ids else None
-        num = (i % 3) + 1 if i < 6 else (7 if i == 6 else 8)
-        ex = generate_grammar_exercise(level, title, num, topic_id=tid)
-        ex["q_num"] = i + 1
-        questions.append(ex)
-    return questions
+    """
+    10 вопросов из curated-банков тем уровня (без GPT).
+    Разнообразие: не больше 2 заданий с одной темы.
+    """
+    import random
+
+    from data.grammar_curriculum import get_topics
+    from data.grammar_exercise_fallbacks import FALLBACKS
+
+    topics = get_topics(level) or []
+    if topic_ids and topic_titles and len(topic_ids) == len(topic_titles):
+        # сохранить порядок/названия с хендлера
+        by_id = {t["id"]: t for t in topics}
+        topics = []
+        for tid, title in zip(topic_ids, topic_titles):
+            base = by_id.get(tid) or {"id": tid, "title": title}
+            topics.append({"id": tid, "title": title or base.get("title") or tid})
+
+    pool: list[dict] = []
+    for t in topics:
+        tid = t["id"]
+        title = t.get("title") or tid
+        bank = FALLBACKS.get(tid) or []
+        for raw in bank:
+            item = dict(raw)
+            subtype = (item.get("subtype") or ("mcq" if item.get("kind") == "mcq" else "word_form")).strip()
+            kind = "mcq" if subtype == "mcq" else "write"
+            try:
+                ex = _finalize_exercise(item, subtype, kind, item)
+            except Exception:
+                continue
+            ex["topic_id"] = tid
+            ex["topic_title"] = title
+            pool.append(ex)
+
+    if not pool:
+        # крайний случай — старое поведение по одной теме
+        titles = topic_titles or ["Grammar"]
+        ids = topic_ids or [None] * len(titles)
+        questions = []
+        for i in range(10):
+            title = titles[i % len(titles)]
+            tid = ids[i % len(ids)] if ids else None
+            num = (i % 3) + 1 if i < 6 else (7 if i % 2 == 0 else 8)
+            ex = generate_grammar_exercise(level, title, num, topic_id=tid)
+            ex["topic_id"] = tid
+            ex["topic_title"] = title
+            ex["q_num"] = i + 1
+            questions.append(ex)
+        return questions
+
+    random.shuffle(pool)
+    selected: list[dict] = []
+    per_topic: dict[str, int] = {}
+    for ex in pool:
+        tid = ex.get("topic_id") or "_"
+        if per_topic.get(tid, 0) >= 2:
+            continue
+        selected.append(ex)
+        per_topic[tid] = per_topic.get(tid, 0) + 1
+        if len(selected) >= 10:
+            break
+
+    if len(selected) < 10:
+        for ex in pool:
+            if ex in selected:
+                continue
+            selected.append(ex)
+            if len(selected) >= 10:
+                break
+
+    # если тем мало — можно повторить с другим индексом
+    while len(selected) < 10 and pool:
+        selected.append(dict(random.choice(pool)))
+
+    out = selected[:10]
+    for i, q in enumerate(out):
+        q["q_num"] = i + 1
+    return out
+
+
+def format_grammar_test_review(mistakes: list[dict], *, score: int, total: int, passed: bool) -> str:
+    """Итог теста + разбор ошибок по разделам."""
+    if passed:
+        head = (
+            f"🏆 <b>Тест сдан!</b> Результат: {score}/{total}.\n"
+            "Grammar уровня закрыт — ты красава! 🦜"
+        )
+    else:
+        head = f"🦜 Результат: {score}/{total} — нужно минимум 8."
+
+    if not mistakes:
+        if passed:
+            return head
+        return head + "\nПочти идеально, попробуй ещё раз!"
+
+    lines = [head, "", "<b>Где ошибки:</b>"]
+    weak: list[str] = []
+    for m in mistakes:
+        n = m.get("q_num") or "?"
+        topic = m.get("topic_title") or "тема"
+        correct = m.get("correct") or "—"
+        your = m.get("your") or "—"
+        lines.append(
+            f"• Вопрос {n} · <b>{topic}</b>\n"
+            f"  твой: <i>{your}</i> → верно: <b>{correct}</b>"
+        )
+        if topic not in weak:
+            weak.append(topic)
+    lines.append("")
+    lines.append("<b>Стоит подтянуть:</b> " + ", ".join(f"«{t}»" for t in weak))
+    if not passed:
+        lines.append("Повтори эти разделы в Grammar и пройди тест снова.")
+    else:
+        lines.append("Можно ещё раз глянуть эти темы для закрепления 💪")
+    return "\n".join(lines)
 
 
 def rico_help_for_exercise(

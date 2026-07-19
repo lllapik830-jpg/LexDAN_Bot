@@ -58,7 +58,7 @@ async def reply_as_tutor(
     save_users(users, only=user_id)
     set_last_bot_reply(user_id, reply_en)
 
-    await message.reply(text_out, parse_mode="HTML")
+    await message.answer(text_out, parse_mode="HTML")
     # Голос = тот же текст, что в 💬 Рико (не другой кусок ответа)
     from services.voices import resolve_chat_voice_id
 

@@ -14,6 +14,7 @@ from services.vocabulary_state import (
 )
 from data.vocabulary_words import words_total, has_vocabulary_level
 from data.vocabulary_phrases import phrases_total
+from services.vocab_final import is_level_vocab_words_complete, is_vocab_final_passed
 
 BTN_VOCABULARY = "📗 Vocabulary"
 BTN_LEARN_PHRASES = "📌 Учить фразы"
@@ -22,6 +23,7 @@ BTN_REPEAT_WORDS = "🔁 Повторить изученные слова"
 BTN_REPEAT_PHRASES = "🔁 Повторить изученные фразы"
 BTN_DONT_REMEMBER = "🤔 Не помню"
 BTN_BACK_DRILL = "⬅️ Вернуться назад"
+BTN_VOCAB_FINAL = "🎯 Тест Vocabulary"
 
 
 def vocab_topics_kb(level: str, user: dict) -> ReplyKeyboardMarkup:
@@ -35,9 +37,21 @@ def vocab_topics_kb(level: str, user: dict) -> ReplyKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
+    if is_level_vocab_words_complete(user, level) and not is_vocab_final_passed(user, level):
+        rows.append([KeyboardButton(text=BTN_VOCAB_FINAL)])
     rows.append([KeyboardButton(text="⬅️ К разделам")])
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def vocab_final_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⬅️ К темам")],
+            [KeyboardButton(text="🔙 Вернуться в меню")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def vocab_topic_kb(level: str, topic_id: str, user: dict, batch_words: list[str]) -> ReplyKeyboardMarkup:

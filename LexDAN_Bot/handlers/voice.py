@@ -30,24 +30,25 @@ async def voice_in_chat(m: Message, bot: Bot):
     if not ok:
         from handlers.lesson_keyboards import chat_limit_inline_kb
 
-        await m.reply(
+        await m.answer(
             tip or "Мы здорово поболтали!",
             reply_markup=chat_menu(),
             parse_mode="HTML",
         )
-        await m.reply("👇", reply_markup=chat_limit_inline_kb())
+        await m.answer("👇", reply_markup=chat_limit_inline_kb())
         return
 
-    await m.reply("🎧 Слушаю…", reply_markup=chat_menu())
+    from services.tg_out import status
 
     try:
-        file = await bot.get_file(m.voice.file_id)
-        voice_buffer = await bot.download_file(file.file_path)
-        audio_bytes = voice_buffer.read()
+        async with status(m, "🎧 Слушаю…"):
+            file = await bot.get_file(m.voice.file_id)
+            voice_buffer = await bot.download_file(file.file_path)
+            audio_bytes = voice_buffer.read()
+            text = recognize_english(audio_bytes)
 
-        text = recognize_english(audio_bytes)
         if not text:
-            await m.reply(
+            await m.answer(
                 "❌ Не удалось распознать речь.\n"
                 "Говори по-английски чуть громче и чётче, потом попробуй снова.",
                 reply_markup=chat_menu(),
@@ -59,4 +60,4 @@ async def voice_in_chat(m: Message, bot: Bot):
 
     except Exception as e:
         logging.error(f"Voice error: {e}")
-        await m.reply("❌ Ошибка обработки голоса. Попробуй снова.", reply_markup=chat_menu())
+        await m.answer("❌ Ошибка обработки голоса. Попробуй снова.", reply_markup=chat_menu())

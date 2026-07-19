@@ -28,6 +28,7 @@ from services.growth import (
     is_premium,
 )
 from config import BOT_USERNAME
+from services.tg_out import say
 
 router = Router()
 
@@ -68,7 +69,7 @@ async def open_chat(m: Message):
             "🎙 <b>Голос озвучки</b> — послушать и выбрать\n"
             "🔙 <b>В меню</b> — выход"
         )
-    await m.reply(intro, reply_markup=chat_menu(), parse_mode="HTML")
+    await say(m, intro, replace=True, delete_tap=True, reply_markup=chat_menu(), parse_mode="HTML")
 
 
 def _esc(text: str) -> str:
@@ -93,10 +94,16 @@ async def open_lessons(m: Message):
     save_users(users)
     phase = user["assessment"].get("phase")
 
+    from services.tg_out import purge, try_delete_user_tap
+
+    await try_delete_user_tap(m)
+    await purge(m.bot, user_id, chat_id=m.chat.id)
+
     if phase == "translate":
         a = user["assessment"]
         show_skip = a.get("translate_level") == "A0" and a.get("a0_second_shown")
-        await m.reply(
+        await say(
+            m,
             "Продолжаем тест — задание 1/4: перевод.\n\n"
             f"🇬🇧 Текст:\n{a['translate_source_en']}",
             reply_markup=assess_translate_kb(show_skip=show_skip),
@@ -109,7 +116,8 @@ async def open_lessons(m: Message):
             "listen": "аудирование",
             "write": "письмо",
         }
-        await m.reply(
+        await say(
+            m,
             f"Продолжаем тест — {names.get(phase, 'задание')}. Пришли ответ текстом.",
             reply_markup=assess_simple_kb(),
         )
@@ -140,7 +148,8 @@ async def open_profile(m: Message):
     growth = profile_growth_lines(user, BOT_USERNAME)
     sub = "триал/полный" if is_premium(user) else "бесплатно"
 
-    await m.reply(
+    await say(
+        m,
         "📊 <b>Твой профиль</b>\n\n"
         f"📛 Имя: {name}\n"
         f"✅ Пройдено заданий: {tasks_done}\n"
@@ -152,10 +161,12 @@ async def open_profile(m: Message):
         f"💳 Тарифы: общение <b>{PRICE_CHAT_MONTH}₽/мес</b> · "
         f"всё <b>{PRICE_FULL_MONTH}₽/мес</b>\n\n"
         "Если тебе понравилось — нажми «Выбрать тариф» и оплати доступ.",
+        replace=True,
+        delete_tap=True,
         reply_markup=profile_menu(user),
         parse_mode="HTML",
     )
-    await m.reply("👇", reply_markup=paywall_inline_kb())
+    await say(m, "👇", reply_markup=paywall_inline_kb())
 
 
 @router.message(F.text == "🆘 Поддержка")
@@ -174,7 +185,7 @@ async def open_support(m: Message):
             "🆘 Поддержка скоро будет с личным контактом.\n"
             "Пока добавь в Render переменную <code>SUPPORT_USERNAME</code>."
         )
-    await m.reply(tip, reply_markup=main_menu(user), parse_mode="HTML")
+    await say(m, tip, replace=True, delete_tap=True, reply_markup=main_menu(user), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_MENU), StepFilter("ready"), F.text)
@@ -186,7 +197,8 @@ async def menu_foolproof(m: Message):
         raise SkipHandler
     users = load_users()
     user = get_user(users, str(m.from_user.id))
-    await m.reply(
+    await say(
+        m,
         "🙂 Пожалуйста, выбери действие кнопкой ниже.",
         reply_markup=main_menu(user),
     )

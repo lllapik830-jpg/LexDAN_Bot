@@ -561,6 +561,22 @@ def words_total(level: str, topic_id: str) -> int:
     return len(get_words(level, topic_id))
 
 
+def iter_level_words(level: str) -> list[dict]:
+    """Все слова уровня: [{en, ru, emoji, topic_id}, ...]."""
+    _ensure_high_words()
+    out: list[dict] = []
+    for topic_id, words in (WORDS.get(level) or {}).items():
+        for w in words:
+            item = dict(w)
+            item["topic_id"] = topic_id
+            out.append(item)
+    return out
+
+
+def level_words_total(level: str) -> int:
+    return len(iter_level_words(level))
+
+
 _HIGH_WORDS_LOADED = False
 
 

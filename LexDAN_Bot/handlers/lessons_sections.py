@@ -40,7 +40,7 @@ async def section_stub_open(m: Message):
 
     ensure_growth(user)
     if has_sections_unlock(user):
-        await m.reply(
+        await m.answer(
             f"{m.text}\n\n"
             "🔓 У тебя открыт эксклюзивный доступ к разделам (награда за серию)!\n"
             "Контент раздела ещё собираем — совсем скоро здесь появятся задания. "
@@ -48,7 +48,7 @@ async def section_stub_open(m: Message):
             reply_markup=_stub_kb(),
         )
     else:
-        await m.reply(
+        await m.answer(
             f"{m.text}\n\nЭтот раздел скоро появится! 🚀\n"
             "На тарифе 799 за серию 14 дней можно получить ранний доступ.",
             reply_markup=_stub_kb(),
@@ -67,7 +67,7 @@ async def section_stub_back(m: Message):
         return
     level = user["lesson"].get("level") or user.get("level") or "A1"
     set_level_hub(str(m.from_user.id), level)
-    await m.reply(
+    await m.answer(
         f"🎓 Уровень {level} — выбери раздел:",
         reply_markup=level_sections_kb(),
     )

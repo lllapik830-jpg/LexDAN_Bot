@@ -52,12 +52,12 @@ def _voices_inline_kb() -> InlineKeyboardMarkup:
 async def chat_voice_picker(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
-    await m.reply(
+    await m.answer(
         voices_help_text(user),
         reply_markup=chat_menu(),
         parse_mode="HTML",
     )
-    await m.reply(
+    await m.answer(
         f"Фраза для прослушивания:\n<i>«{VOICE_PREVIEW_PHRASE}»</i>",
         reply_markup=_voices_inline_kb(),
         parse_mode="HTML",
@@ -121,22 +121,24 @@ async def translate_last(m: Message):
     last = user.get("last_bot_reply")
 
     if not last:
-        await m.reply(
+        await m.answer(
             "❌ Пока нет текста для перевода. Сначала напиши или пришли голосовое.",
             reply_markup=chat_menu(),
         )
         return
 
-    await m.reply("🌐 Перевожу…")
-    translation = translate_to_russian(last)
+    from services.tg_out import status
+
+    async with status(m, "🌐 Перевожу…"):
+        translation = translate_to_russian(last)
     if translation:
-        await m.reply(
+        await m.answer(
             f"🌐 <b>Перевод:</b>\n{_esc_html(translation)}",
             reply_markup=chat_menu(),
             parse_mode="HTML",
         )
     else:
-        await m.reply("Не получилось перевести 🙈 Попробуй ещё раз.", reply_markup=chat_menu())
+        await m.answer("Не получилось перевести 🙈 Попробуй ещё раз.", reply_markup=chat_menu())
 
 
 def _esc_html(text: str) -> str:
@@ -181,23 +183,25 @@ async def chat_text(m: Message):
     if not ok:
         from handlers.lesson_keyboards import chat_limit_inline_kb
 
-        await m.reply(
+        await m.answer(
             tip or "Мы здорово поболтали!",
             reply_markup=chat_menu(),
             parse_mode="HTML",
         )
-        await m.reply("👇", reply_markup=chat_limit_inline_kb())
+        await m.answer("👇", reply_markup=chat_limit_inline_kb())
         return
 
-    await m.reply("✨ …")
-    await reply_as_tutor(m, user_text=text)
+    from services.tg_out import status
+
+    async with status(m, "✨ …"):
+        await reply_as_tutor(m, user_text=text)
 
 
 @router.message(ModeFilter(MODE_CHAT))
 async def chat_wrong_content(m: Message):
     if m.voice:
         return
-    await m.reply(
+    await m.answer(
         "🙂 В этом разделе пришли текст или голосовое на английском.",
         reply_markup=chat_menu(),
     )

@@ -7,7 +7,7 @@ from services.lesson_state import ensure_lesson, update_lesson
 
 
 def _blank_vocab_progress() -> dict:
-    return {"words": [], "phrases": []}
+    return {"words": [], "phrases": [], "final_test_passed": {}}
 
 
 def ensure_vocab_progress(user: dict) -> dict:
@@ -16,6 +16,7 @@ def ensure_vocab_progress(user: dict) -> dict:
     else:
         user["vocabulary_progress"].setdefault("words", [])
         user["vocabulary_progress"].setdefault("phrases", [])
+        user["vocabulary_progress"].setdefault("final_test_passed", {})
     # Счётчики профиля всегда = длина списков
     user["words_learned"] = len(user["vocabulary_progress"]["words"])
     user["phrases_learned"] = len(user["vocabulary_progress"]["phrases"])
@@ -220,6 +221,7 @@ def clear_vocab_session(user_id: str) -> dict:
             "drill_index",
             "drill_dirs",
             "drill_current",
+            "vocab_final",
         ):
             u["lesson"].pop(k, None)
 

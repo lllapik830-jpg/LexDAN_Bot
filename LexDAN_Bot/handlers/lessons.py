@@ -145,10 +145,12 @@ async def send_lessons_home(
     if intro is None:
         if user.get("assessment_done") or user.get("dev_unlock"):
             unlock = " 🔓 DEV" if user.get("dev_unlock") else ""
+            ceiling = max_accessible_level(user.get("level") or "A1")
             intro = (
                 f"📚 Уроки{unlock}\n\n"
-                f"Твой уровень: {user.get('level', 'A1')}.\n"
-                f"Выбери уровень ниже."
+                f"Твой уровень: <b>{user.get('level', 'A1')}</b>.\n"
+                f"Открыты уровни до <b>{ceiling}</b> (свой + один выше + всё ниже).\n"
+                f"Остальные видны, но закрыты 🔒 — жми любой."
             )
         else:
             intro = (
@@ -160,7 +162,10 @@ async def send_lessons_home(
                 "Когда будешь готов — жми «Проверить уровень»."
             )
 
-    await m.reply(
+    from services.tg_out import say
+
+    await say(
+        m,
         intro,
         reply_markup=lessons_keyboard_for(user, show_start_today=show_start_today),
         parse_mode="HTML",
@@ -234,7 +239,7 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         f"👇 Лучший старт прямо сейчас — жми <b>{BTN_START_TODAY}</b>\n"
         "(открою Vocabulary и первую тему твоего уровня)."
     )
-    await m.reply(msg, parse_mode="HTML")
+    await m.answer(msg, parse_mode="HTML")
     await send_lessons_home(
         m,
         intro=f"📚 Уроки\n\nТвой уровень: {final}.\nЖми «Начать сегодня» или выбери уровень 👇",
@@ -250,18 +255,20 @@ async def start_level_test(m: Message):
     ensure_user_fields(user)
 
     if user.get("assessment_done"):
-        await m.reply(
+        await m.answer(
             "Тест уровня уже пройден — повторно его пройти нельзя.\n"
             "Выбери уровень для занятий ниже.",
             reply_markup=lessons_home_levels(user.get("level"), user=user),
         )
         return
 
-    await m.reply(RICO_BEFORE_TEST, parse_mode="HTML")
-    await m.reply("Секунду, готовлю тебе тест… 🦜")
-    user = start_assessment(str(m.from_user.id))
+    await m.answer(RICO_BEFORE_TEST, parse_mode="HTML")
+    from services.tg_out import status
+
+    async with status(m, "Секунду, готовлю тебе тест… 🦜"):
+        user = start_assessment(str(m.from_user.id))
     a = user["assessment"]
-    await m.reply(
+    await m.answer(
         "🎯 Тест уровня — задание 1/4: перевод\n\n"
         "Переведи текст на русский.\n"
         "Если сложно — нажми «Дай текст проще» или «Пропустить задание».\n\n"
@@ -278,31 +285,35 @@ async def easier_text(m: Message):
     a = user["assessment"]
 
     if a.get("phase") != "translate":
-        await m.reply("Сейчас это недоступно.", reply_markup=lessons_keyboard_for(user))
+        await m.answer("Сейчас это недоступно.", reply_markup=lessons_keyboard_for(user))
         return
 
     cur = a.get("translate_level", "B2")
     if cur == "A0":
         if not a.get("a0_second_shown"):
-            await m.reply("Готовлю другой текст…")
-            user = set_translation_item(str(m.from_user.id), "A0", 1)
+            from services.tg_out import status
+
+            async with status(m, "Готовлю другой текст…"):
+                user = set_translation_item(str(m.from_user.id), "A0", 1)
             a = user["assessment"]
-            await m.reply(
+            await m.answer(
                 f"🇬🇧 Текст:\n{a['translate_source_en']}",
                 reply_markup=assess_translate_kb(show_skip=True),
             )
         else:
-            await m.reply(
+            await m.answer(
                 "Больше упрощать некуда. Переведи или нажми «Пропустить задание».",
                 reply_markup=assess_translate_kb(show_skip=True),
             )
         return
 
-    await m.reply("Готовлю текст проще…")
-    new_level = lower_level(cur)
-    user = set_translation_item(str(m.from_user.id), new_level, 0)
+    from services.tg_out import status
+
+    async with status(m, "Готовлю текст проще…"):
+        new_level = lower_level(cur)
+        user = set_translation_item(str(m.from_user.id), new_level, 0)
     a = user["assessment"]
-    await m.reply(
+    await m.answer(
         f"🇬🇧 Текст:\n{a['translate_source_en']}",
         reply_markup=assess_translate_kb(show_skip=True),
     )
@@ -316,13 +327,13 @@ async def skip_translate(m: Message):
     a = user["assessment"]
 
     if a.get("phase") != "translate":
-        await m.reply("Сейчас нечего пропускать.", reply_markup=lessons_keyboard_for(user))
+        await m.answer("Сейчас нечего пропускать.", reply_markup=lessons_keyboard_for(user))
         return
 
     # Пропуск без оценки — берём текущий уровень текста как оценку
     est = a.get("translate_level") or "A1"
     set_translate_estimate(str(m.from_user.id), est)
-    await m.reply("⏭️ Ок, пропускаем перевод без оценки.")
+    await m.answer("⏭️ Ок, пропускаем перевод без оценки.")
     await _start_vocab_flow(m, est)
 
 
@@ -340,7 +351,7 @@ async def dont_know(m: Message):
     elif phase == "listen":
         await _advance_listen(m, user, success=False)
     else:
-        await m.reply("Сейчас эта кнопка недоступна.", reply_markup=lessons_keyboard_for(user))
+        await m.answer("Сейчас эта кнопка недоступна.", reply_markup=lessons_keyboard_for(user))
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == BTN_REPLACE)
@@ -351,7 +362,7 @@ async def replace_write(m: Message):
     a = user["assessment"]
 
     if a.get("phase") != "write":
-        await m.reply("Сейчас нечего менять.", reply_markup=lessons_keyboard_for(user))
+        await m.answer("Сейчас нечего менять.", reply_markup=lessons_keyboard_for(user))
         return
 
     user, status = replace_write_topic(str(m.from_user.id))
@@ -370,18 +381,21 @@ async def replace_write(m: Message):
         return
 
     if status == "none":
-        await m.reply("Замен больше нет.", reply_markup=assess_write_kb())
+        await m.answer("Замен больше нет.", reply_markup=assess_write_kb())
         return
 
     left = int(a.get("write_replacements_left", 0))
-    await m.reply("Меняю текст…")
-    await m.reply(
+    from services.tg_out import try_delete
+
+    status_msg = await m.answer("Меняю текст…")
+    await try_delete(m.bot, m.chat.id, status_msg.message_id)
+    await m.answer(
         _write_prompt(a["write_topic"], left),
         reply_markup=assess_write_kb(),
     )
 
 
-@router.message(ModeFilter(MODE_LESSONS), F.text.in_(LEVELS))
+@router.message(ModeFilter(MODE_LESSONS), F.text.regexp(r"^(A0|A1|A2|B1|B2|C1|C2)(?:\s*🔒)?$"))
 async def choose_level(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -391,18 +405,22 @@ async def choose_level(m: Message):
         return
 
     if not user.get("assessment_done") and not user.get("dev_unlock"):
-        await m.reply("Сначала пройди проверку уровня.", reply_markup=lessons_home_first())
+        await m.answer("Сначала пройди проверку уровня.", reply_markup=lessons_home_first())
         return
 
-    selected = m.text
+    import re as _re
+
+    m_lv = _re.match(r"^(A0|A1|A2|B1|B2|C1|C2)", m.text or "")
+    selected = m_lv.group(1) if m_lv else (m.text or "").replace("🔒", "").strip()
     user_level = user.get("level") or "A1"
     if not user.get("dev_unlock") and not is_level_accessible(user_level, selected):
         ceiling = max_accessible_level(user_level)
-        await m.reply(
+        await m.answer(
             f"🦜 <b>Рико:</b> Твой уровень по тесту — <b>{user_level}</b>.\n"
-            f"Сейчас тебе доступны уровни до <b>{ceiling}</b> включительно.\n"
+            f"Тебе открыты уровни до <b>{ceiling}</b> включительно "
+            f"(свой уровень + один выше + всё ниже).\n"
             f"Уровень <b>{selected}</b> пока закрыт 🔒\n\n"
-            f"Сначала освой <b>{ceiling}</b> — и откроется следующий! 💪",
+            f"Освой доступные — и откроется следующий! 💪",
             reply_markup=lessons_home_levels(user_level, user=user),
             parse_mode="HTML",
         )
@@ -429,7 +447,7 @@ async def lessons_text(m: Message):
         hub = (user.get("lesson") or {}).get("hub")
         if hub:
             return
-        await m.reply("Выбери действие кнопкой ниже.", reply_markup=lessons_keyboard_for(user))
+        await m.answer("Выбери действие кнопкой ниже.", reply_markup=lessons_keyboard_for(user))
         return
 
     if phase == "translate":
@@ -456,9 +474,9 @@ async def lessons_other(m: Message):
         from handlers.lessons_grammar import _kb_for_user, VOICE_ONLY_TEXT
 
         if m.voice:
-            await m.reply(VOICE_ONLY_TEXT, reply_markup=_kb_for_user(user), parse_mode="HTML")
+            await m.answer(VOICE_ONLY_TEXT, reply_markup=_kb_for_user(user), parse_mode="HTML")
         else:
-            await m.reply(
+            await m.answer(
                 "Напиши текст или нажми кнопку ниже.",
                 reply_markup=_kb_for_user(user),
             )
@@ -471,11 +489,11 @@ async def lessons_other(m: Message):
         kb = assess_write_kb()
     elif phase:
         kb = assess_simple_kb()
-    await m.reply("Пришли текстовый ответ или нажми кнопку.", reply_markup=kb)
+    await m.answer("Пришли текстовый ответ или нажми кнопку.", reply_markup=kb)
 
 
 async def _handle_translate_answer(m: Message, user: dict, text: str):
-    await m.reply("Принято. Дальше…")
+    await m.answer("Принято. Дальше…")
     a = user["assessment"]
     result = judge_translation(
         a["translate_source_en"],
@@ -496,10 +514,12 @@ async def _handle_translate_answer(m: Message, user: dict, text: str):
 
 
 async def _start_vocab_flow(m: Message, level: str):
-    await m.reply("Готовлю слова…")
-    user = begin_vocab(str(m.from_user.id), level)
+    from services.tg_out import status
+
+    async with status(m, "Готовлю слова…"):
+        user = begin_vocab(str(m.from_user.id), level)
     a = user["assessment"]
-    await m.reply(
+    await m.answer(
         "🎯 Задание 2/4: словарь\n\n"
         "Переведи слово на русский. Всего 4 слова.\n"
         "Если не знаешь — жми «Не знаю».\n\n"
@@ -513,10 +533,10 @@ async def _handle_vocab_answer(m: Message, user: dict, text: str):
     result = judge_vocab(a["vocab_en"], a.get("vocab_ru") or [], text)
     correct = _as_bool(result.get("correct"))
     if correct:
-        await m.reply("✅ Верно!")
+        await m.answer("✅ Верно!")
     else:
         # В тесте уровня ответы не показываем
-        await m.reply("❌ Не совсем — идём дальше.")
+        await m.answer("❌ Не совсем — идём дальше.")
     await _advance_vocab(m, user, success=correct)
 
 
@@ -532,14 +552,14 @@ async def _advance_vocab(m: Message, user: dict, success: bool):
 
     user = next_vocab(str(m.from_user.id), level)
     a = user["assessment"]
-    await m.reply(
+    await m.answer(
         f"{a['vocab_i'] + 1}/4 🇬🇧 {a['vocab_en']}",
         reply_markup=assess_dont_know_kb(),
     )
 
 
 async def _start_listen_flow(m: Message, level: str):
-    await m.reply(
+    await m.answer(
         "🎯 Задание 3/4: аудирование\n\n"
         "Слушай голосовое и напиши, что услышал(а), на английском.\n"
         "Всего 3 голосовых. Если не распознал — жми «Не знаю».",
@@ -551,7 +571,7 @@ async def _start_listen_flow(m: Message, level: str):
 
 
 async def _send_listen_audio(m: Message, text: str, number: int):
-    await m.reply(f"🎧 {number}/3", reply_markup=assess_dont_know_kb())
+    await m.answer(f"🎧 {number}/3", reply_markup=assess_dont_know_kb())
     await send_voice_reply(m, text, title=f"Listen {number}")
 
 
@@ -582,21 +602,22 @@ async def _start_write_flow(m: Message, level: str):
     user = begin_write(str(m.from_user.id), level)
     a = user["assessment"]
     left = int(a.get("write_replacements_left", 3))
-    await m.reply(
+    await m.answer(
         _write_prompt(a["write_topic"], left),
         reply_markup=assess_write_kb(),
     )
 
 
 async def _handle_write_answer(m: Message, user: dict, text: str):
-    await m.reply("Проверяю…")
-    a = user["assessment"]
-    current = a.get("write_level") or a.get("cefr") or "A2"
-    translate_est = a.get("translate_estimate") or current
-    result = judge_writing(a.get("write_topic") or "", text, current)
-    writing_level = result.get("cefr_estimate") or current
-    if writing_level not in LEVELS:
-        writing_level = current
+    from services.tg_out import status
 
-    final = average_level([translate_est, current, writing_level])
+    async with status(m, "Проверяю…"):
+        a = user["assessment"]
+        current = a.get("write_level") or a.get("cefr") or "A2"
+        translate_est = a.get("translate_estimate") or current
+        result = judge_writing(a.get("write_topic") or "", text, current)
+        writing_level = result.get("cefr_estimate") or current
+        if writing_level not in LEVELS:
+            writing_level = current
+        final = average_level([translate_est, current, writing_level])
     await _finish_test(m, str(m.from_user.id), final)

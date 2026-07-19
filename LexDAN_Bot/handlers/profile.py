@@ -1,4 +1,4 @@
-﻿"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
+"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
 
 from aiogram import Router, F
 from aiogram.types import Message
@@ -32,8 +32,8 @@ async def subscription_info(m: Message):
     save_users(users)
     from handlers.lesson_keyboards import tariffs_inline_kb
 
-    await m.reply(subscription_blurb(user), reply_markup=profile_menu(user), parse_mode="HTML")
-    await m.reply("Выбери тариф:", reply_markup=tariffs_inline_kb(user))
+    await m.answer(subscription_blurb(user), reply_markup=profile_menu(user), parse_mode="HTML")
+    await m.answer("Выбери тариф:", reply_markup=tariffs_inline_kb(user))
 
 
 @router.message(ModeFilter(MODE_PROFILE), F.text == BTN_STREAK)
@@ -42,7 +42,7 @@ async def streak_rewards_info(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     save_users(users)
-    await m.reply(
+    await m.answer(
         format_streak_rewards_message(user),
         reply_markup=profile_menu(user),
         parse_mode="HTML",
@@ -57,7 +57,7 @@ async def invite_friend(m: Message):
     ensure_growth(user)
     bind_referral_code(user_id, user)
     save_users(users)
-    await m.reply(
+    await m.answer(
         format_referral_rewards_message(user, BOT_USERNAME),
         reply_markup=profile_menu(user),
         parse_mode="HTML",
@@ -71,7 +71,7 @@ async def restore_streak_btn(m: Message):
     ensure_growth(user)
     ok, text = restore_streak(user)
     save_users(users)
-    await m.reply(text, reply_markup=profile_menu(user), parse_mode="HTML")
+    await m.answer(text, reply_markup=profile_menu(user), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_PROFILE))
@@ -80,7 +80,7 @@ async def profile_foolproof(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     save_users(users)
-    await m.reply(
+    await m.answer(
         "🙂 В профиле: Подписка, Серия дней, Пригласить друга.",
         reply_markup=profile_menu(user),
     )

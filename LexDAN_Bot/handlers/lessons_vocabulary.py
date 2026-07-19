@@ -20,10 +20,12 @@ from handlers.vocabulary_keyboards import (
     BTN_REPEAT_PHRASES,
     BTN_DONT_REMEMBER,
     BTN_BACK_DRILL,
+    BTN_VOCAB_FINAL,
     vocab_topics_kb,
     vocab_topic_kb,
     vocab_phrase_topic_kb,
     vocab_practice_kb,
+    vocab_final_kb,
     global_drill_menu_kb,
     drill_kb,
     topic_progress_line,
@@ -73,12 +75,25 @@ from services.vocabulary_tutor import (
 )
 from handlers.keyboards import BTN_START_TODAY
 from services.growth import note_lesson_activity, touch_activity
+from services.vocab_final import (
+    build_vocab_final_test,
+    check_text_translation,
+    check_word_translation,
+    count_level_words_in_text,
+    format_task_prompt,
+    format_vocab_final_review,
+    is_level_vocab_words_complete,
+    is_vocab_final_passed,
+    mark_vocab_final_passed,
+)
+from data.vocabulary_words import iter_level_words
 
 router = Router()
 VOCAB_INTRO = (
     "📗 <b>Vocabulary</b>\n\n"
     "🦜 Учим слова по темам: текст → карточки → 2 предложения.\n"
-    "Есть устойчивые фразы отдельной кнопкой."
+    "Есть устойчивые фразы отдельной кнопкой.\n"
+    "Когда все слова уровня изучены — появится <b>🎯 Тест Vocabulary</b>."
 )
 
 
@@ -131,7 +146,7 @@ async def _send_word_story(m: Message, user: dict, *, count_toward_limit: bool =
         save_users(users)
         wt = words_total(level, topic_id)
         wl, _, _, _, _ = _topic_progress(user, level, topic_id)
-        await m.reply(
+        await m.answer(
             f"🎉 <b>Молодец!</b> Новые слова по теме «{topic['title']}» изучены ({wl}/{wt}) ✅\n\n"
             "Можешь закрепить в <b>📋 Задания по всем уровням</b> → повтор слов.",
             reply_markup=vocab_topics_kb(level, user),
@@ -147,14 +162,16 @@ async def _send_word_story(m: Message, user: dict, *, count_toward_limit: bool =
         ok, tip = can_start_vocab_text(user)
         if not ok:
             save_users(users)
-            await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+            await m.answer(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
             set_vocab_hub(str(m.from_user.id), "vocab_list", level=level)
             return
         note_vocab_text_started(user)
         save_users(users)
 
-    await m.reply("🦜 Пишу текст…")
-    story = generate_vocab_text(level, topic["title"], batch, kind="words")
+    from services.tg_out import status
+
+    async with status(m, "🦜 Пишу текст…"):
+        story = generate_vocab_text(level, topic["title"], batch, kind="words")
     # ВАЖНО: кнопки = выбранный батч слов, а не «highlighted» от ИИ (там часто 1 слово)
     batch_en = [w["en"] for w in batch]
 
@@ -181,7 +198,7 @@ async def _send_word_story(m: Message, user: dict, *, count_toward_limit: bool =
         f"🦜 В этом тексте <b>{len(batch_en)}</b> новых слов. "
         "Нажми слово на кнопке, чтобы изучить его."
     )
-    await m.reply(text, reply_markup=vocab_topic_kb(level, topic_id, user, batch_en), parse_mode="HTML")
+    await m.answer(text, reply_markup=vocab_topic_kb(level, topic_id, user, batch_en), parse_mode="HTML")
 
 
 async def _send_phrase_story(m: Message, user: dict, *, count_toward_limit: bool = True):
@@ -204,7 +221,7 @@ async def _send_phrase_story(m: Message, user: dict, *, count_toward_limit: bool
     if not batch:
         pt = phrases_total(level, topic_id)
         pl, _, pd = topic_phrases_progress(user, level, topic_id, pt)
-        await m.reply(
+        await m.answer(
             f"🎉 Фразы по теме «{topic['title']}» изучены ({pl}/{pt}) ✅",
             reply_markup=vocab_topics_kb(level, user),
             parse_mode="HTML",
@@ -219,13 +236,15 @@ async def _send_phrase_story(m: Message, user: dict, *, count_toward_limit: bool
         ok, tip = can_start_vocab_text(user)
         if not ok:
             save_users(users)
-            await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+            await m.answer(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
             return
         note_vocab_text_started(user)
         save_users(users)
 
-    await m.reply("🦜 Готовлю текст с фразами…")
-    story = generate_vocab_text(level, topic["title"], batch, kind="phrases")
+    from services.tg_out import status
+
+    async with status(m, "🦜 Готовлю текст с фразами…"):
+        story = generate_vocab_text(level, topic["title"], batch, kind="phrases")
     batch_en = [p["en"] for p in batch]
 
     update_vocab_lesson(
@@ -249,7 +268,7 @@ async def _send_phrase_story(m: Message, user: dict, *, count_toward_limit: bool
         f"{story['text_ru']}\n\n"
         "🦜 Нажми на фразу, чтобы разобрать её подробнее."
     )
-    await m.reply(text, reply_markup=vocab_phrase_topic_kb(level, topic_id, user, batch_en), parse_mode="HTML")
+    await m.answer(text, reply_markup=vocab_phrase_topic_kb(level, topic_id, user, batch_en), parse_mode="HTML")
 
 
 def _next_drill_item(user: dict) -> dict | None:
@@ -288,7 +307,7 @@ def _next_drill_item(user: dict) -> dict | None:
 async def _send_drill_question(m: Message, user: dict):
     pack = _next_drill_item(user)
     if not pack:
-        await m.reply("🦜 Пока нет изученных слов/фраз для повтора.", reply_markup=global_drill_menu_kb())
+        await m.answer("🦜 Пока нет изученных слов/фраз для повтора.", reply_markup=global_drill_menu_kb())
         return
     entry = pack["entry"]
     if pack["direction"] == "ru_en":
@@ -309,7 +328,7 @@ async def _send_drill_question(m: Message, user: dict):
         drill_index=pack["index"] + 1,
         drill_dirs=pack["dirs"],
     )
-    await m.reply(prompt, reply_markup=drill_kb(), parse_mode="HTML")
+    await m.answer(prompt, reply_markup=drill_kb(), parse_mode="HTML")
 
 
 @router.message(F.text == BTN_START_TODAY)
@@ -347,7 +366,7 @@ async def start_today(m: Message):
         pick = topics[0]
 
     if not pick:
-        await m.reply(
+        await m.answer(
             "🦜 Пока нет тем Vocabulary. Открой 📚 Уроки и выбери уровень.",
             parse_mode="HTML",
         )
@@ -364,7 +383,7 @@ async def start_today(m: Message):
     if not wd:
         ok, tip = can_start_vocab_text(user)
         if not ok:
-            await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+            await m.answer(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
             return
 
     set_vocab_hub(
@@ -376,7 +395,7 @@ async def start_today(m: Message):
     )
     users = load_users()
     user = get_user(users, uid)
-    await m.reply(
+    await m.answer(
         f"🦜 Отлично! Старт дня: Vocabulary · <b>{level}</b> · «{pick['title']}».\n"
         "Читай текст и жми слова — 15 минут, и день засчитан 💪",
         parse_mode="HTML",
@@ -393,7 +412,7 @@ async def open_vocabulary(m: Message):
     ensure_lesson(user)
     level = user["lesson"].get("level") or user.get("level") or "A1"
     if not get_vocab_topics(level):
-        await m.reply(
+        await m.answer(
             f"🦜 Нет тем Vocabulary для уровня <b>{level}</b>.",
             reply_markup=level_sections_kb(),
             parse_mode="HTML",
@@ -415,11 +434,203 @@ async def open_vocabulary(m: Message):
         done = wd and (pt == 0 or pd)
         return learned, total, done
 
-    await m.reply(VOCAB_INTRO, parse_mode="HTML")
-    await m.reply(
-        format_vocab_topics_list(level, prog),
+    await m.answer(VOCAB_INTRO, parse_mode="HTML")
+    extra = ""
+    if is_level_vocab_words_complete(user, level) and not is_vocab_final_passed(user, level):
+        extra = "\n\n🏆 Все слова уровня изучены — жми <b>🎯 Тест Vocabulary</b>!"
+    elif is_vocab_final_passed(user, level):
+        extra = "\n\n✅ Итоговый тест Vocabulary на этом уровне уже сдан."
+    await m.answer(
+        format_vocab_topics_list(level, prog) + extra,
         reply_markup=vocab_topics_kb(level, user),
         parse_mode="HTML",
+    )
+
+
+@router.message(ModeFilter(MODE_LESSONS), F.text == BTN_VOCAB_FINAL)
+async def start_vocab_final(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    if assessment_busy(user):
+        return
+    ensure_lesson(user)
+    ensure_vocab_progress(user)
+    level = user["lesson"].get("level") or user.get("level") or "A1"
+    has_vocabulary_level(level)
+
+    if is_vocab_final_passed(user, level):
+        await m.answer(
+            f"✅ Тест Vocabulary для <b>{level}</b> уже сдан.",
+            reply_markup=vocab_topics_kb(level, user),
+            parse_mode="HTML",
+        )
+        return
+    if not is_level_vocab_words_complete(user, level):
+        await m.answer(
+            "🦜 Сначала изучи все слова уровня — потом откроется итоговый тест.",
+            reply_markup=vocab_topics_kb(level, user),
+            parse_mode="HTML",
+        )
+        return
+
+    try:
+        test = build_vocab_final_test(level)
+    except ValueError:
+        await m.answer(
+            "🦜 Для этого уровня пока мало слов в базе.",
+            reply_markup=vocab_topics_kb(level, user),
+            parse_mode="HTML",
+        )
+        return
+
+    test["mistakes"] = []
+    set_vocab_hub(str(m.from_user.id), "vocab_final", level=level, vocab_final=test)
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    task = test["tasks"][0]
+    await m.answer(
+        "🦜 <b>Итоговый тест Vocabulary</b>\n"
+        "5 заданий · нужно набрать минимум <b>4/5</b>.\n"
+        "Разбор ошибок — в конце. Ответы пиши текстом. Удачи!",
+        parse_mode="HTML",
+    )
+    await m.answer(
+        format_task_prompt(task),
+        reply_markup=vocab_final_kb(),
+        parse_mode="HTML",
+    )
+
+
+async def _advance_vocab_final(
+    m: Message,
+    user: dict,
+    correct: bool,
+    tip: str = "",
+    *,
+    mistake: dict | None = None,
+):
+    uid = str(m.from_user.id)
+    test = dict((user.get("lesson") or {}).get("vocab_final") or {})
+    level = test.get("level") or user["lesson"].get("level") or "A1"
+    if correct:
+        test["score"] = int(test.get("score") or 0) + 1
+    elif mistake:
+        mistakes = list(test.get("mistakes") or [])
+        mistakes.append(mistake)
+        test["mistakes"] = mistakes
+    test["index"] = int(test.get("index") or 0) + 1
+    tasks = test.get("tasks") or []
+
+    if tip:
+        await m.answer(tip, parse_mode="HTML")
+
+    if test["index"] >= len(tasks):
+        score = int(test.get("score") or 0)
+        total = len(tasks) or 5
+        passed = score >= 4
+        mistakes = list(test.get("mistakes") or [])
+        clear_vocab_session(uid)
+        set_vocab_hub(uid, "vocab_list", level=level)
+        if passed:
+            mark_vocab_final_passed(uid, level)
+        text = format_vocab_final_review(mistakes, score=score, total=total, passed=passed)
+        users = load_users()
+        user = get_user(users, uid)
+        await m.answer(text, reply_markup=vocab_topics_kb(level, user), parse_mode="HTML")
+        return
+
+    update_vocab_lesson(uid, vocab_final=test, hub="vocab_final")
+    users = load_users()
+    user = get_user(users, uid)
+    task = tasks[test["index"]]
+    await m.answer(
+        format_task_prompt(task),
+        reply_markup=vocab_final_kb(),
+        parse_mode="HTML",
+    )
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("vocab_final"))
+async def vocab_final_answer(m: Message):
+    if not m.text or m.text.startswith("/"):
+        return
+    if m.text in {"⬅️ К темам", "🔙 Вернуться в меню", "⬅️ К разделам"}:
+        return
+
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    test = dict((user.get("lesson") or {}).get("vocab_final") or {})
+    # ensure mistakes list exists for updates via _advance
+    if "mistakes" not in test:
+        test["mistakes"] = []
+        update_vocab_lesson(str(m.from_user.id), vocab_final=test)
+        users = load_users()
+        user = get_user(users, str(m.from_user.id))
+        test = dict((user.get("lesson") or {}).get("vocab_final") or {})
+
+    tasks = test.get("tasks") or []
+    idx = int(test.get("index") or 0)
+    if idx >= len(tasks):
+        clear_vocab_session(str(m.from_user.id))
+        return
+    task = tasks[idx]
+    raw = (m.text or "").strip()
+    t = task.get("type")
+
+    if t == "word_tr":
+        ok = check_word_translation(task.get("ru") or "", raw)
+        tip = "✅ Верно!" if ok else "❌ Неверно."
+        mistake = None if ok else {
+            "n": task.get("n"),
+            "type": "word_tr",
+            "en": task.get("en"),
+            "your": raw[:80],
+            "correct": task.get("ru"),
+        }
+        await _advance_vocab_final(m, user, ok, tip, mistake=mistake)
+        return
+
+    if t == "text_tr":
+        ok = check_text_translation(task.get("ru") or "", raw)
+        tip = "✅ Хороший перевод — смысл пойман!" if ok else "❌ Перевод слишком далёк от текста."
+        mistake = None if ok else {
+            "n": task.get("n"),
+            "type": "text_tr",
+            "your": raw[:120],
+            "correct": (task.get("ru") or "")[:200],
+        }
+        await _advance_vocab_final(m, user, ok, tip, mistake=mistake)
+        return
+
+    if t == "write_words":
+        level = test.get("level") or "A1"
+        pool = iter_level_words(level)
+        found = count_level_words_in_text(raw, pool)
+        need = int(task.get("need") or 5)
+        ok = len(found) >= need
+        if ok:
+            tip = (
+                f"✅ Отлично! Нашёл слова уровня: <b>{len(found)}</b> "
+                f"({', '.join(found[:8])}{'…' if len(found) > 8 else ''})"
+            )
+            mistake = None
+        else:
+            tip = f"❌ Нужно ≥{need} разных слов уровня, нашлось: <b>{len(found)}</b>."
+            mistake = {
+                "n": task.get("n"),
+                "type": "write_words",
+                "found": len(found),
+                "need": need,
+            }
+        await _advance_vocab_final(m, user, ok, tip, mistake=mistake)
+        return
+
+    await _advance_vocab_final(
+        m,
+        user,
+        False,
+        "❌ Не удалось проверить ответ.",
+        mistake={"n": task.get("n"), "type": t or "unknown"},
     )
 
 
@@ -434,13 +645,13 @@ async def vocab_choose_topic(m: Message):
     level = user["lesson"]["level"] or "A1"
     topic = get_vocab_topic_by_index(level, int(m.text))
     if not topic:
-        await m.reply("Нет такой темы.", reply_markup=vocab_topics_kb(level, user))
+        await m.answer("Нет такой темы.", reply_markup=vocab_topics_kb(level, user))
         return
 
     wt = words_total(level, topic["id"])
     wl, _, wd = topic_words_progress(user, level, topic["id"], wt)
     if wd:
-        await m.reply(
+        await m.answer(
             f"✅ Тема «{topic['title']}» по словам пройдена ({wl}/{wt}).\n"
             "Повтори в <b>📋 Задания по всем уровням</b>.",
             reply_markup=vocab_topics_kb(level, user),
@@ -451,7 +662,7 @@ async def vocab_choose_topic(m: Message):
     ok, tip = can_start_vocab_text(user)
     if not ok:
         save_users(users)
-        await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+        await m.answer(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
         return
 
     set_vocab_hub(
@@ -498,10 +709,10 @@ async def vocab_word_button(m: Message):
     word = get_word_entry(level, topic_id, text)
     if not word:
         batch = lesson.get("vocab_batch") or []
-        await m.reply("Выбери слово кнопкой из списка.", reply_markup=vocab_topic_kb(level, topic_id, user, batch))
+        await m.answer("Выбери слово кнопкой из списка.", reply_markup=vocab_topic_kb(level, topic_id, user, batch))
         return
     if is_word_learned(user, level, topic_id, word["en"]):
-        await m.reply("Это слово уже изучено ✅", reply_markup=vocab_topic_kb(level, topic_id, user, lesson.get("vocab_batch") or []))
+        await m.answer("Это слово уже изучено ✅", reply_markup=vocab_topic_kb(level, topic_id, user, lesson.get("vocab_batch") or []))
         return
 
     from services.growth import can_learn_vocab_item, ensure_growth
@@ -511,7 +722,7 @@ async def vocab_word_button(m: Message):
     ok, tip = can_learn_vocab_item(user)
     if not ok:
         save_users(users)
-        await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+        await m.answer(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
         return
 
     update_vocab_lesson(
@@ -524,7 +735,7 @@ async def vocab_word_button(m: Message):
         vocab_used_sentences=[],
     )
     card = rico_word_card(level, topic_title, word)
-    await m.reply(card, reply_markup=vocab_practice_kb(), parse_mode="HTML")
+    await m.answer(card, reply_markup=vocab_practice_kb(), parse_mode="HTML")
 
 
 def _vocab_check_reply(result: dict) -> str:
@@ -593,7 +804,7 @@ async def vocab_word_practice(m: Message):
         return
 
     if _is_repeat_sentence(lesson, text):
-        await m.reply(
+        await m.answer(
             "🦜 Это уже было. Напиши <b>другое</b> предложение — не копируй прошлое.",
             reply_markup=vocab_practice_kb(),
             parse_mode="HTML",
@@ -603,13 +814,13 @@ async def vocab_word_practice(m: Message):
     result = check_vocab_sentence(level, word["en"], text)
     if not result.get("correct"):
         _remember_sentence(str(m.from_user.id), text)
-        await m.reply(_vocab_check_reply(result), reply_markup=vocab_practice_kb(), parse_mode="HTML")
+        await m.answer(_vocab_check_reply(result), reply_markup=vocab_practice_kb(), parse_mode="HTML")
         return
 
     done += 1
     _remember_sentence(str(m.from_user.id), text, done=done)
     if done < 2:
-        await m.reply(
+        await m.answer(
             f"✅ Молодец! ({done}/2)\n"
             "Теперь напиши <b>ещё одно новое</b> предложение с этим словом "
             "(не повторяй предыдущее).",
@@ -639,7 +850,7 @@ async def vocab_word_practice(m: Message):
     batch = list((user.get("lesson") or {}).get("vocab_batch") or [])
     batch = [w for w in batch if not is_word_learned(user, level, topic_id, w)]
 
-    await m.reply(
+    await m.answer(
         f"✅ Отлично! Слово <b>{word['en']}</b> изучено! "
         f"Прогресс по теме: <b>{wl}/{wt}</b>\n{wrap}",
         parse_mode="HTML",
@@ -647,8 +858,18 @@ async def vocab_word_practice(m: Message):
 
     ok_more, _ = can_learn_vocab_item(user)
     if not is_paid(user) and not ok_more:
-        await m.reply("👇", reply_markup=lesson_limit_inline_kb())
+        await m.answer("👇", reply_markup=lesson_limit_inline_kb())
         set_vocab_hub(str(m.from_user.id), "vocab_list", level=level)
+        return
+
+    if is_level_vocab_words_complete(user, level) and not is_vocab_final_passed(user, level):
+        set_vocab_hub(str(m.from_user.id), "vocab_list", level=level)
+        await m.answer(
+            f"🏆 Все слова уровня <b>{level}</b> изучены!\n"
+            "Жми <b>🎯 Тест Vocabulary</b> — 5 заданий на весь уровень.",
+            reply_markup=vocab_topics_kb(level, user),
+            parse_mode="HTML",
+        )
         return
 
     if batch:
@@ -657,13 +878,13 @@ async def vocab_word_practice(m: Message):
         tip = f"Осталось в этом тексте: <b>{len(batch)}</b> — выбери следующее слово 👇"
         if story_en:
             tip = f"{tip}\n\n<i>Текст тот же — можно опереться на него.</i>"
-        await m.reply(
+        await m.answer(
             tip,
             reply_markup=vocab_topic_kb(level, topic_id, user, batch),
             parse_mode="HTML",
         )
     else:
-        await m.reply("Все слова из этого текста изучены ✅")
+        await m.answer("Все слова из этого текста изучены ✅")
         await _send_word_story(m, user, count_toward_limit=True)
 
 
@@ -703,7 +924,7 @@ async def vocab_phrase_flow(m: Message):
         ok, tip = can_learn_vocab_item(user)
         if not ok:
             save_users(users)
-            await m.reply(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+            await m.answer(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
             return
 
         update_vocab_lesson(
@@ -715,12 +936,12 @@ async def vocab_phrase_flow(m: Message):
             vocab_last_sentence="",
             vocab_used_sentences=[],
         )
-        await m.reply(rico_phrase_card(level, topic_title, phrase), reply_markup=vocab_practice_kb(), parse_mode="HTML")
+        await m.answer(rico_phrase_card(level, topic_title, phrase), reply_markup=vocab_practice_kb(), parse_mode="HTML")
         return
 
     if hub != "vocab_phrase_practice":
         batch = lesson.get("vocab_batch") or []
-        await m.reply("Выбери фразу кнопкой.", reply_markup=vocab_phrase_topic_kb(level, topic_id, user, batch))
+        await m.answer("Выбери фразу кнопкой.", reply_markup=vocab_phrase_topic_kb(level, topic_id, user, batch))
         return
 
     active = lesson.get("vocab_active_item")
@@ -732,7 +953,7 @@ async def vocab_phrase_flow(m: Message):
     done = int(lesson.get("vocab_practice_done") or 0)
     raw = (m.text or "").strip()
     if _is_repeat_sentence(lesson, raw):
-        await m.reply(
+        await m.answer(
             "🦜 Это уже было. Напиши <b>другое</b> предложение — не копируй прошлое.",
             reply_markup=vocab_practice_kb(),
             parse_mode="HTML",
@@ -742,13 +963,13 @@ async def vocab_phrase_flow(m: Message):
     result = check_vocab_sentence(level, phrase["en"], raw, is_phrase=True)
     if not result.get("correct"):
         _remember_sentence(str(m.from_user.id), raw)
-        await m.reply(_vocab_check_reply(result), reply_markup=vocab_practice_kb(), parse_mode="HTML")
+        await m.answer(_vocab_check_reply(result), reply_markup=vocab_practice_kb(), parse_mode="HTML")
         return
 
     done += 1
     _remember_sentence(str(m.from_user.id), raw, done=done)
     if done < 2:
-        await m.reply(
+        await m.answer(
             f"✅ Молодец! ({done}/2)\n"
             "Теперь напиши <b>ещё одно новое</b> предложение с этой фразой.",
             reply_markup=vocab_practice_kb(),
@@ -778,26 +999,26 @@ async def vocab_phrase_flow(m: Message):
     batch = list((user.get("lesson") or {}).get("vocab_batch") or [])
     batch = [p for p in batch if not is_phrase_learned(user, level, topic_id, p)]
 
-    await m.reply(
+    await m.answer(
         f"✅ Фраза изучена! Прогресс: <b>{pl}/{pt}</b>\n{wrap}",
         parse_mode="HTML",
     )
 
     ok_more, _ = can_learn_vocab_item(user)
     if not is_paid(user) and not ok_more:
-        await m.reply("👇", reply_markup=lesson_limit_inline_kb())
+        await m.answer("👇", reply_markup=lesson_limit_inline_kb())
         set_vocab_hub(str(m.from_user.id), "vocab_list", level=level)
         return
 
     if batch:
         update_vocab_lesson(str(m.from_user.id), vocab_batch=batch, hub="vocab_phrases")
-        await m.reply(
+        await m.answer(
             f"Осталось фраз в тексте: <b>{len(batch)}</b> 👇",
             reply_markup=vocab_phrase_topic_kb(level, topic_id, user, batch),
             parse_mode="HTML",
         )
     else:
-        await m.reply("Все фразы из этого текста изучены ✅")
+        await m.answer("Все фразы из этого текста изучены ✅")
         await _send_phrase_story(m, user, count_toward_limit=True)
 
 
@@ -806,10 +1027,10 @@ async def global_tasks_menu(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     if not user.get("assessment_done") and not user.get("dev_unlock"):
-        await m.reply("Сначала пройди тест уровня.")
+        await m.answer("Сначала пройди тест уровня.")
         return
     set_vocab_hub(str(m.from_user.id), "global_drill_menu")
-    await m.reply(
+    await m.answer(
         "🦜 <b>Решили закрепить результат?</b> Выбери задание:",
         reply_markup=global_drill_menu_kb(),
         parse_mode="HTML",
@@ -822,7 +1043,7 @@ async def start_word_drill(m: Message):
     user = get_user(users, str(m.from_user.id))
     entries = get_all_learned_word_entries(user)
     if not entries:
-        await m.reply("🦜 Пока нет изученных слов.", reply_markup=global_drill_menu_kb())
+        await m.answer("🦜 Пока нет изученных слов.", reply_markup=global_drill_menu_kb())
         return
     random.shuffle(entries)
     set_vocab_hub(
@@ -844,7 +1065,7 @@ async def start_phrase_drill(m: Message):
     user = get_user(users, str(m.from_user.id))
     entries = get_all_learned_phrase_entries(user)
     if not entries:
-        await m.reply("🦜 Пока нет изученных фраз.", reply_markup=global_drill_menu_kb())
+        await m.answer("🦜 Пока нет изученных фраз.", reply_markup=global_drill_menu_kb())
         return
     random.shuffle(entries)
     set_vocab_hub(
@@ -868,7 +1089,7 @@ async def drill_dont_remember(m: Message):
     entry = cur.get("entry")
     is_phr = cur.get("kind") == "phrases"
     if entry:
-        await m.reply(rico_dont_remember(entry, is_phrase=is_phr), parse_mode="HTML")
+        await m.answer(rico_dont_remember(entry, is_phrase=is_phr), parse_mode="HTML")
     # Сразу следующее задание (слово или фраза)
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -879,7 +1100,7 @@ async def drill_dont_remember(m: Message):
 async def drill_back(m: Message):
     clear_vocab_session(str(m.from_user.id))
     set_vocab_hub(str(m.from_user.id), "global_drill_menu")
-    await m.reply("Выбери задание:", reply_markup=global_drill_menu_kb())
+    await m.answer("Выбери задание:", reply_markup=global_drill_menu_kb())
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("vocab_drill"), F.text)
@@ -894,12 +1115,12 @@ async def drill_answer(m: Message):
     entry = cur.get("entry") or {}
     is_phr = cur.get("kind") == "phrases"
     if given == ans or (ans and (ans in given or given in ans)):
-        await m.reply("✅ Верно!")
+        await m.answer("✅ Верно!")
     else:
         if entry:
-            await m.reply(rico_dont_remember(entry, is_phrase=is_phr), parse_mode="HTML")
+            await m.answer(rico_dont_remember(entry, is_phrase=is_phr), parse_mode="HTML")
         else:
-            await m.reply(f"🦜 Почти! Правильно: <b>{cur.get('answer')}</b>", parse_mode="HTML")
+            await m.answer(f"🦜 Почти! Правильно: <b>{cur.get('answer')}</b>", parse_mode="HTML")
     # Сразу следующее задание
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -956,7 +1177,7 @@ async def vocab_back_to_words(m: Message):
         )
     else:
         body = f"📗 <b>{topic['title']}</b>\n{prog}\n\nВыбери слово 👇"
-    await m.reply(body, reply_markup=vocab_topic_kb(level, topic_id, user, batch), parse_mode="HTML")
+    await m.answer(body, reply_markup=vocab_topic_kb(level, topic_id, user, batch), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == "⬅️ К темам")
@@ -980,7 +1201,7 @@ async def vocab_back_to_topics(m: Message):
         done = (wt > 0 and wl >= wt) and (pt == 0 or pl >= pt)
         return wl, wt, done
 
-    await m.reply(
+    await m.answer(
         format_vocab_topics_list(level, prog),
         reply_markup=vocab_topics_kb(level, user),
         parse_mode="HTML",
@@ -999,7 +1220,7 @@ async def vocab_back_sections(m: Message):
     level = user["lesson"].get("level") or user.get("level") or "A1"
     clear_vocab_session(str(m.from_user.id))
     set_level_hub(str(m.from_user.id), level)
-    await m.reply(f"🎓 Уровень {level} — выбери раздел:", reply_markup=level_sections_kb())
+    await m.answer(f"🎓 Уровень {level} — выбери раздел:", reply_markup=level_sections_kb())
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == "⬅️ К уровням")
@@ -1016,4 +1237,4 @@ async def vocab_drill_back_levels(m: Message):
     clear_lesson(str(m.from_user.id))
     users = load_users()
     user = get_user(users, str(m.from_user.id))
-    await m.reply("Выбери уровень:", reply_markup=lessons_keyboard_for(user))
+    await m.answer("Выбери уровень:", reply_markup=lessons_keyboard_for(user))

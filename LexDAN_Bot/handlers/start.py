@@ -64,12 +64,12 @@ async def start_cmd(m: Message, command: CommandObject = None):
     if not user.get("name"):
         user["step"] = "awaiting_name"
         save_users(users)
-        await m.reply(HELLO_NEW, parse_mode="HTML")
+        await m.answer(HELLO_NEW, parse_mode="HTML")
         return
 
     user["step"] = "ready"
     save_users(users)
-    await m.reply(
+    await m.answer(
         WELCOME_AGAIN.format(name=user["name"]),
         reply_markup=main_menu(user),
         parse_mode="HTML",
@@ -103,7 +103,7 @@ async def danil_test_messi(m: Message):
 
     users = load_users()
     user = get_user(users, user_id)
-    await m.reply(
+    await m.answer(
         "🔓 <b>DEV-режим включён</b>\n\n"
         "• тест уровня пропущен\n"
         "• уровень профиля: <b>C2</b>\n"
@@ -130,7 +130,7 @@ async def save_name(m: Message):
         "🎁 Пригласить друга",
     }
     if not name or name.startswith("/") or len(name) > 40 or name in banned:
-        await m.reply("🙂 Напиши просто своё имя текстом, например: <b>Даня</b>", parse_mode="HTML")
+        await m.answer("🙂 Напиши просто своё имя текстом, например: <b>Даня</b>", parse_mode="HTML")
         return
 
     user_id = str(m.from_user.id)
@@ -150,7 +150,7 @@ async def save_name(m: Message):
             "\n\n🎁 Ты пришёл по ссылке друга — сегодня Grammar до <b>12</b> заданий!"
         )
 
-    await m.reply(
+    await m.answer(
         WELCOME_AFTER_NAME.format(name=_esc(name)) + extra,
         reply_markup=main_menu(user),
         parse_mode="HTML",
@@ -159,7 +159,7 @@ async def save_name(m: Message):
 
 @router.message(StepFilter("awaiting_name"))
 async def name_not_text(m: Message):
-    await m.reply("🙂 Напиши своё имя обычным текстом, например: Даня")
+    await m.answer("🙂 Напиши своё имя обычным текстом, например: Даня")
 
 
 def _esc(text: str) -> str:

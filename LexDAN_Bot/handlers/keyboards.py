@@ -78,18 +78,23 @@ def lessons_home_levels(
     user: dict | None = None,
     show_start_today: bool = False,
 ) -> ReplyKeyboardMarkup:
-    if is_dev_unlocked(user):
-        visible = list(LEVELS)
-    elif user_level:
-        visible = [lv for lv in LEVELS if is_level_accessible(user_level, lv)]
-    else:
-        visible = list(LEVELS)
+    """Всегда показываем A0–C2; доступность проверяется при клике."""
+    visible = list(LEVELS)
     rows = []
     if show_start_today:
         rows.append([KeyboardButton(text=BTN_START_TODAY)])
     row = []
     for lv in visible:
-        row.append(KeyboardButton(text=lv))
+        # 🔒 на кнопке, если уровень выше доступного (кроме DEV)
+        label = lv
+        if (
+            user
+            and user_level
+            and not is_dev_unlocked(user)
+            and not is_level_accessible(user_level, lv)
+        ):
+            label = f"{lv} 🔒"
+        row.append(KeyboardButton(text=label))
         if len(row) == 4:
             rows.append(row)
             row = []

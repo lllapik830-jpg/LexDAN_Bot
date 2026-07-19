@@ -192,7 +192,7 @@ async def send_voice_reply(
     mp3_bytes, source = synthesize_speech(text, voice_id=voice_id)
     if not mp3_bytes:
         logging.error("All TTS backends failed")
-        await message.reply("⚠️ Текст готов, но голос сейчас не отправился. Попробуй ещё раз чуть позже.")
+        await message.answer("⚠️ Текст готов, но голос сейчас не отправился. Попробуй ещё раз чуть позже.")
         return False
 
     ogg_bytes = mp3_to_ogg_opus(mp3_bytes)
@@ -212,7 +212,7 @@ async def send_voice_reply(
         return True
     except Exception as e:
         logging.error(f"Send voice error: {e}")
-        await message.reply("⚠️ Не удалось отправить голосовое сообщение.")
+        await message.answer("⚠️ Не удалось отправить голосовое сообщение.")
         return False
     finally:
         if path and os.path.exists(path):

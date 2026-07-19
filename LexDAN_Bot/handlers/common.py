@@ -9,6 +9,7 @@ from handlers.keyboards import main_menu
 from services.database import set_mode, MODE_MENU
 from services.assessment import clear_assessment_phase
 from services.lesson_state import clear_lesson
+from services.tg_out import say
 
 router = Router()
 
@@ -25,7 +26,10 @@ async def back_to_main(m: Message):
     user = get_user(users, user_id)
     ensure_growth(user)
     set_mode(user_id, MODE_MENU)
-    await m.reply(
+    await say(
+        m,
         "🏠 Главное меню. Выбери кнопку ниже.",
+        replace=True,
+        delete_tap=True,
         reply_markup=main_menu(user),
     )
