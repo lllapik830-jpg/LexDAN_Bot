@@ -18,6 +18,9 @@ from handlers.lesson_keyboards import (
     exercise_help_inline_kb,
     grammar_test_kb,
     BTN_GRAMMAR_TEST,
+    BTN_RICO_CHAT,
+    BTN_TRANSLATE,
+    grammar_rico_chat_kb,
     lesson_limit_inline_kb,
 )
 from handlers.keyboards import lessons_home_levels, lessons_home_first
@@ -55,6 +58,7 @@ from services.lesson_state import (
     start_grammar_test,
     update_grammar_test,
     clear_grammar_test,
+    set_grammar_rico_chat,
     EXERCISE_TYPES,
 )
 from services.rico_tutor import (
@@ -132,6 +136,8 @@ def _kb_for_user(user: dict) -> ReplyKeyboardMarkup:
         q = _current_test_question(test)
         opts = q.get("options") if q and q.get("kind") == "mcq" else None
         return grammar_test_kb(mcq_options=opts)
+    if hub == "grammar_rico_chat":
+        return grammar_rico_chat_kb()
     if user.get("assessment_done") or user.get("dev_unlock"):
         return lessons_home_levels(user.get("level"), user=user)
     return lessons_home_first()
@@ -178,8 +184,12 @@ async def voice_in_lessons_grammar(m: Message):
     if assessment_busy(user):
         raise SkipHandler
     ensure_lesson(user)
-    if not (user.get("lesson") or {}).get("hub"):
+    hub = (user.get("lesson") or {}).get("hub")
+    if not hub:
         raise SkipHandler
+    if hub == "grammar_rico_chat":
+        await _rico_chat_from_voice(m, user)
+        return
     await m.answer(VOICE_ONLY_TEXT, reply_markup=_kb_for_user(user), parse_mode="HTML")
 
 
@@ -203,6 +213,138 @@ async def open_grammar(m: Message):
         reply_markup=grammar_topics_kb(level, user),
         parse_mode="HTML",
     )
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_list"), F.text == BTN_RICO_CHAT)
+async def open_grammar_rico_chat(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    if assessment_busy(user):
+        return
+    ensure_lesson(user)
+    level = user["lesson"].get("level") or user.get("level") or "A1"
+    set_grammar_rico_chat(str(m.from_user.id), level)
+    topics = get_topics(level) or []
+    titles = ", ".join(t.get("title", "") for t in topics[:6])
+    if len(topics) > 6:
+        titles += "…"
+    await m.answer(
+        "🦜 <b>Общение с Рико</b>\n\n"
+        "Здесь Рико — твой дружелюбный репетитор по <b>Grammar</b> этого уровня.\n"
+        "Он подробно разберёт любую тему уровня, ответит на вопросы и приведёт примеры.\n\n"
+        f"📚 Темы уровня <b>{level}</b>: {titles or 'скоро появятся'}\n\n"
+        "Пиши текстом или кидай голосовое на английском (или спроси по-русски — "
+        "Рико всё равно ответит в учебном стиле).\n"
+        "🌍 <b>Перевести</b> — перевод последнего ответа Рико.",
+        reply_markup=grammar_rico_chat_kb(),
+        parse_mode="HTML",
+    )
+    # стартовое приветствие Рико
+    await _rico_chat_reply(
+        m,
+        user,
+        user_text=(
+            f"Hi Rico! I just opened Grammar tutor chat for level {level}. "
+            "Please greet me briefly and ask which grammar topic I want to start with."
+        ),
+        show_heard=False,
+    )
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_rico_chat"), F.text == BTN_TRANSLATE)
+async def grammar_rico_translate(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    last = ((user.get("lesson") or {}).get("rico_last_reply") or "").strip()
+    if not last:
+        await m.answer(
+            "❌ Пока нет текста Рико для перевода. Сначала напиши или спроси что-нибудь.",
+            reply_markup=grammar_rico_chat_kb(),
+        )
+        return
+    from services.tg_out import status
+    from services.translation import translate_to_russian
+
+    async with status(m, "🌐 Перевожу…"):
+        translation = translate_to_russian(last)
+    if translation:
+        await m.answer(
+            f"🌐 <b>Перевод:</b>\n{translation}",
+            reply_markup=grammar_rico_chat_kb(),
+            parse_mode="HTML",
+        )
+    else:
+        await m.answer("Не получилось перевести 🙈", reply_markup=grammar_rico_chat_kb())
+
+
+async def _rico_chat_reply(m: Message, user: dict, user_text: str, *, show_heard: bool = False):
+    from services.tg_out import status
+    from services.elevenlabs import send_voice_reply
+    from services.voices import RICO_VOICE_ID
+    from services.rico_grammar_tutor import ask_rico_grammar, format_rico_grammar_message
+    from services.lesson_state import update_lesson
+
+    uid = str(m.from_user.id)
+    level = (user.get("lesson") or {}).get("level") or user.get("level") or "A1"
+    name = user.get("name") or (m.from_user.first_name if m.from_user else "Student")
+    turns = list((user.get("lesson") or {}).get("rico_chat_turns") or [])
+
+    async with status(m, "🦜 Рико думает…"):
+        reply_en = ask_rico_grammar(
+            level,
+            user_text,
+            user_name=name,
+            recent_turns=turns,
+        )
+
+    turns = (turns + [{"role": "user", "text": user_text}, {"role": "bot", "text": reply_en}])[-10:]
+
+    def mut(u):
+        ensure_lesson(u)
+        u["lesson"]["hub"] = "grammar_rico_chat"
+        u["lesson"]["rico_chat_turns"] = turns
+        u["lesson"]["rico_last_reply"] = reply_en
+
+    update_lesson(uid, mut)
+
+    text_out = format_rico_grammar_message(reply_en)
+    if show_heard:
+        text_out = f"🎧 <i>Услышал:</i> {user_text}\n\n" + text_out
+    await m.answer(text_out, reply_markup=grammar_rico_chat_kb(), parse_mode="HTML")
+    await send_voice_reply(m, reply_en, title="Rico grammar", voice_id=RICO_VOICE_ID)
+
+
+async def _rico_chat_from_voice(m: Message, user: dict):
+    from services.tg_out import status
+    from services.stt import recognize_english
+
+    async with status(m, "🎧 Слушаю…"):
+        try:
+            file = await m.bot.get_file(m.voice.file_id)
+            voice_buffer = await m.bot.download_file(file.file_path)
+            audio_bytes = voice_buffer.read()
+            text = recognize_english(audio_bytes)
+        except Exception:
+            text = None
+    if not text:
+        await m.answer(
+            "❌ Не удалось распознать речь. Попробуй ещё раз или напиши текстом.",
+            reply_markup=grammar_rico_chat_kb(),
+        )
+        return
+    await _rico_chat_reply(m, user, text, show_heard=True)
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_rico_chat"), F.text)
+async def grammar_rico_chat_text(m: Message):
+    text = (m.text or "").strip()
+    if not text or text.startswith("/"):
+        return
+    if text in {BTN_TRANSLATE, "⬅️ К темам", "🔙 Вернуться в меню", "⬅️ К разделам"}:
+        return
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    await _rico_chat_reply(m, user, text, show_heard=False)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_list"), F.text == BTN_GRAMMAR_TEST)

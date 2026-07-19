@@ -224,6 +224,19 @@ def set_grammar_list(user_id: str, level: str | None = None) -> dict:
     return update_lesson(user_id, mut)
 
 
+def set_grammar_rico_chat(user_id: str, level: str | None = None) -> dict:
+    def mut(u):
+        ensure_lesson(u)
+        if level:
+            u["lesson"]["level"] = level
+        u["lesson"]["hub"] = "grammar_rico_chat"
+        u["lesson"]["section"] = "Grammar"
+        u["lesson"]["rico_chat_turns"] = []
+        u["lesson"]["rico_last_reply"] = ""
+
+    return update_lesson(user_id, mut)
+
+
 def open_topic(user_id: str, topic_id: str, title: str) -> dict:
     def mut(u):
         ensure_lesson(u)

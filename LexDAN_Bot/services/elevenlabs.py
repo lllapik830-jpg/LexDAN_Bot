@@ -202,12 +202,12 @@ async def send_voice_reply(
             with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as f:
                 f.write(ogg_bytes)
                 path = f.name
-            await message.reply_voice(FSInputFile(path))
+            await message.answer_voice(FSInputFile(path))
         else:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
                 f.write(mp3_bytes)
                 path = f.name
-            await message.reply_audio(FSInputFile(path), title=title)
+            await message.answer_audio(FSInputFile(path), title=title)
         logging.info(f"Voice sent via {source} voice_id={voice_id or 'default'}")
         return True
     except Exception as e:
