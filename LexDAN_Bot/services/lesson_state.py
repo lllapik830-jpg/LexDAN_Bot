@@ -116,13 +116,20 @@ def is_grammar_test_passed(user: dict, level: str) -> bool:
     return bool((user["grammar_progress"].get("grammar_test_passed") or {}).get(level))
 
 
-def mark_grammar_test_passed(user_id: str, level: str) -> dict:
+def mark_grammar_test_passed(user_id: str, level: str) -> tuple[dict, str | None]:
+    """Сдать тест Grammar + открыть следующий уровень. (user, unlocked_level|None)."""
+    unlocked: list[str | None] = [None]
+
     def mut(u):
         ensure_progress(u)
         passed = u["grammar_progress"].setdefault("grammar_test_passed", {})
         passed[level] = True
+        from data.assessment_data import unlock_next_level_after_grammar
 
-    return update_lesson(user_id, mut)
+        unlocked[0] = unlock_next_level_after_grammar(u, level)
+
+    user = update_lesson(user_id, mut)
+    return user, unlocked[0]
 
 
 def start_grammar_test(user_id: str, test_state: dict) -> dict:

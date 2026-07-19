@@ -343,22 +343,60 @@ def lower_level(level: str) -> str:
 
 def max_accessible_level(user_level: str) -> str:
     """
-    Доступны все уровни до user_level включительно + следующий.
-    C1 и C2 — все уровни открыты.
+    Потолок только по калибровке: свой уровень и всё ниже (без +1).
+    Для прогресса через Grammar используй user_level_ceiling(user).
     """
-    if user_level in {"C1", "C2"}:
+    if user_level not in LEVELS:
+        return "A1"
+    return user_level
+
+
+def user_level_ceiling(user: dict | None) -> str:
+    """Максимальный открытый уровень: калибровка + прогресс Grammar-тестов."""
+    if not user:
+        return "A1"
+    if user.get("dev_unlock"):
         return "C2"
-    idx = level_index(user_level)
-    return LEVELS[min(idx + 1, len(LEVELS) - 1)]
+    base = user.get("level") or "A1"
+    if base not in LEVELS:
+        base = "A1"
+    extra = user.get("grammar_unlock_ceiling") or base
+    if extra not in LEVELS:
+        extra = base
+    return extra if level_index(extra) >= level_index(base) else base
 
 
 def is_level_accessible(user_level: str, selected: str) -> bool:
+    """Совместимость: сравнение с калибровочным уровнем (без grammar unlock)."""
     return level_index(selected) <= level_index(max_accessible_level(user_level))
+
+
+def is_level_accessible_for_user(user: dict | None, selected: str) -> bool:
+    if user and user.get("dev_unlock"):
+        return True
+    return level_index(selected) <= level_index(user_level_ceiling(user))
 
 
 def raise_level(level: str) -> str:
     i = level_index(level)
     return LEVELS[min(len(LEVELS) - 1, i + 1)]
+
+
+def unlock_next_level_after_grammar(user: dict, passed_level: str) -> str | None:
+    """
+    После сдачи Grammar-теста на passed_level открыть ровно следующий.
+    Возвращает открытый уровень или None, если уже был открыт / C2.
+    """
+    if passed_level not in LEVELS:
+        return None
+    nxt = raise_level(passed_level)
+    if nxt == passed_level:
+        return None  # уже C2
+    cur = user_level_ceiling(user)
+    if level_index(nxt) <= level_index(cur):
+        return None
+    user["grammar_unlock_ceiling"] = nxt
+    return nxt
 
 
 def get_translation(level: str, variant: int = 0) -> dict:

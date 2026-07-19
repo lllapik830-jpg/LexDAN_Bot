@@ -16,7 +16,13 @@ from handlers.keyboards import (
     assess_dont_know_kb,
     assess_write_kb,
 )
-from data.assessment_data import LEVELS, level_index, lower_level, max_accessible_level, is_level_accessible
+from data.assessment_data import (
+    LEVELS,
+    level_index,
+    lower_level,
+    user_level_ceiling,
+    is_level_accessible_for_user,
+)
 from services.database import load_users, get_user, MODE_LESSONS
 from services.assessment import (
     ensure_user_fields,
@@ -145,11 +151,14 @@ async def send_lessons_home(
     if intro is None:
         if user.get("assessment_done") or user.get("dev_unlock"):
             unlock = " 🔓 DEV" if user.get("dev_unlock") else ""
-            ceiling = max_accessible_level(user.get("level") or "A1")
+            ceiling = user_level_ceiling(user)
+            calibrated = user.get("level") or "A1"
             intro = (
                 f"📚 Уроки{unlock}\n\n"
-                f"Твой уровень: <b>{user.get('level', 'A1')}</b>.\n"
-                f"Открыты уровни до <b>{ceiling}</b> (свой + один выше + всё ниже).\n"
+                f"Уровень по тесту: <b>{calibrated}</b>.\n"
+                f"Сейчас открыты уровни до <b>{ceiling}</b> (свой и ниже).\n"
+                f"Следующий откроется после сдачи <b>🎯 Теста по Grammar</b> "
+                f"на текущем максимальном уровне.\n"
                 f"Остальные видны, но закрыты 🔒 — жми любой."
             )
         else:
@@ -232,7 +241,8 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         f"🏁 <b>Тест позади!</b> 🙂\n\n"
         f"{note}"
         f"Ваш предполагаемый уровень — <b>{final}</b>.\n"
-        f"Можно брать и уровень ниже — для закрепления.\n\n"
+        f"Открыты <b>{final}</b> и все уровни ниже. Следующий выше откроется "
+        f"после сдачи теста по Grammar на текущем уровне.\n\n"
         f"{rico}\n\n"
         "Рецепт: <b>~15 минут в день</b>. Серия дней и друзья дают бустеры — смотри в профиле 🔥\n"
         "🛡️ В подарок: <b>+1 стрик-сейф</b> на случай пропуска дня.\n\n"
@@ -242,7 +252,11 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     await m.answer(msg, parse_mode="HTML")
     await send_lessons_home(
         m,
-        intro=f"📚 Уроки\n\nТвой уровень: {final}.\nЖми «Начать сегодня» или выбери уровень 👇",
+        intro=(
+            f"📚 Уроки\n\n"
+            f"Твой уровень: <b>{final}</b> (открыт он и ниже).\n"
+            f"Жми «Начать сегодня» или выбери уровень 👇"
+        ),
         show_start_today=True,
     )
 
@@ -413,14 +427,15 @@ async def choose_level(m: Message):
     m_lv = _re.match(r"^(A0|A1|A2|B1|B2|C1|C2)", m.text or "")
     selected = m_lv.group(1) if m_lv else (m.text or "").replace("🔒", "").strip()
     user_level = user.get("level") or "A1"
-    if not user.get("dev_unlock") and not is_level_accessible(user_level, selected):
-        ceiling = max_accessible_level(user_level)
+    if not user.get("dev_unlock") and not is_level_accessible_for_user(user, selected):
+        ceiling = user_level_ceiling(user)
         await m.answer(
-            f"🦜 <b>Рико:</b> Твой уровень по тесту — <b>{user_level}</b>.\n"
-            f"Тебе открыты уровни до <b>{ceiling}</b> включительно "
-            f"(свой уровень + один выше + всё ниже).\n"
+            f"🦜 <b>Рико:</b> По входному тесту у тебя <b>{user_level}</b>.\n"
+            f"Открыты уровни до <b>{ceiling}</b> включительно "
+            f"(калибровка + то, что открыл Grammar-тестами).\n"
             f"Уровень <b>{selected}</b> пока закрыт 🔒\n\n"
-            f"Освой доступные — и откроется следующий! 💪",
+            f"Сдай <b>🎯 Тест по Grammar</b> на уровне <b>{ceiling}</b> — "
+            f"откроется следующий!",
             reply_markup=lessons_home_levels(user_level, user=user),
             parse_mode="HTML",
         )

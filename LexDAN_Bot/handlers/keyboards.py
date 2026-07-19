@@ -4,7 +4,7 @@
 
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-from data.assessment_data import LEVELS, is_level_accessible
+from data.assessment_data import LEVELS, is_level_accessible_for_user
 
 BTN_ALL_LEVELS_TASKS = "📋 Задания по всем уровням"
 BTN_START_TODAY = "🚀 Начать сегодня"
@@ -89,9 +89,8 @@ def lessons_home_levels(
         label = lv
         if (
             user
-            and user_level
             and not is_dev_unlocked(user)
-            and not is_level_accessible(user_level, lv)
+            and not is_level_accessible_for_user(user, lv)
         ):
             label = f"{lv} 🔒"
         row.append(KeyboardButton(text=label))

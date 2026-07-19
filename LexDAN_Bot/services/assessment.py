@@ -233,6 +233,8 @@ def finish_assessment(user_id: str, final_level: str) -> dict:
     def mut(user):
         user["level"] = final_level
         user["assessment_done"] = True
+        # После калибровки открыт только этот уровень и ниже
+        user["grammar_unlock_ceiling"] = final_level
         user["assessment"] = _blank_assessment()
 
     return update_user(user_id, mut)
