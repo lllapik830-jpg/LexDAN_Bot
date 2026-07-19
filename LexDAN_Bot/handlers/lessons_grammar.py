@@ -222,6 +222,27 @@ async def open_grammar_rico_chat(m: Message):
     if assessment_busy(user):
         return
     ensure_lesson(user)
+
+    from services.growth import is_premium, PRICE_FULL_MONTH, ensure_growth
+    from handlers.lesson_keyboards import tariffs_inline_kb
+
+    ensure_growth(user)
+    save_users(users)
+    if not is_premium(user):
+        level = user["lesson"].get("level") or user.get("level") or "A1"
+        await m.answer(
+            "🔒 <b>Общение с Рико</b> — в тарифе <b>полный доступ</b> "
+            f"(<b>{PRICE_FULL_MONTH}₽/мес</b>).\n\n"
+            "Рико разберёт темы Grammar твоего уровня голосом и текстом, "
+            "как живой репетитор.\n\n"
+            "На тарифе 399₽ и бесплатно эта кнопка недоступна — "
+            "оформи полный доступ 👇",
+            reply_markup=grammar_topics_kb(level, user),
+            parse_mode="HTML",
+        )
+        await m.answer("Тарифы:", reply_markup=tariffs_inline_kb(user))
+        return
+
     level = user["lesson"].get("level") or user.get("level") or "A1"
     set_grammar_rico_chat(str(m.from_user.id), level)
     topics = get_topics(level) or []
@@ -278,6 +299,22 @@ async def grammar_rico_translate(m: Message):
 
 
 async def _rico_chat_reply(m: Message, user: dict, user_text: str, *, show_heard: bool = False):
+    from services.growth import is_premium, PRICE_FULL_MONTH, ensure_growth
+    from handlers.lesson_keyboards import tariffs_inline_kb
+
+    ensure_growth(user)
+    if not is_premium(user):
+        level = (user.get("lesson") or {}).get("level") or user.get("level") or "A1"
+        set_grammar_list(str(m.from_user.id), level)
+        await m.answer(
+            "🔒 <b>Общение с Рико</b> доступно на полном тарифе "
+            f"(<b>{PRICE_FULL_MONTH}₽/мес</b>).",
+            reply_markup=grammar_topics_kb(level, user),
+            parse_mode="HTML",
+        )
+        await m.answer("Тарифы:", reply_markup=tariffs_inline_kb(user))
+        return
+
     from services.tg_out import status
     from services.elevenlabs import send_voice_reply
     from services.voices import RICO_VOICE_ID
