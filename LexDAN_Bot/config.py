@@ -15,8 +15,11 @@ BOT_USERNAME = (os.getenv("BOT_USERNAME") or "").lstrip("@")
 # Контакт поддержки без @ (можно переопределить через SUPPORT_USERNAME в env)
 SUPPORT_USERNAME = (os.getenv("SUPPORT_USERNAME") or "lllapik").lstrip("@")
 
-# Файл-«база» пользователей (лежит в корне проекта)
+# Файл-«база» пользователей (fallback, если нет DATABASE_URL)
 USER_DATA_FILE = "users.json"
+
+# PostgreSQL на Render (Internal/External Database URL)
+DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
 
 # Твой Telegram ID (пригодится для админ-команд позже)
 MANAGER_ID = 1809897303

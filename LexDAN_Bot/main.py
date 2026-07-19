@@ -52,7 +52,9 @@ def keep_alive():
 async def main():
     # Сбрасываем старые апдейты и webhook — меньше двойных ответов
     await bot.delete_webhook(drop_pending_updates=True)
-    print("🤖 LexDAN is running!")
+    db = "Postgres" if os.getenv("DATABASE_URL") else "users.json (file)"
+    print(f"🤖 LexDAN is running! Storage: {db}")
+    logging.info(f"User storage backend: {db}")
     asyncio.create_task(_reminder_loop())
     await dp.start_polling(bot)
 
