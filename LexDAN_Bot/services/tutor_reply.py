@@ -60,4 +60,7 @@ async def reply_as_tutor(
 
     await message.reply(text_out, parse_mode="HTML")
     # Голос = тот же текст, что в 💬 Рико (не другой кусок ответа)
-    await send_voice_reply(message, reply_en, title="LexDAN reply")
+    from services.voices import resolve_chat_voice_id
+
+    voice_id = resolve_chat_voice_id(user)
+    await send_voice_reply(message, reply_en, title="LexDAN reply", voice_id=voice_id)

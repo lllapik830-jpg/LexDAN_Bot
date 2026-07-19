@@ -4,19 +4,68 @@
 """
 
 from aiogram import Router, F
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from handlers.filters import ModeFilter
 from handlers.keyboards import chat_menu
 from services.database import (
     load_users,
     get_user,
+    save_users,
     MODE_CHAT,
 )
 from services.translation import translate_to_russian
 from services.tutor_reply import reply_as_tutor
+from services.voices import (
+    BTN_CHAT_VOICE,
+    CHAT_VOICES,
+    set_chat_voice,
+    voices_help_text,
+)
 
 router = Router()
+
+
+def _voices_inline_kb() -> InlineKeyboardMarkup:
+    rows = []
+    for v in CHAT_VOICES:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=v["label"],
+                    callback_data=f"voice:{v['key']}",
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.message(ModeFilter(MODE_CHAT), F.text == BTN_CHAT_VOICE)
+async def chat_voice_picker(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    await m.reply(
+        voices_help_text(user),
+        reply_markup=chat_menu(),
+        parse_mode="HTML",
+    )
+    await m.reply("Выбери голос:", reply_markup=_voices_inline_kb())
+
+
+@router.callback_query(F.data.startswith("voice:"))
+async def chat_voice_pick(c: CallbackQuery):
+    key = (c.data or "").split(":", 1)[-1].strip()
+    users = load_users()
+    user = get_user(users, str(c.from_user.id))
+    ok, msg = set_chat_voice(user, key)
+    if ok:
+        save_users(users, only=str(c.from_user.id))
+    await c.answer("Готово" if ok else "Нужен тариф", show_alert=not ok)
+    await c.message.answer(msg, reply_markup=chat_menu(), parse_mode="HTML")
+    if not ok:
+        from handlers.lesson_keyboards import tariffs_inline_kb
+
+        await c.message.answer("Тарифы:", reply_markup=tariffs_inline_kb(user))
 
 
 @router.message(ModeFilter(MODE_CHAT), F.text.func(lambda t: bool(t) and "Перевести" in t))
@@ -63,6 +112,7 @@ def _esc_html(text: str) -> str:
             "Перевести" in t
             or "Вернуться в меню" in t
             or t == "🚀 Начать сегодня"
+            or t == BTN_CHAT_VOICE
         )
     ),
 )
@@ -71,7 +121,6 @@ async def chat_text(m: Message):
     if not text or text.startswith("/"):
         return
 
-    from services.database import save_users
     from services.growth import note_chat_message, ensure_growth
     from aiogram.dispatcher.event.bases import SkipHandler
     from handlers.keyboards import BTN_START_TODAY
@@ -83,7 +132,7 @@ async def chat_text(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     ok, tip = note_chat_message(user)
-    save_users(users)
+    save_users(users, only=str(m.from_user.id))
     if not ok:
         from handlers.lesson_keyboards import chat_limit_inline_kb
 

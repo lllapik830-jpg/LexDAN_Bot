@@ -29,9 +29,11 @@ def main_menu(user: dict | None = None) -> ReplyKeyboardMarkup:
 
 
 def chat_menu() -> ReplyKeyboardMarkup:
+    from services.voices import BTN_CHAT_VOICE
+
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🌍 Перевести")],
+            [KeyboardButton(text="🌍 Перевести"), KeyboardButton(text=BTN_CHAT_VOICE)],
             [KeyboardButton(text="🔙 Вернуться в меню")],
         ],
         resize_keyboard=True,

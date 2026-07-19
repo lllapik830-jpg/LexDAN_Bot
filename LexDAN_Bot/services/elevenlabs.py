@@ -37,18 +37,20 @@ def _clean_models() -> list[str]:
     return out
 
 
-def elevenlabs_tts(text: str) -> bytes | None:
+def elevenlabs_tts(text: str, voice_id: str | None = None) -> bytes | None:
     """Текст → MP3 через ElevenLabs. None = не удалось."""
-    audio, _err = elevenlabs_tts_detail(text)
+    audio, _err = elevenlabs_tts_detail(text, voice_id=voice_id)
     return audio
 
 
-def elevenlabs_tts_detail(text: str) -> tuple[bytes | None, str]:
+def elevenlabs_tts_detail(text: str, voice_id: str | None = None) -> tuple[bytes | None, str]:
     text = (text or "").strip()
     if not text:
         return None, "empty text"
     if not ELEVENLABS_API_KEY:
         return None, "no ELEVENLABS_API_KEY"
+
+    vid = (voice_id or VOICE_ID or "").strip() or VOICE_ID
 
     # Лимит символов на запрос
     if len(text) > 900:
@@ -57,7 +59,7 @@ def elevenlabs_tts_detail(text: str) -> tuple[bytes | None, str]:
     last_err = "unknown"
     for model_id in _clean_models():
         try:
-            url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{vid}"
             response = requests.post(
                 url,
                 headers={
@@ -70,7 +72,7 @@ def elevenlabs_tts_detail(text: str) -> tuple[bytes | None, str]:
                     "model_id": model_id,
                     "voice_settings": {
                         "stability": 0.5,
-                        "similarity_boost": 0.5,
+                        "similarity_boost": 0.75,
                     },
                 },
                 timeout=35,
@@ -79,7 +81,7 @@ def elevenlabs_tts_detail(text: str) -> tuple[bytes | None, str]:
                 return response.content, ""
 
             body = (response.text or "")[:400]
-            last_err = f"HTTP {response.status_code} model={model_id}: {body}"
+            last_err = f"HTTP {response.status_code} model={model_id} voice={vid}: {body}"
             logging.error(f"ElevenLabs TTS: {last_err}")
 
             # Бесплатный тариф часто режет облачные IP (Render) — нет смысла крутить модели
@@ -115,12 +117,12 @@ def gtts_tts(text: str) -> bytes | None:
         return None
 
 
-def synthesize_speech(text: str) -> tuple[bytes | None, str]:
+def synthesize_speech(text: str, voice_id: str | None = None) -> tuple[bytes | None, str]:
     """
     Сначала ElevenLabs, при ошибке — gTTS.
     Возвращает (mp3_bytes, source) где source = 'elevenlabs' | 'gtts' | ''.
     """
-    audio, err = elevenlabs_tts_detail(text)
+    audio, err = elevenlabs_tts_detail(text, voice_id=voice_id)
     if audio:
         return audio, "elevenlabs"
     logging.warning(f"ElevenLabs unavailable ({err}), falling back to gTTS")
@@ -177,11 +179,17 @@ def mp3_to_ogg_opus(mp3_bytes: bytes) -> bytes | None:
                 os.unlink(path)
 
 
-async def send_voice_reply(message, text: str, *, title: str = "LexDAN") -> bool:
+async def send_voice_reply(
+    message,
+    text: str,
+    *,
+    title: str = "LexDAN",
+    voice_id: str | None = None,
+) -> bool:
     """Сгенерировать и отправить голосовое. True если ушло."""
     from aiogram.types import FSInputFile
 
-    mp3_bytes, source = synthesize_speech(text)
+    mp3_bytes, source = synthesize_speech(text, voice_id=voice_id)
     if not mp3_bytes:
         logging.error("All TTS backends failed")
         await message.reply("⚠️ Текст готов, но голос сейчас не отправился. Попробуй ещё раз чуть позже.")
@@ -200,7 +208,7 @@ async def send_voice_reply(message, text: str, *, title: str = "LexDAN") -> bool
                 f.write(mp3_bytes)
                 path = f.name
             await message.reply_audio(FSInputFile(path), title=title)
-        logging.info(f"Voice sent via {source}")
+        logging.info(f"Voice sent via {source} voice_id={voice_id or 'default'}")
         return True
     except Exception as e:
         logging.error(f"Send voice error: {e}")

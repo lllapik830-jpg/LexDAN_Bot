@@ -1,0 +1,134 @@
+"""
+Каталог голосов ElevenLabs для чата и Рико (уроки).
+"""
+
+from __future__ import annotations
+
+import os
+
+from services.rewards import user_plan
+
+# Дефолт, если у free нет премиум-голоса
+DEFAULT_VOICE_ID = (os.getenv("ELEVENLABS_VOICE_ID") or "pNInz6obpgDQGcFmaJgB").strip()
+
+# Голос Рико — для уроков (всегда)
+RICO_VOICE_ID = (os.getenv("RICO_VOICE_ID") or "fBD19tfE58bkETeiwUoC").strip()
+RICO_VOICE_NAME = "Rico 🦜"
+
+# Чат: 399 → scotty+emmaline; 799 → все четыре
+CHAT_VOICES: list[dict] = [
+    {
+        "key": "scotty",
+        "label": "Scotty · British 🇬🇧",
+        "voice_id": "NfUrCNRReUL9RXS9upG1",
+        "min_plan": "chat",  # 399+
+    },
+    {
+        "key": "emmaline",
+        "label": "Emmaline · British 🇬🇧",
+        "voice_id": "nDJIICjR9zfJExIFeSCN",
+        "min_plan": "chat",
+    },
+    {
+        "key": "lucas",
+        "label": "Lucas · American 🇺🇸",
+        "voice_id": "wSqOdjeNqDrHcoK0zorF",
+        "min_plan": "full",  # 799
+    },
+    {
+        "key": "aria",
+        "label": "Aria · American 🇺🇸",
+        "voice_id": "TC0Zp7WVFzhA8zpTlRqV",
+        "min_plan": "full",
+    },
+]
+
+BTN_CHAT_VOICE = "🎙 Голос озвучки"
+
+_PLAN_RANK = {"free": 0, "chat": 1, "full": 2}
+
+
+def _plan_ok(user_plan_name: str, min_plan: str) -> bool:
+    return _PLAN_RANK.get(user_plan_name, 0) >= _PLAN_RANK.get(min_plan, 99)
+
+
+def voice_by_key(key: str) -> dict | None:
+    for v in CHAT_VOICES:
+        if v["key"] == key:
+            return v
+    return None
+
+
+def available_chat_voices(user: dict) -> list[dict]:
+    plan = user_plan(user)
+    return [v for v in CHAT_VOICES if _plan_ok(plan, v["min_plan"])]
+
+
+def locked_chat_voices(user: dict) -> list[dict]:
+    plan = user_plan(user)
+    return [v for v in CHAT_VOICES if not _plan_ok(plan, v["min_plan"])]
+
+
+def resolve_chat_voice_id(user: dict) -> str:
+    """Какой Voice ID использовать для озвучки ответа в чате."""
+    key = (user.get("chat_voice_key") or "").strip()
+    v = voice_by_key(key) if key else None
+    if v and _plan_ok(user_plan(user), v["min_plan"]):
+        return v["voice_id"]
+    # если выбранный недоступен — первый доступный по тарифу
+    avail = available_chat_voices(user)
+    if avail:
+        # не авто-сохраняем, просто играем
+        return avail[0]["voice_id"]
+    return DEFAULT_VOICE_ID
+
+
+def current_voice_label(user: dict) -> str:
+    key = (user.get("chat_voice_key") or "").strip()
+    v = voice_by_key(key) if key else None
+    if v and _plan_ok(user_plan(user), v["min_plan"]):
+        return v["label"]
+    avail = available_chat_voices(user)
+    if avail:
+        return f"{avail[0]['label']} (по умолчанию)"
+    return "Стандартный голос"
+
+
+def set_chat_voice(user: dict, key: str) -> tuple[bool, str]:
+    """Выбрать голос. (ok, message_html)."""
+    v = voice_by_key(key)
+    if not v:
+        return False, "Такого голоса нет."
+    if not _plan_ok(user_plan(user), v["min_plan"]):
+        need = "399₽ (Общение)" if v["min_plan"] == "chat" else "799₽ (полный доступ)"
+        return False, f"🔒 Голос <b>{v['label']}</b> доступен на тарифе <b>{need}</b>."
+    user["chat_voice_key"] = key
+    return True, f"🎙 Ок! Теперь озвучка: <b>{v['label']}</b>"
+
+
+def voices_help_text(user: dict) -> str:
+    plan = user_plan(user)
+    cur = current_voice_label(user)
+    lines = [
+        "🎙 <b>Голос озвучки в «Общаться»</b>\n",
+        f"Сейчас: <b>{cur}</b>\n",
+        f"Твой тариф: <b>{plan}</b>\n",
+        "<b>Доступно тебе:</b>",
+    ]
+    avail = available_chat_voices(user)
+    if avail:
+        for v in avail:
+            mark = "✅" if user.get("chat_voice_key") == v["key"] else "▫️"
+            lines.append(f"{mark} {v['label']}")
+    else:
+        lines.append("▫️ Пока стандартный голос — премиум-голоса на тарифах 399/799.")
+
+    locked = locked_chat_voices(user)
+    if locked:
+        lines.append("\n<b>На других тарифах:</b>")
+        for v in locked:
+            need = "399" if v["min_plan"] == "chat" else "799"
+            lines.append(f"🔒 {v['label']} — от {need}₽")
+
+    lines.append("\nВыбери голос кнопкой ниже 👇")
+    return "\n".join(lines)
