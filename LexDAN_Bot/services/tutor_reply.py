@@ -7,7 +7,8 @@ from aiogram.types import Message
 
 from services.database import load_users, get_user, save_users, set_last_bot_reply
 from services.elevenlabs import send_voice_reply
-from services.gpt import ask_tutor, format_tutor_message
+from services.gpt import ask_tutor, format_tutor_message, _looks_like_no_topic
+from services.chat_topics import ensure_active_topic, library_prompt_block, pick_topic
 
 
 async def reply_as_tutor(
@@ -40,15 +41,45 @@ async def reply_as_tutor(
             },
         ]
 
+    # Библиотека тем по тарифу; при «пустом» сообщении можно сменить активную тему
+    if _looks_like_no_topic(user_text) and not hist:
+        ensure_active_topic(user, force_new=True)
+    else:
+        ensure_active_topic(user)
+
+    # если юзер явно просит другую тему — крутим библиотеку
+    low = (user_text or "").strip().lower()
+    if any(
+        p in low
+        for p in (
+            "another topic",
+            "new topic",
+            "other topic",
+            "change topic",
+            "другую тему",
+            "другая тема",
+            "смени тему",
+            "новую тему",
+        )
+    ):
+        old_id = (user.get("chat_active_topic") or {}).get("id")
+        user["chat_active_topic"] = pick_topic(user, avoid_ids={old_id} if old_id else set())
+
+    topic_block = library_prompt_block(user)
     result = ask_tutor(
         user_text,
         name,
         recent_replies=recent,
         recent_turns=hist,
+        topic_library_block=topic_block,
     )
     text_out, reply_en = format_tutor_message(result, heard_text=heard_text)
     if not reply_en:
-        reply_en = result.get("reply_en") or "Interesting! What else can you tell me about that?"
+        active = ensure_active_topic(user)
+        reply_en = (
+            result.get("reply_en")
+            or f"Sure! Let's talk about {active.get('title_en')}. {active.get('seed')}"
+        )
 
     recent = (recent + [reply_en])[-8:]
     turns = (turns + [{"role": "bot", "text": reply_en}])[-10:]
@@ -59,7 +90,6 @@ async def reply_as_tutor(
     set_last_bot_reply(user_id, reply_en)
 
     await message.answer(text_out, parse_mode="HTML")
-    # Голос = тот же текст, что в 💬 Рико (не другой кусок ответа)
     from services.voices import resolve_chat_voice_id
 
     voice_id = resolve_chat_voice_id(user)

@@ -74,22 +74,29 @@ def locked_chat_voices(user: dict) -> list[dict]:
 
 def resolve_chat_voice_id(user: dict) -> str:
     """Какой Voice ID использовать для озвучки ответа в чате."""
+    plan = user_plan(user)
+    # Бесплатники — только исходный дефолт (Adam / ELEVENLABS_VOICE_ID)
+    if plan == "free":
+        return DEFAULT_VOICE_ID
+
     key = (user.get("chat_voice_key") or "").strip()
     v = voice_by_key(key) if key else None
-    if v and _plan_ok(user_plan(user), v["min_plan"]):
+    if v and _plan_ok(plan, v["min_plan"]):
         return v["voice_id"]
-    # если выбранный недоступен — первый доступный по тарифу
     avail = available_chat_voices(user)
     if avail:
-        # не авто-сохраняем, просто играем
         return avail[0]["voice_id"]
     return DEFAULT_VOICE_ID
 
 
 def current_voice_label(user: dict) -> str:
+    plan = user_plan(user)
+    if plan == "free":
+        return "Стандартный (Adam) · бесплатный"
+
     key = (user.get("chat_voice_key") or "").strip()
     v = voice_by_key(key) if key else None
-    if v and _plan_ok(user_plan(user), v["min_plan"]):
+    if v and _plan_ok(plan, v["min_plan"]):
         return v["label"]
     avail = available_chat_voices(user)
     if avail:
@@ -130,7 +137,8 @@ def voices_help_text(user: dict) -> str:
             lines.append(f"{mark} {v['label']}")
     else:
         lines.append(
-            "На бесплатном тарифе для ответов — стандартный голос.\n"
+            "На бесплатном тарифе для ответов — <b>стандартный голос Adam</b> "
+            "(как было изначально).\n"
             "Послушай премиум ниже и возьми подписку, чтобы включить их 👇"
         )
 

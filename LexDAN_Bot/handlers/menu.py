@@ -44,15 +44,29 @@ async def open_chat(m: Message):
     last_topic = (user.get("chat_last_user_text") or "").strip()
     user["chat_recent_turns"] = []
     user["chat_recent_replies"] = []
+
+    from services.chat_topics import chat_intro_topics_blurb, ensure_active_topic
+    from services.rewards import user_plan
+
+    ensure_active_topic(user, force_new=True)
+    topics_blurb = chat_intro_topics_blurb(user)
+    plan = user_plan(user)
     save_users(users, only=str(m.from_user.id))
+
+    voice_line = (
+        "🎙 Озвучка: <b>стандартный голос Adam</b> (на бесплатном).\n"
+        "Прослушать премиум-голоса можно бесплатно — кнопка ниже; выбрать — на 399/799.\n\n"
+        if plan == "free"
+        else "🎙 Можно <b>выбрать голос озвучки</b> (прослушивание бесплатно) — кнопка ниже.\n\n"
+    )
 
     intro = (
         "🔥 <b>Погнали общаться!</b> 🙂\n\n"
         "Пиши текстом или кидай голосовое на английском.\n"
         "Ошибёшься — поправлю <i>только грамматику/слова</i> и коротко объясню почему.\n"
         "Всё ок — скажу «молодец» и продолжим диалог ✨\n\n"
-        "🎙 Можно <b>выбрать голос озвучки</b> (и бесплатно прослушать все) — "
-        "кнопка ниже.\n\n"
+        f"{topics_blurb}\n\n"
+        f"{voice_line}"
         "Цель дня: можно закрыть, если поболтаешь несколько сообщений.\n\n"
         "🌍 <b>Перевести</b> — переведу мой последний ответ\n"
         "🎙 <b>Голос озвучки</b> — послушать и выбрать голос\n"
@@ -64,7 +78,8 @@ async def open_chat(m: Message):
             "🔥 <b>Снова на связи!</b>\n\n"
             f"В прошлый раз ты писал(а):\n<i>«{_esc(snippet)}»</i>\n\n"
             "Продолжим про это — или кидай новую тему 🙂\n\n"
-            "🎙 Голос озвучки можно сменить в любой момент (прослушивание бесплатно).\n\n"
+            f"{topics_blurb}\n\n"
+            f"{voice_line}"
             "🌍 <b>Перевести</b> — мой последний ответ\n"
             "🎙 <b>Голос озвучки</b> — послушать и выбрать\n"
             "🔙 <b>В меню</b> — выход"

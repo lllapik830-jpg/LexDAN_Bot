@@ -48,7 +48,8 @@ CHAT RULES (reply_en) — ALWAYS keep the chat moving:
    "Interesting" alone, or any reply WITHOUT a question mark.
 3) Stay on the student's topic. Do NOT jump to a random new topic while theirs is alive.
 4) Suggest a NEW concrete topic ONLY on pure small talk / "idk what to talk about" /
-   one-word dead-end with nothing left to ask.
+   one-word dead-end with nothing left to ask. If a TOPIC LIBRARY is provided, pick from it
+   (prefer the ACTIVE topic). Never invent random off-library topics when the library is present.
 5) Never reuse the exact same question from recent replies; rephrase, keep the topic.
 6) 1–3 short spoken A2–B1 sentences + one question. Not a textbook.
 7) Light praise ("Nice!") is OK only if a real follow-up question comes right after.
@@ -99,6 +100,7 @@ def ask_tutor(
     user_name: str = "Student",
     recent_replies: list[str] | None = None,
     recent_turns: list[dict] | None = None,
+    topic_library_block: str = "",
 ) -> dict:
     fallback = {
         "has_error": False,
@@ -131,14 +133,18 @@ def ask_tutor(
             + "\n".join(lines)
         )
 
-    topic_hint = (
-        "Student has NO clear topic yet → answer briefly and suggest ONE concrete topic + a question."
-        if _looks_like_no_topic(user_text) and not _active_topic_in_turns(turns)
-        else (
-            "Student has a topic → react to THEIR last message and ask ONE follow-up "
-            "that develops the SAME topic (never 'Got it / let's keep chatting')."
+    no_topic = _looks_like_no_topic(user_text) and not _active_topic_in_turns(turns)
+    if no_topic:
+        topic_hint = (
+            "Student has NO clear topic yet → answer briefly, pick ONE topic from the "
+            "TOPIC LIBRARY (prefer ACTIVE), and ask that seed question (light rephrase OK)."
         )
-    )
+    else:
+        topic_hint = (
+            "Student has a topic → react to THEIR last message and ask ONE follow-up "
+            "that develops the SAME topic (never 'Got it / let's keep chatting'). "
+            "Do NOT switch to the library while their topic is alive."
+        )
 
     try:
         response = requests.post(
@@ -157,6 +163,7 @@ def ask_tutor(
                             + f"\nStudent's name: {user_name}. Use the name lightly sometimes."
                             + recent_block
                             + dialogue_block
+                            + (topic_library_block or "")
                         ),
                     },
                     {
