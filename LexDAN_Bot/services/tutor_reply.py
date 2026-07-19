@@ -34,8 +34,9 @@ async def reply_as_tutor(
         recent_replies=recent,
         recent_turns=turns[:-1],  # история до текущего сообщения
     )
-    text_out = format_tutor_message(result, heard_text=heard_text)
-    reply_en = result.get("reply_en") or ""
+    text_out, reply_en = format_tutor_message(result, heard_text=heard_text)
+    if not reply_en:
+        reply_en = result.get("reply_en") or "Interesting! What else can you tell me about that?"
 
     recent = (recent + [reply_en])[-8:]
     turns = (turns + [{"role": "bot", "text": reply_en}])[-10:]
@@ -45,5 +46,5 @@ async def reply_as_tutor(
     set_last_bot_reply(user_id, reply_en)
 
     await message.reply(text_out, parse_mode="HTML")
-
+    # Голос = тот же текст, что в 💬 Рико (не другой кусок ответа)
     await send_voice_reply(message, reply_en, title="LexDAN reply")

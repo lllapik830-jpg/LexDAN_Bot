@@ -574,8 +574,11 @@ def _clean_field(text: str) -> str:
     return t
 
 
-def format_tutor_message(result: dict, heard_text: str | None = None) -> str:
-    """Красивое HTML-сообщение для Telegram."""
+def format_tutor_message(result: dict, heard_text: str | None = None) -> tuple[str, str]:
+    """
+    Собирает HTML для Telegram и финальный reply_en.
+    Текст и голос ОБЯЗАНЫ использовать один и тот же reply_en.
+    """
     parts = []
 
     if heard_text:
@@ -597,24 +600,33 @@ def format_tutor_message(result: dict, heard_text: str | None = None) -> str:
             parts.append("")
             parts.append(f"💡 <b>Полезно запомнить:</b>\n{_esc(tips)}")
         parts.append("")
-        parts.append("Суть твоей мысли сохранили — просто сделали естественнее. Продолжаем!")
+        parts.append("Суть твоей мысли сохранили — просто сделали естественнее.")
     else:
         parts.append("✅ <b>Звучит естественно — молодец!</b> 🎉")
 
-    reply = _clean_field(result.get("reply_en") or "")
-    # Раньше «Nice!» в живом ответе затирало ВЕСЬ reply на «Got it…» — больше не трогаем так.
-    if better or errors:
-        reply = _strip_leading_praise(reply)
-    if _is_dead_reply(reply):
+    # reply_en не прогоняем через _clean_field — он затирал живые ответы.
+    reply = (result.get("reply_en") or "").strip()
+    reply = _strip_leading_praise(reply)
+    if _is_dead_reply(reply) or _looks_like_got_it(reply):
         reply = random.choice(_TOPIC_CONTINUE_REPLIES)
     result["reply_en"] = reply
 
     parts.append("")
     parts.append("────────")
     parts.append("")
-    parts.append(f"💬 {_esc(reply)}")
+    parts.append(f"💬 <b>Рико:</b> {_esc(reply)}")
 
-    return "\n".join(parts)
+    return "\n".join(parts), reply
+
+
+def _looks_like_got_it(reply: str) -> bool:
+    low = (reply or "").lower()
+    return (
+        "got it" in low
+        or "keep chatting" in low
+        or "let's keep chat" in low
+        or "lets keep chat" in low
+    )
 
 
 def _esc(text: str) -> str:
