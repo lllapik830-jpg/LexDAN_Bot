@@ -535,7 +535,7 @@ async def _send_exercise_card(m: Message, num: int, ex: dict):
         body = ex.get("prompt") or ""
         text = (
             f"<b>Задание {num}/8</b>\n\n{body}\n\n"
-            "Выбери ответ кнопкой. Не понимаешь фразу — жми <b>🌍 Перевести</b> под сообщением."
+            "👇 Ответ — кнопкой внизу. Не понял фразу — <b>🌍 Перевести</b>."
         )
         await m.reply(text, reply_markup=exercise_mcq_kb(ex["options"]), parse_mode="HTML")
         await m.reply("👇 Подсказки к заданию:", reply_markup=inline)

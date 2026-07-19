@@ -147,9 +147,10 @@ def generate_grammar_exercise(
     7: RU → EN перевод
     8: EN → RU перевод
 
-    Обязательно про тему topic_id / topic_title (не чужая грамматика).
+    Если есть проверенный банк темы — берём его (GPT часто путает времена / a,b,c,d).
     """
     from data.grammar_exercise_fallbacks import (
+        FALLBACKS,
         focus_for,
         get_topic_fallback,
         looks_on_topic,
@@ -158,6 +159,13 @@ def generate_grammar_exercise(
     subtype = exercise_subtype(exercise_num)
     kind = "mcq" if subtype == "mcq" else "write"
     focus = focus_for(topic_id, topic_title)
+
+    topic_fb = get_topic_fallback(topic_id, exercise_num)
+    bank = FALLBACKS.get(topic_id or "", [])
+
+    # Предпочитаем curated bank — качество важнее «рандома» GPT
+    if topic_fb and bank and len(bank) >= 8:
+        return _finalize_exercise(dict(topic_fb), subtype, kind, topic_fb)
 
     mcq_labels = {
         1: "Choose the correct option for the blank. One sentence with ____ .",
@@ -170,8 +178,6 @@ def generate_grammar_exercise(
         6: "Same word-form task, hardest of three, STILL on the same grammar topic.",
     }
 
-    # Дефолтный fallback — из банка темы, иначе нейтральный под название темы
-    topic_fb = get_topic_fallback(topic_id, exercise_num)
     if topic_fb:
         fallback = topic_fb
         fallback_options = list(fallback.get("options") or ["is", "are", "am", "be"])
@@ -226,8 +232,12 @@ def generate_grammar_exercise(
         task_desc = mcq_labels[exercise_num]
         json_hint = (
             'For MCQ: {"kind":"mcq","subtype":"mcq","instruction_ru":"...","sentence_en":"... ____ ...",'
-            '"sentence_ru":"перевод правильного предложения","options":["a","b","c","d"],'
-            '"answer":"exact option","tip":"..."}'
+            '"sentence_ru":"перевод правильного предложения",'
+            '"options":["goes","go","going","went"],'
+            '"answer":"goes","tip":"..."} '
+            "CRITICAL: options must be REAL words/phrases (never a/b/c/d). "
+            "answer MUST be exactly one of options. "
+            "For Present Simple NEVER mark Continuous (is/are + -ing) as correct."
         )
     elif subtype == "word_form":
         task_desc = word_form_labels[exercise_num]
@@ -282,11 +292,10 @@ def generate_grammar_exercise(
             },
         ],
         fallback,
-        temperature=0.35,
+        temperature=0.25,
         max_tokens=450,
     )
 
-    # Если ИИ уехал не в ту тему — берём запасной шаблон темы
     trial_en = (data.get("sentence_en") or "") + " " + (data.get("answer") or "")
     if topic_id and not looks_on_topic(
         topic_id, trial_en, data.get("options"), str(data.get("answer") or "")
@@ -294,7 +303,6 @@ def generate_grammar_exercise(
         logging.warning(f"Off-topic exercise for {topic_id}, using fallback #{exercise_num}")
         data = dict(fallback)
 
-    # Мета-задания вроде «Choose the form for «Topic»» — брак
     sen_low = (data.get("sentence_en") or "").lower()
     if (
         "choose the form for" in sen_low
@@ -305,24 +313,45 @@ def generate_grammar_exercise(
         logging.warning(f"Meta/empty exercise for {topic_id}, using fallback #{exercise_num}")
         data = dict(fallback)
 
+    if kind == "mcq":
+        opts = data.get("options")
+        ans = str(data.get("answer") or "").strip()
+        if not _mcq_options_ok(opts, ans):
+            logging.warning(f"Bad MCQ options/answer for {topic_id}, using fallback #{exercise_num}")
+            data = dict(fallback)
+
+    return _finalize_exercise(data, subtype, kind, fallback)
+
+
+def _mcq_options_ok(options, answer: str) -> bool:
+    if not isinstance(options, list) or len(options) < 4:
+        return False
+    opts = [str(x).strip() for x in options[:4]]
+    if len(set(o.lower() for o in opts)) < 4:
+        return False
+    # GPT часто пишет a/b/c/d — брак
+    letters = {"a", "b", "c", "d"}
+    if all(o.lower().rstrip(".") in letters for o in opts):
+        return False
+    if answer not in opts:
+        lower_map = {o.lower(): o for o in opts}
+        if answer.lower() not in lower_map:
+            return False
+    return True
+
+
+def _finalize_exercise(data: dict, subtype: str, kind: str, fallback: dict) -> dict:
     instruction_ru = (data.get("instruction_ru") or fallback.get("instruction_ru") or "").strip()
-    # Не оставляем пустую/мета-инструкцию
     if instruction_ru.lower() in {"выбери правильный ответ по теме.", "выбери правильный ответ по теме"}:
         instruction_ru = (fallback.get("instruction_ru") or instruction_ru).strip()
     sentence_en = (data.get("sentence_en") or fallback.get("sentence_en") or "").strip()
     if "choose the form for" in sentence_en.lower():
-        sentence_en = (fallback.get("sentence_en") or "").strip()
-        instruction_ru = (fallback.get("instruction_ru") or instruction_ru).strip()
-        answer = (fallback.get("answer") or "").strip()
-        options = list(fallback.get("options") or [])
         data = dict(fallback)
-        data["sentence_en"] = sentence_en
-        data["instruction_ru"] = instruction_ru
-        data["answer"] = answer
-        data["options"] = options
+        instruction_ru = (data.get("instruction_ru") or "").strip()
+        sentence_en = (data.get("sentence_en") or "").strip()
     sentence_ru = (data.get("sentence_ru") or fallback.get("sentence_ru") or "").strip()
-    tip = (data.get("tip") or fallback["tip"]).strip()
-    answer = (data.get("answer") or fallback["answer"]).strip()
+    tip = (data.get("tip") or fallback.get("tip") or "").strip()
+    answer = (data.get("answer") or fallback.get("answer") or "").strip()
     base_form = (data.get("base_form") or fallback.get("base_form") or "").strip()
     options = data.get("options")
     ex_subtype = (data.get("subtype") or fallback.get("subtype") or subtype).strip()
@@ -333,13 +362,24 @@ def generate_grammar_exercise(
     if kind == "mcq":
         if not isinstance(options, list) or len(options) < 4:
             options = list(fallback.get("options") or ["is", "are", "am", "be"])
+            answer = str(fallback.get("answer") or options[0])
+            sentence_en = (fallback.get("sentence_en") or sentence_en).strip()
+            instruction_ru = (fallback.get("instruction_ru") or instruction_ru).strip()
+            tip = (fallback.get("tip") or tip).strip()
+            prompt = _build_exercise_display(instruction_ru, sentence_en, sentence_ru, "mcq")
         options = [str(x) for x in options[:4]]
         if answer not in options:
             lower_map = {o.lower(): o for o in options}
             if answer.lower() in lower_map:
                 answer = lower_map[answer.lower()]
             else:
-                answer = options[0]
+                # Никогда не помечаем options[0] «наугад» — берём весь fallback
+                options = list(fallback.get("options") or options)
+                answer = str(fallback.get("answer") or options[0])
+                sentence_en = (fallback.get("sentence_en") or sentence_en).strip()
+                instruction_ru = (fallback.get("instruction_ru") or instruction_ru).strip()
+                tip = (fallback.get("tip") or tip).strip()
+                prompt = _build_exercise_display(instruction_ru, sentence_en, sentence_ru, "mcq")
         if not sentence_ru:
             sentence_ru = translate_exercise_sentence(sentence_en, answer) or ""
         return {

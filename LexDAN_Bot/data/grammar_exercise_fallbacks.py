@@ -1,7 +1,11 @@
 """
-Тема-ориентированные запасные задания Grammar (если ИИ ошибся / API упал).
+Тема-ориентированные запасные задания Grammar.
 Ключ = topic_id из curriculum.
+
+Сначала — проверенные банки (EXTRA + локальные), GPT только если банка нет.
 """
+
+from data.grammar_banks_extra import EXTRA_FALLBACKS
 
 FALLBACKS: dict[str, list[dict]] = {
     "there_is_are": [
@@ -614,92 +618,10 @@ FALLBACKS: dict[str, list[dict]] = {
             "tip": "works = работает.",
         },
     ],
-    "present_continuous": [
-        {
-            "kind": "mcq",
-            "subtype": "mcq",
-            "instruction_ru": "Выбери правильную форму Present Continuous.",
-            "sentence_en": "She ____ watching a film now.",
-            "sentence_ru": "Она сейчас смотрит фильм.",
-            "options": ["is", "are", "am", "be"],
-            "answer": "is",
-            "tip": "she/he/it → is + V-ing.",
-        },
-        {
-            "kind": "mcq",
-            "subtype": "mcq",
-            "instruction_ru": "Выбери правильное предложение.",
-            "sentence_en": "Which sentence is correct?",
-            "sentence_ru": "Мы сейчас учим английский.",
-            "options": [
-                "We are learning English now.",
-                "We is learning English now.",
-                "We learning English now.",
-                "We am learning English now.",
-            ],
-            "answer": "We are learning English now.",
-            "tip": "we → are + V-ing.",
-        },
-        {
-            "kind": "mcq",
-            "subtype": "mcq",
-            "instruction_ru": "Выбери форму to be для Present Continuous.",
-            "sentence_en": "I ____ reading a book right now.",
-            "sentence_ru": "Я сейчас читаю книгу.",
-            "options": ["am", "is", "are", "be"],
-            "answer": "am",
-            "tip": "I → am + V-ing.",
-        },
-        {
-            "kind": "write",
-            "subtype": "word_form",
-            "instruction_ru": "Напиши форму V-ing.",
-            "sentence_en": "Look! He is ____ (run) in the park.",
-            "sentence_ru": "Смотри! Он бегает в парке.",
-            "base_form": "run",
-            "answer": "running",
-            "tip": "run → running (удваиваем n).",
-        },
-        {
-            "kind": "write",
-            "subtype": "word_form",
-            "instruction_ru": "Напиши am / is / are.",
-            "sentence_en": "They ____ (be) playing football now.",
-            "sentence_ru": "Они сейчас играют в футбол.",
-            "base_form": "be",
-            "answer": "are",
-            "tip": "they → are.",
-        },
-        {
-            "kind": "write",
-            "subtype": "word_form",
-            "instruction_ru": "Напиши отрицание isn't / aren't.",
-            "sentence_en": "She ____ (not be) sleeping.",
-            "sentence_ru": "Она не спит.",
-            "base_form": "not be",
-            "answer": "isn't",
-            "tip": "she → isn't.",
-        },
-        {
-            "kind": "write",
-            "subtype": "translate_en",
-            "instruction_ru": "Переведи на английский (Present Continuous):",
-            "sentence_ru": "Я сейчас пишу сообщение.",
-            "sentence_en": "",
-            "answer": "I am writing a message now.",
-            "tip": "I am + writing.",
-        },
-        {
-            "kind": "write",
-            "subtype": "translate_ru",
-            "instruction_ru": "Переведи на русский:",
-            "sentence_en": "They are cooking dinner now.",
-            "sentence_ru": "Они сейчас готовят ужин.",
-            "answer": "Они сейчас готовят ужин.",
-            "tip": "are cooking = готовят.",
-        },
-    ],
 }
+
+# Проверенные банки перекрывают старые/короткие (this_that, articles, present_simple, …)
+FALLBACKS.update(EXTRA_FALLBACKS)
 
 
 TOPIC_FOCUS: dict[str, str] = {
@@ -765,6 +687,41 @@ def looks_on_topic(
             " ".join(str(o).lower() for o in (options or [])),
         ]
     )
+    padded = f" {blob} "
+
+    # Жёсткий запрет путаницы Present Simple ↔ Continuous
+    if topic_id == "present_simple":
+        ans = (answer or "").lower()
+        # Правильный ответ не должен быть Continuous
+        if any(x in ans for x in (" is ", " are ", " am ", "'s ", "'re ", "'m ")) and "ing" in ans:
+            return False
+        if ans.endswith("ing") and " " not in ans.strip():
+            return False
+        # Маркеры Simple или do/does / -s у he/she
+        ok = any(
+            n in padded
+            for n in (
+                " every ",
+                " usually ",
+                " often ",
+                " always ",
+                " don't ",
+                " doesn't ",
+                " do ",
+                " does ",
+            )
+        )
+        return ok or any(
+            w in ans for w in ("goes", "works", "likes", "plays", "watches", "reads", "drinks")
+        )
+
+    if topic_id == "present_continuous":
+        # Не принимать чистый Present Simple с every day как Continuous
+        if any(n in padded for n in (" every day", " every morning", " usually ", " often ")):
+            if "ing" not in blob and " now" not in padded and " right now" not in padded:
+                return False
+        return any(n in padded or n in blob for n in (" am ", " is ", " are ", "ing", "now"))
+
     checks = {
         "there_is_are": (
             "there is",
@@ -775,14 +732,12 @@ def looks_on_topic(
             "there aren't",
             "there's",
         ),
-        "present_continuous": (" am ", " is ", " are ", "ing"),
         "can_ability": ("can ", "can't", "cannot"),
         "past_simple": (" yesterday", " ago", " last ", "ed ", " went", " did "),
         "pronouns_be": (" am ", " is ", " are ", "i'm", "she's", "he's", "you're"),
         "to_be": (" am ", " is ", " are ", "i'm", "she's", "he's"),
         "plurals": ("books", "cats", "children", "men", "boxes", "cities"),
         "articles_a_an": (" a ", " an "),
-        "present_simple": (" every ", " usually ", " don't ", " doesn't ", " does ", " do "),
         "this_that": ("this", "that"),
         "simple_phrases": (
             "hello",
@@ -794,8 +749,11 @@ def looks_on_topic(
             "nice to meet",
             "how are you",
         ),
+        "past_continuous": (" was ", " were ", "ing"),
+        "present_perfect": (" have ", " has ", " already", " yet", " ever", " never"),
+        "going_to_future": ("going to",),
     }
     needles = checks.get(topic_id)
     if not needles:
         return True
-    return any(n in f" {blob} " or n in blob for n in needles)
+    return any(n in padded or n in blob for n in needles)
