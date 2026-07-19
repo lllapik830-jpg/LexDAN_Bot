@@ -34,6 +34,7 @@ from services.pricing import (
     LOTTERY_REF_PRIZE,
     chat_price,
     clear_discount,
+    clear_lottery_100_prize,
     consume_discount,
     discount_percent,
     draw_lottery_100,
@@ -44,6 +45,7 @@ from services.pricing import (
     list_lottery_30,
     list_referral_ticket_pool,
     lottery_status_lines,
+    pending_lottery_100_prizes,
     set_discount,
 )
 from services.rewards import extend_chat_pass, user_plan
@@ -69,6 +71,8 @@ HELP = (
     "/lottery100_draw — победитель (приз деньгами вручную)\n"
     "/lottery_ref — пул реф-билетов\n"
     "/lottery_ref_draw — победитель (+30 дн. full)\n"
+    "/prize_pending — кому ещё не выплатили 15 000₽\n"
+    "/prize_paid <code>id</code> — отметить выплату\n"
 )
 
 
@@ -110,7 +114,7 @@ async def admin_grant_chat(m: Message, command: CommandObject):
     ensure_growth(user)
     pct = consume_discount(user)
     extend_chat_pass(user, days)
-    save_users(users)
+    save_users(users, only=uid)
     disc = f" (скидка {pct}% списана)" if pct else ""
     await m.reply(f"✅ Chat на {days} дн. → <code>{uid}</code>{disc}", parse_mode="HTML")
     try:
@@ -136,7 +140,7 @@ async def admin_grant_full(m: Message, command: CommandObject):
     ensure_growth(user)
     pct = consume_discount(user)
     extend_premium(user, days)
-    save_users(users)
+    save_users(users, only=uid)
     disc = f" (скидка {pct}% списана)" if pct else ""
     await m.reply(f"✅ Full на {days} дн. → <code>{uid}</code>{disc}", parse_mode="HTML")
     try:
@@ -164,7 +168,7 @@ async def admin_revoke(m: Message, command: CommandObject):
     user["chat_until"] = 0
     user["lessons_until"] = 0
     user["dev_unlock"] = False
-    save_users(users)
+    save_users(users, only=uid)
     await m.reply(f"⛔ Доступ снят у <code>{uid}</code>", parse_mode="HTML")
 
 
@@ -244,7 +248,7 @@ async def admin_set_discount(m: Message, command: CommandObject):
     users = load_users()
     user = get_user(users, uid)
     set_discount(user, pct, note="admin")
-    save_users(users)
+    save_users(users, only=uid)
     chat_p, _ = chat_price(user)
     full_p, _ = full_price(user)
     await m.reply(
@@ -266,7 +270,7 @@ async def admin_clear_discount(m: Message, command: CommandObject):
     users = load_users()
     user = get_user(users, uid)
     clear_discount(user)
-    save_users(users)
+    save_users(users, only=uid)
     await m.reply(f"Скидка снята у <code>{uid}</code>", parse_mode="HTML")
 
 
@@ -303,7 +307,7 @@ async def admin_lottery30_draw(m: Message):
         await m.reply("Некого разыгрывать — список пуст.")
         return
     uid, user = won
-    save_users(users)
+    save_users(users, only=uid)
     await m.reply(
         f"🏆 Победитель lottery30: <code>{uid}</code> {user.get('name') or ''}\n"
         f"Приз: {LOTTERY_30_PRIZE} (+180 дн. full)",
@@ -342,7 +346,7 @@ async def admin_lottery100_draw(m: Message):
         await m.reply("Некого разыгрывать — список пуст.")
         return
     uid, user = won
-    save_users(users)
+    save_users(users, only=uid)
     contact = f"@{SUPPORT_USERNAME}" if SUPPORT_USERNAME else "поддержку"
     await m.reply(
         f"🏆 Победитель lottery100: <code>{uid}</code> {user.get('name') or ''}\n"
@@ -396,7 +400,7 @@ async def admin_lottery_ref_draw(m: Message):
         await m.reply("Некого разыгрывать — билетов нет.")
         return
     uid, user = won
-    save_users(users)
+    save_users(users, only=uid)
     await m.reply(
         f"🏆 Победитель реф-розыгрыша: <code>{uid}</code> {user.get('name') or ''}\n"
         f"Приз: {LOTTERY_REF_PRIZE} (+30 дн. full). Билетов осталось: "
@@ -409,6 +413,47 @@ async def admin_lottery_ref_draw(m: Message):
             f"🏆 Поздравляем! Реф-розыгрыш: тебе начислен "
             f"<b>{LOTTERY_REF_PRIZE}</b> 🦜",
             parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+
+@router.message(Command("prize_pending"))
+async def admin_prize_pending(m: Message):
+    if not _is_admin(m):
+        return
+    users = load_users()
+    rows = pending_lottery_100_prizes(users)
+    if not rows:
+        await m.reply("Нет ожидающих выплат 15 000₽.")
+        return
+    lines = ["💰 <b>Ждут выплату (lottery 100)</b>\n"]
+    for uid, u in rows:
+        lines.append(f"• <code>{uid}</code> {u.get('name') or ''} · won {u.get('lottery_100_won_at') or '—'}")
+    lines.append("\nПосле перевода: /prize_paid <id>")
+    await m.reply("\n".join(lines), parse_mode="HTML")
+
+
+@router.message(Command("prize_paid"))
+async def admin_prize_paid(m: Message, command: CommandObject):
+    if not _is_admin(m):
+        return
+    uid = (command.args or "").strip().split()
+    if not uid:
+        await m.reply("Формат: /prize_paid <user_id>")
+        return
+    uid = uid[0]
+    users = load_users()
+    user = get_user(users, uid)
+    if not clear_lottery_100_prize(user):
+        await m.reply("У этого юзера нет pending-приза (или уже отмечен).")
+        return
+    save_users(users, only=uid)
+    await m.reply(f"✅ Приз отмечен выплаченным для <code>{uid}</code>", parse_mode="HTML")
+    try:
+        await m.bot.send_message(
+            int(uid),
+            "💰 Рико: приз за серию 100 дней отмечен как выплаченный. Поздравляем ещё раз! 🦜",
         )
     except Exception:
         pass

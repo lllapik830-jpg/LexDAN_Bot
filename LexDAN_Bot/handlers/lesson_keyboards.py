@@ -18,11 +18,9 @@ BTN_RICO_HELP = "🦜 Помощь Рико"
 
 
 def level_sections_kb() -> ReplyKeyboardMarkup:
-    """Компактнее: 4 ряда вместо 5, меньше наложения на узких экранах."""
+    """Grammar + Vocabulary. L/R/S/W временно скрыты."""
     rows = [
         [KeyboardButton(text="📘 Grammar"), KeyboardButton(text="📗 Vocabulary")],
-        [KeyboardButton(text="🎧 Listening"), KeyboardButton(text="📖 Reading")],
-        [KeyboardButton(text="🗣 Speaking"), KeyboardButton(text="✍️ Writing")],
         [KeyboardButton(text="⬅️ К уровням"), KeyboardButton(text="🔙 Вернуться в меню")],
     ]
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)

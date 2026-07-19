@@ -172,3 +172,20 @@ def draw_referral_lottery(users: dict) -> tuple[str, dict] | None:
 
     extend_premium(user, 30)
     return uid, user
+
+
+def clear_lottery_100_prize(user: dict) -> bool:
+    """Отметить, что денежный приз 100-дневной лотереи выплачен."""
+    if not user.get("lottery_100_prize_pending"):
+        return False
+    user["lottery_100_prize_pending"] = False
+    user["lottery_100_prize_paid_at"] = _today()
+    return True
+
+
+def pending_lottery_100_prizes(users: dict) -> list[tuple[str, dict]]:
+    out = []
+    for uid, u in users.items():
+        if isinstance(u, dict) and u.get("lottery_100_prize_pending"):
+            out.append((str(uid), u))
+    return out

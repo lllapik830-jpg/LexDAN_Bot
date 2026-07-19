@@ -21,8 +21,8 @@ USER_DATA_FILE = "users.json"
 # PostgreSQL на Render (Internal/External Database URL)
 DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
 
-# Твой Telegram ID (пригодится для админ-команд позже)
-MANAGER_ID = 1809897303
+# Твой Telegram ID — админ-команды (/admin, /grant_*, лотереи…)
+MANAGER_ID = int(os.getenv("MANAGER_ID") or "1809897303")
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не найден! Добавь его в переменные окружения.")

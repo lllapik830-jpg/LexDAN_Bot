@@ -8,10 +8,7 @@ from services.database import load_users, save_users, get_user
 SECTIONS = [
     ("Grammar", "📘 Grammar"),
     ("Vocabulary", "📗 Vocabulary"),
-    ("Listening", "🎧 Listening"),
-    ("Reading", "📖 Reading"),
-    ("Speaking", "🗣 Speaking"),
-    ("Writing", "✍️ Writing"),
+    # Listening / Reading / Speaking / Writing — временно скрыты (скоро)
 ]
 
 EXERCISE_TYPES = [
@@ -177,7 +174,7 @@ def update_lesson(user_id: str, mutator) -> dict:
     user = get_user(users, user_id)
     ensure_lesson(user)
     mutator(user)
-    save_users(users)
+    save_users(users, only=str(user_id))
     return user
 
 

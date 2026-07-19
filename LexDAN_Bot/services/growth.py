@@ -401,17 +401,15 @@ def can_do_grammar_exercise(user: dict) -> tuple[bool, str | None]:
     return True, None
 
 
-def note_grammar_exercise_done(user: dict) -> None:
+def note_grammar_exercise_done(user: dict) -> dict:
+    """Учёт упражнения + серия дней / активность (как у Vocabulary и чата)."""
     ensure_growth(user)
-    from services.rewards import has_lessons_pass
-
-    if has_lessons_pass(user):
-        # всё равно считаем для реферальной квалификации
-        daily = user["daily"]
-        daily["grammar_exercises_today"] = int(daily.get("grammar_exercises_today") or 0) + 1
-        return
+    touch_activity(user)
+    streak_info = touch_streak(user)
     daily = user["daily"]
     daily["grammar_exercises_today"] = int(daily.get("grammar_exercises_today") or 0) + 1
+    _maybe_complete_goal(user)
+    return streak_info
 
 
 def vocab_items_used_today(user: dict) -> int:
@@ -520,7 +518,8 @@ def _maybe_complete_goal(user: dict) -> bool:
     words_ok = int(daily.get("words_today") or 0) >= DAILY_WORDS_GOAL
     chat_ok = int(daily.get("chat_count") or 0) >= DAILY_CHAT_GOAL
     phrases_ok = int(daily.get("phrases_today") or 0) >= 1
-    if words_ok or chat_ok or phrases_ok:
+    grammar_ok = int(daily.get("grammar_exercises_today") or 0) >= 1
+    if words_ok or chat_ok or phrases_ok or grammar_ok:
         daily["goal_done"] = True
         return True
     return False

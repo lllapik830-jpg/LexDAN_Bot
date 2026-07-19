@@ -28,11 +28,23 @@ async def reply_as_tutor(
     turns = list(user.get("chat_recent_turns") or [])
     turns = (turns + [{"role": "user", "text": user_text}])[-10:]
 
+    hist = turns[:-1]
+    # После сброса сессии подскажем модели прошлую тему (если юзер не сменил её сам)
+    prev_topic = (user.get("chat_last_user_text") or "").strip()
+    if not hist and prev_topic and prev_topic.lower() != user_text.strip().lower():
+        hist = [
+            {"role": "user", "text": prev_topic},
+            {
+                "role": "bot",
+                "text": "Last time we talked about that — happy to continue if you want.",
+            },
+        ]
+
     result = ask_tutor(
         user_text,
         name,
         recent_replies=recent,
-        recent_turns=turns[:-1],  # история до текущего сообщения
+        recent_turns=hist,
     )
     text_out, reply_en = format_tutor_message(result, heard_text=heard_text)
     if not reply_en:
@@ -42,7 +54,8 @@ async def reply_as_tutor(
     turns = (turns + [{"role": "bot", "text": reply_en}])[-10:]
     user["chat_recent_replies"] = recent
     user["chat_recent_turns"] = turns
-    save_users(users)
+    user["chat_last_user_text"] = user_text.strip()[:500]
+    save_users(users, only=user_id)
     set_last_bot_reply(user_id, reply_en)
 
     await message.reply(text_out, parse_mode="HTML")

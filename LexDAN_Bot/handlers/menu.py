@@ -39,20 +39,39 @@ async def open_chat(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     note_lesson_activity(user)
-    # новая сессия общения — без старой темы
+    # новая сессия — историю сбрасываем, но помним последнюю тему
+    last_topic = (user.get("chat_last_user_text") or "").strip()
     user["chat_recent_turns"] = []
     user["chat_recent_replies"] = []
-    save_users(users)
-    await m.reply(
+    save_users(users, only=str(m.from_user.id))
+
+    intro = (
         "🔥 <b>Погнали общаться!</b> 🙂\n\n"
         "Пиши текстом или кидай голосовое на английском.\n"
         "Ошибёшься — поправлю <i>только грамматику/слова</i> и коротко объясню почему.\n"
         "Всё ок — скажу «молодец» и продолжим диалог ✨\n\n"
         "Цель дня: можно закрыть, если поболтаешь несколько сообщений.\n\n"
         "🌍 <b>Перевести</b> — переведу мой последний ответ\n"
-        "🔙 <b>В меню</b> — выход",
-        reply_markup=chat_menu(),
-        parse_mode="HTML",
+        "🔙 <b>В меню</b> — выход"
+    )
+    if last_topic:
+        snippet = last_topic if len(last_topic) <= 120 else last_topic[:117] + "…"
+        intro = (
+            "🔥 <b>Снова на связи!</b>\n\n"
+            f"В прошлый раз ты писал(а):\n<i>«{_esc(snippet)}»</i>\n\n"
+            "Продолжим про это — или кидай новую тему 🙂\n\n"
+            "🌍 <b>Перевести</b> — мой последний ответ\n"
+            "🔙 <b>В меню</b> — выход"
+        )
+    await m.reply(intro, reply_markup=chat_menu(), parse_mode="HTML")
+
+
+def _esc(text: str) -> str:
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
     )
 
 

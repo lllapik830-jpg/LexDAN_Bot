@@ -84,8 +84,7 @@ BTN_TRANSLATE = "🌍 Перевести"
 
 VOICE_ONLY_TEXT = (
     "🦜 Здесь пока только <b>текстом</b>!\n"
-    "Разговорная практика — в разделе <b>Speaking</b>.\n"
-    "Напиши сообщение или нажми кнопку ✍️"
+    "Напиши ответ сообщением или нажми кнопку ✍️"
 )
 
 
@@ -163,7 +162,9 @@ async def _show_grammar_test_question(m: Message, user: dict):
 async def open_level_hub(m: Message, level: str):
     set_level_hub(str(m.from_user.id), level)
     await m.reply(
-        get_level_welcome(level),
+        get_level_welcome(level)
+        + "\n\nСейчас доступны <b>Grammar</b> и <b>Vocabulary</b>.\n"
+        "🎧 Listening · 📖 Reading · 🗣 Speaking · ✍️ Writing — <i>скоро появятся</i> 🚀",
         reply_markup=level_sections_kb(),
         parse_mode="HTML",
     )
@@ -452,12 +453,14 @@ async def _finish_exercise_ok(m: Message, user_id: str, level: str, topic_id: st
     from services.rewards import maybe_qualify_referral
 
     to_inviter, to_friend = maybe_qualify_referral(user, users)
-    save_users(users)
+    save_users(users, only=user_id)
     if to_friend:
         await m.reply(to_friend, parse_mode="HTML")
     if to_inviter:
         ref = user.get("referred_by")
         if ref and str(ref) != user_id:
+            # обновить и пригласившего (награды уже в users)
+            save_users(users, only=[user_id, str(ref)])
             try:
                 await m.bot.send_message(int(ref), to_inviter, parse_mode="HTML")
             except Exception:
@@ -472,7 +475,7 @@ async def _finish_exercise_ok(m: Message, user_id: str, level: str, topic_id: st
         user = get_user(users, user_id)
         ensure_growth(user)
         note_lesson_completed(user)
-        save_users(users)
+        save_users(users, only=user_id)
         topic_just_done = True
         extra = f"\n\n🎉 <b>Тема «{topic_title}» полностью пройдена!</b> ✅"
         users = load_users()

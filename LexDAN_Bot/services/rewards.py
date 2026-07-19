@@ -124,7 +124,7 @@ def streak_reward_text(plan: str, days: int) -> str:
         },
         "full": {
             7: "🔐 Секреты Рико: <b>Разбор недели</b> + <b>Голос дня</b> (в меню)",
-            14: "Эксклюзив: Listening / Reading / Speaking / Writing на <b>неделю</b>",
+            14: "+<b>3 дня</b> полного доступа в подарок",
             30: "Билет в розыгрыш полугодовой подписки (среди 30-дневных на 799)",
             50: "Ещё один <b>Голос дня</b> от Рико",
             100: "Билет в розыгрыш <b>15 000₽</b> (среди 100-дневных на 799)",
@@ -239,8 +239,8 @@ def _grant_streak_reward(user: dict, plan: str, days: int) -> str:
             "Кнопка <b>🔐 Секрет Рико</b> — в главном меню!"
         )
     if days == 14:
-        extend_sections_unlock(user, 7)
-        return "🔥 14 дней! Эксклюзивные разделы уроков на <b>неделю</b>."
+        extend_premium(user, 3)
+        return "🔥 14 дней! +<b>3 дня</b> полного доступа в подарок."
     if days == 30:
         user["lottery_30"] = True
         user["lottery_30_entered_at"] = _today()
@@ -248,6 +248,7 @@ def _grant_streak_reward(user: dict, plan: str, days: int) -> str:
     if days == 50:
         from services.secret_missions import unlock_mission, MISSION_VOICE
 
+        # exclusive_rico_tasks — заготовка на потом (когда люди подойдут к 50)
         user["exclusive_rico_tasks"] = True
         unlock_mission(user, MISSION_VOICE)
         return (

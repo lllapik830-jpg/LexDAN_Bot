@@ -119,17 +119,36 @@ def load_users() -> dict:
         return _load_users_file()
 
 
-def save_users(data: dict) -> None:
+def save_users(data: dict, only: str | list[str] | None = None) -> None:
+    """
+    Сохранить юзеров.
+    only=user_id или [id,…] — писать только их (без гонок «перезаписал чужие данные»).
+    only=None — все (админ/миграция).
+    """
+    if only is None:
+        targets = [(str(uid), payload) for uid, payload in data.items() if isinstance(payload, dict)]
+    else:
+        ids = [only] if isinstance(only, str) else list(only)
+        targets = []
+        for uid in ids:
+            payload = data.get(str(uid))
+            if isinstance(payload, dict):
+                targets.append((str(uid), payload))
+
+    if not targets:
+        return
+
     if not _use_postgres():
-        _save_users_file(data)
+        file_data = _load_users_file()
+        for uid, payload in targets:
+            file_data[uid] = payload
+        _save_users_file(file_data)
         return
     try:
         _ensure_pg()
         with _connect() as conn:
             with conn.cursor() as cur:
-                for uid, payload in data.items():
-                    if not isinstance(payload, dict):
-                        continue
+                for uid, payload in targets:
                     cur.execute(
                         """
                         INSERT INTO users (user_id, data, updated_at)
@@ -138,12 +157,15 @@ def save_users(data: dict) -> None:
                             data = EXCLUDED.data,
                             updated_at = now()
                         """,
-                        (str(uid), json.dumps(payload, ensure_ascii=False)),
+                        (uid, json.dumps(payload, ensure_ascii=False)),
                     )
             conn.commit()
     except Exception as e:
         logging.error(f"Postgres save_users failed, fallback to file: {e}")
-        _save_users_file(data)
+        file_data = _load_users_file()
+        for uid, payload in targets:
+            file_data[uid] = payload
+        _save_users_file(file_data)
 
 
 def _load_users_file() -> dict:
@@ -243,7 +265,7 @@ def set_mode(user_id: str, mode: str) -> dict:
     users = load_users()
     user = get_user(users, user_id)
     user["mode"] = mode
-    save_users(users)
+    save_users(users, only=str(user_id))
     return user
 
 
@@ -251,7 +273,7 @@ def set_last_bot_reply(user_id: str, text: str) -> None:
     users = load_users()
     user = get_user(users, user_id)
     user["last_bot_reply"] = text
-    save_users(users)
+    save_users(users, only=str(user_id))
 
 
 def get_mode(user_id: str) -> str:
