@@ -34,6 +34,7 @@ async def reply_as_tutor(
         recent_replies=recent,
         recent_turns=turns[:-1],  # история до текущего сообщения
     )
+    text_out = format_tutor_message(result, heard_text=heard_text)
     reply_en = result.get("reply_en") or ""
 
     recent = (recent + [reply_en])[-8:]
@@ -43,7 +44,6 @@ async def reply_as_tutor(
     save_users(users)
     set_last_bot_reply(user_id, reply_en)
 
-    text_out = format_tutor_message(result, heard_text=heard_text)
     await message.reply(text_out, parse_mode="HTML")
 
     await send_voice_reply(message, reply_en, title="LexDAN reply")

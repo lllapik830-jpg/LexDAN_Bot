@@ -41,18 +41,17 @@ CORRECTION RULES (strict):
    - Example: "can explain" without you → say: нужно «you»: can you explain.
 8) tips_ru: only useful words/phrases that are NEW vs what the student already wrote.
 
-CHAT RULES (reply_en) — topic continuity is CRITICAL:
-1) If the student started a topic (football, work, food, a story, an opinion) → STAY on it.
-   React to their words, then ask ONE follow-up that deepens THE SAME topic.
-2) Do NOT jump to a random new topic (music, food, day, etc.) while their topic is alive.
-3) Suggest a NEW topic ONLY when:
-   - greeting / small talk with no content ("hi", "hello", "how are you", "what's up"), OR
-   - student says they don't know what to talk about, OR
-   - the thread is clearly finished / one-word dead-end ("ok", "yes", "no", "idk") with nothing left to ask on the old topic.
-4) On pure small talk: answer briefly, then offer ONE concrete topic to start (not a list of 5).
-5) If recent dialogue shows an active topic, continue that topic — do not "rotate topics".
-6) Never reuse the exact same question from recent replies; rephrase if needed, but keep the topic.
-7) 1–3 short sentences + one question. Spoken A2–B1 English. Never sound like a textbook.
+CHAT RULES (reply_en) — ALWAYS keep the chat moving:
+1) EVERY reply_en MUST: (a) react to the student's LAST message, (b) ask ONE follow-up
+   question that develops THE SAME idea/topic (football → club/player/match; food → dish/place…).
+2) Never end with empty closers: "Got it", "Let's keep chatting", "Okay", "Alright",
+   "Interesting" alone, or any reply WITHOUT a question mark.
+3) Stay on the student's topic. Do NOT jump to a random new topic while theirs is alive.
+4) Suggest a NEW concrete topic ONLY on pure small talk / "idk what to talk about" /
+   one-word dead-end with nothing left to ask.
+5) Never reuse the exact same question from recent replies; rephrase, keep the topic.
+6) 1–3 short spoken A2–B1 sentences + one question. Not a textbook.
+7) Light praise ("Nice!") is OK only if a real follow-up question comes right after.
 """
 
 _FALLBACK_REPLIES = [
@@ -60,13 +59,30 @@ _FALLBACK_REPLIES = [
     "Nice chatting! Do you like cooking or ordering food more?",
     "Cool. What's one song you can't stop listening to?",
     "Okay! Are you more of a morning person or a night owl?",
-    "Got it. What do you usually do after work or school?",
+    "What do you usually do after work or school?",
     "Interesting! Coffee or tea — what's your go-to?",
-    "Alright. Tell me about your favorite place in your city.",
+    "Tell me about your favorite place in your city — why do you like it?",
     "Hey! If you had a free Saturday, how would you spend it?",
-    "Nice. Do you prefer movies at home or going out with friends?",
-    "Okay! What's something small you want to learn this week?",
+    "Do you prefer movies at home or going out with friends?",
+    "What's something small you want to learn this week?",
 ]
+
+_TOPIC_CONTINUE_REPLIES = [
+    "Interesting! What else can you tell me about that?",
+    "Cool — what do you like most about it?",
+    "Nice detail. What happened next?",
+    "Why is that important to you?",
+    "How often do you do that?",
+    "Who do you usually share that with?",
+    "What made you start liking that?",
+    "Would you recommend it to a friend — why?",
+]
+
+_DEAD_REPLY_RE = re.compile(
+    r"^\s*(got it|okay|ok|alright|interesting|cool|nice|sure|thanks)[\s.!,—-]*"
+    r"(let'?s keep chatting)?\s*$",
+    re.I,
+)
 
 _SMALLTALK_RE = re.compile(
     r"^\s*(hi|hey|hello|hola|yo|sup|hiya|"
@@ -116,9 +132,12 @@ def ask_tutor(
         )
 
     topic_hint = (
-        "Student has NO clear topic yet → answer briefly and suggest ONE topic."
+        "Student has NO clear topic yet → answer briefly and suggest ONE concrete topic + a question."
         if _looks_like_no_topic(user_text) and not _active_topic_in_turns(turns)
-        else "Student has a topic → stay on it and deepen it. Do NOT switch topics."
+        else (
+            "Student has a topic → react to THEIR last message and ask ONE follow-up "
+            "that develops the SAME topic (never 'Got it / let's keep chatting')."
+        )
     )
 
     try:
@@ -191,17 +210,53 @@ def _active_topic_in_turns(turns: list[dict]) -> bool:
     return False
 
 
-def _fallback_reply_for(user_text: str, recent: list[str]) -> str:
+def _fallback_reply_for(
+    user_text: str,
+    recent: list[str],
+    turns: list[dict] | None = None,
+) -> str:
     # small talk / нет темы → предложить тему
-    if _looks_like_no_topic(user_text):
+    if _looks_like_no_topic(user_text) and not _active_topic_in_turns(turns or []):
         pool = [
             x
             for x in _FALLBACK_REPLIES
             if all(_token_overlap_ratio(x, r) < 0.5 for r in recent)
         ]
         return random.choice(pool or _FALLBACK_REPLIES)
-    # есть тема — продолжить, не менять
-    return "Interesting! Tell me more about that — what do you like most about it?"
+    # есть тема — развить, не обрывать
+    pool = [
+        x
+        for x in _TOPIC_CONTINUE_REPLIES
+        if all(_token_overlap_ratio(x, r) < 0.55 for r in recent)
+    ]
+    return random.choice(pool or _TOPIC_CONTINUE_REPLIES)
+
+
+def _is_dead_reply(reply: str) -> bool:
+    r = (reply or "").strip()
+    if not r:
+        return True
+    if "?" not in r:
+        return True
+    if _DEAD_REPLY_RE.match(r):
+        return True
+    low = r.lower()
+    if "keep chatting" in low or "let's keep chat" in low:
+        return True
+    return False
+
+
+def _strip_leading_praise(reply: str) -> str:
+    """Убрать пустой восторг в начале, оставить вопрос/суть."""
+    r = (reply or "").strip()
+    r = re.sub(
+        r"^(nice|great|awesome|well done|good job|cool|amazing|perfect)"
+        r"(\s+choice)?[!.,]*\s*",
+        "",
+        r,
+        flags=re.I,
+    )
+    return r.strip() or (reply or "").strip()
 
 
 def _normalize_tokens(text: str) -> list[str]:
@@ -407,9 +462,9 @@ def _ensure_diverse_reply(
             repeated = True
             break
 
-    if not reply or repeated:
-        # при активной теме не подсовываем случайную «песню»
-        reply = _fallback_reply_for(user_text, recent)
+    if not reply or repeated or _is_dead_reply(reply):
+        # при активной теме не подсовываем случайную «песню» и не обрываем чат
+        reply = _fallback_reply_for(user_text, recent, turns=turns)
     result["reply_en"] = reply
     return result
 
@@ -547,12 +602,12 @@ def format_tutor_message(result: dict, heard_text: str | None = None) -> str:
         parts.append("✅ <b>Звучит естественно — молодец!</b> 🎉")
 
     reply = _clean_field(result.get("reply_en") or "")
+    # Раньше «Nice!» в живом ответе затирало ВЕСЬ reply на «Got it…» — больше не трогаем так.
     if better or errors:
-        low = reply.lower()
-        for bad in ("молодец", "nice!", "great!", "awesome", "well done", "nice choice"):
-            if bad in low:
-                reply = "Got it — let's keep chatting."
-                break
+        reply = _strip_leading_praise(reply)
+    if _is_dead_reply(reply):
+        reply = random.choice(_TOPIC_CONTINUE_REPLIES)
+    result["reply_en"] = reply
 
     parts.append("")
     parts.append("────────")
