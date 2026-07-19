@@ -45,6 +45,9 @@ CHAT_VOICES: list[dict] = [
 
 BTN_CHAT_VOICE = "🎙 Голос озвучки"
 
+# Одна фраза для превью всех голосов (не считается в лимит чата)
+VOICE_PREVIEW_PHRASE = "Hello! I'm your tutor. Let's talk together."
+
 _PLAN_RANK = {"free": 0, "chat": 1, "full": 2}
 
 
@@ -110,25 +113,26 @@ def voices_help_text(user: dict) -> str:
     plan = user_plan(user)
     cur = current_voice_label(user)
     lines = [
-        "🎙 <b>Голос озвучки в «Общаться»</b>\n",
-        f"Сейчас: <b>{cur}</b>\n",
+        "🎙 <b>Голоса озвучки</b>\n",
+        f"Сейчас выбран: <b>{cur}</b>\n",
         f"Твой тариф: <b>{plan}</b>\n",
-        "<b>Доступно тебе:</b>",
+        "<b>Тарифы и голоса</b>\n"
+        "• <b>399₽</b> (Общение) — Scotty, Emmaline (British)\n"
+        "• <b>799₽</b> (всё) — все четыре: Scotty, Emmaline, Lucas, Aria\n",
+        "🎧 <b>Прослушать</b> можно любой голос бесплатно — это не тратит лимит чата.\n"
+        "✅ <b>Выбрать</b> для озвучки ответов — только голоса твоего тарифа.\n",
     ]
     avail = available_chat_voices(user)
     if avail:
+        lines.append("<b>Тебе можно выбрать:</b>")
         for v in avail:
             mark = "✅" if user.get("chat_voice_key") == v["key"] else "▫️"
             lines.append(f"{mark} {v['label']}")
     else:
-        lines.append("▫️ Пока стандартный голос — премиум-голоса на тарифах 399/799.")
+        lines.append(
+            "На бесплатном тарифе для ответов — стандартный голос.\n"
+            "Послушай премиум ниже и возьми подписку, чтобы включить их 👇"
+        )
 
-    locked = locked_chat_voices(user)
-    if locked:
-        lines.append("\n<b>На других тарифах:</b>")
-        for v in locked:
-            need = "399" if v["min_plan"] == "chat" else "799"
-            lines.append(f"🔒 {v['label']} — от {need}₽")
-
-    lines.append("\nВыбери голос кнопкой ниже 👇")
+    lines.append("\nКнопки: 🎧 прослушать · ✅ выбрать")
     return "\n".join(lines)

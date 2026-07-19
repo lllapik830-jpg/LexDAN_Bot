@@ -19,7 +19,9 @@ from services.tutor_reply import reply_as_tutor
 from services.voices import (
     BTN_CHAT_VOICE,
     CHAT_VOICES,
+    VOICE_PREVIEW_PHRASE,
     set_chat_voice,
+    voice_by_key,
     voices_help_text,
 )
 
@@ -27,14 +29,20 @@ router = Router()
 
 
 def _voices_inline_kb() -> InlineKeyboardMarkup:
+    """У каждого голоса: прослушать (всем) + выбрать (по тарифу)."""
     rows = []
     for v in CHAT_VOICES:
+        need = "399" if v["min_plan"] == "chat" else "799"
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=v["label"],
-                    callback_data=f"voice:{v['key']}",
-                )
+                    text=f"🎧 {v['label']}",
+                    callback_data=f"vlisten:{v['key']}",
+                ),
+                InlineKeyboardButton(
+                    text=f"✅ Выбрать ({need})",
+                    callback_data=f"vset:{v['key']}",
+                ),
             ]
         )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -49,10 +57,34 @@ async def chat_voice_picker(m: Message):
         reply_markup=chat_menu(),
         parse_mode="HTML",
     )
-    await m.reply("Выбери голос:", reply_markup=_voices_inline_kb())
+    await m.reply(
+        f"Фраза для прослушивания:\n<i>«{VOICE_PREVIEW_PHRASE}»</i>",
+        reply_markup=_voices_inline_kb(),
+        parse_mode="HTML",
+    )
 
 
-@router.callback_query(F.data.startswith("voice:"))
+@router.callback_query(F.data.startswith("vlisten:"))
+async def chat_voice_listen(c: CallbackQuery):
+    """Превью голоса — не считает в лимит чата."""
+    key = (c.data or "").split(":", 1)[-1].strip()
+    v = voice_by_key(key)
+    if not v:
+        await c.answer("Голос не найден", show_alert=True)
+        return
+    await c.answer(f"Озвучиваю: {v['label']}")
+    from services.elevenlabs import send_voice_reply
+
+    await c.message.answer(f"🎧 <b>{v['label']}</b>", parse_mode="HTML")
+    await send_voice_reply(
+        c.message,
+        VOICE_PREVIEW_PHRASE,
+        title=v["label"],
+        voice_id=v["voice_id"],
+    )
+
+
+@router.callback_query(F.data.startswith("vset:"))
 async def chat_voice_pick(c: CallbackQuery):
     key = (c.data or "").split(":", 1)[-1].strip()
     users = load_users()
@@ -66,6 +98,19 @@ async def chat_voice_pick(c: CallbackQuery):
         from handlers.lesson_keyboards import tariffs_inline_kb
 
         await c.message.answer("Тарифы:", reply_markup=tariffs_inline_kb(user))
+
+
+@router.callback_query(F.data.startswith("voice:"))
+async def chat_voice_pick_legacy(c: CallbackQuery):
+    """Старые кнопки voice:key → выбор голоса."""
+    key = (c.data or "").split(":", 1)[-1].strip()
+    users = load_users()
+    user = get_user(users, str(c.from_user.id))
+    ok, msg = set_chat_voice(user, key)
+    if ok:
+        save_users(users, only=str(c.from_user.id))
+    await c.answer("Готово" if ok else "Нужен тариф", show_alert=not ok)
+    await c.message.answer(msg, reply_markup=chat_menu(), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_CHAT), F.text.func(lambda t: bool(t) and "Перевести" in t))
