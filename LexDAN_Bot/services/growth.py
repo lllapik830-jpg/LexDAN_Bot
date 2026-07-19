@@ -594,6 +594,8 @@ def invite_link(bot_username: str, code: str) -> str:
 
 def subscription_blurb(user: dict) -> str:
     ensure_growth(user)
+    from services.pricing import discount_blurb, lottery_status_lines
+
     if is_premium(user):
         status = f"✅ Полный доступ ещё ≈ <b>{premium_days_left(user)}</b> дн."
     elif has_chat_pass(user):
@@ -602,7 +604,9 @@ def subscription_blurb(user: dict) -> str:
         status = "🆓 Бесплатный тариф"
     return (
         "💎 <b>Тарифы LexDAN</b>\n\n"
-        f"Сейчас: {status}\n\n"
+        f"Сейчас: {status}\n"
+        f"{discount_blurb(user)}"
+        f"{lottery_status_lines(user)}\n"
         "<b>Бесплатно</b>\n"
         f"• Vocabulary — до {FREE_VOCAB_ITEMS_PER_DAY} слов/фраз в день\n"
         f"• Grammar — до {FREE_GRAMMAR_EXERCISES_PER_DAY} заданий в день (все уровни)\n"

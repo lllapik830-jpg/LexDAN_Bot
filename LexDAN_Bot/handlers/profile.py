@@ -33,7 +33,7 @@ async def subscription_info(m: Message):
     from handlers.lesson_keyboards import tariffs_inline_kb
 
     await m.reply(subscription_blurb(user), reply_markup=profile_menu(user), parse_mode="HTML")
-    await m.reply("Выбери тариф:", reply_markup=tariffs_inline_kb())
+    await m.reply("Выбери тариф:", reply_markup=tariffs_inline_kb(user))
 
 
 @router.message(ModeFilter(MODE_PROFILE), F.text == BTN_STREAK)

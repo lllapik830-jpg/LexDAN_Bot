@@ -139,22 +139,30 @@ def chat_limit_inline_kb() -> InlineKeyboardMarkup:
     )
 
 
-def tariffs_inline_kb() -> InlineKeyboardMarkup:
+def tariffs_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
     from services.growth import PRICE_CHAT_MONTH, PRICE_FULL_MONTH
+    from services.pricing import chat_price, full_price
+
+    if user:
+        chat_p, chat_d = chat_price(user)
+        full_p, full_d = full_price(user)
+        chat_label = (
+            f"💬 Общение — {chat_p}₽/мес (−{chat_d}%)"
+            if chat_d
+            else f"💬 Только общение — {PRICE_CHAT_MONTH}₽/мес"
+        )
+        full_label = (
+            f"🚀 Всё — {full_p}₽/мес (−{full_d}%)"
+            if full_d
+            else f"🚀 Безлимит ко всему — {PRICE_FULL_MONTH}₽/мес"
+        )
+    else:
+        chat_label = f"💬 Только общение — {PRICE_CHAT_MONTH}₽/мес"
+        full_label = f"🚀 Безлимит ко всему — {PRICE_FULL_MONTH}₽/мес"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=f"💬 Только общение — {PRICE_CHAT_MONTH}₽/мес",
-                    callback_data="tariff:chat",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text=f"🚀 Безлимит ко всему — {PRICE_FULL_MONTH}₽/мес",
-                    callback_data="tariff:full",
-                )
-            ],
+            [InlineKeyboardButton(text=chat_label, callback_data="tariff:chat")],
+            [InlineKeyboardButton(text=full_label, callback_data="tariff:full")],
         ]
     )

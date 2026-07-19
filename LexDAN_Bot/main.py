@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher
 from flask import Flask
 
 from config import BOT_TOKEN
-from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_sections, profile, menu, payments, secret_missions
+from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_sections, profile, menu, payments, secret_missions, admin
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,6 +23,7 @@ dp = Dispatcher()
 
 dp.include_routers(
     start.router,
+    admin.router,  # админ-команды до catch-all
     common.router,
     secret_missions.router,  # кнопка секрета до catch-all меню
     menu.router,
