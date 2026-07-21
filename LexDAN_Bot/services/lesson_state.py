@@ -272,6 +272,57 @@ def start_exercise(user_id: str, num: int, exercise: dict) -> dict:
         u["lesson"]["hub"] = "exercise"
         u["lesson"]["exercise_num"] = num
         u["lesson"]["exercise"] = exercise
+        u["lesson"].pop("speak", None)
+
+    return update_lesson(user_id, mut)
+
+
+def start_speak_practice(
+    user_id: str,
+    *,
+    phrase: str,
+    level: str,
+    topic_id: str,
+    topic_title: str,
+    next_num: int | None,
+    topic_just_done: bool,
+    progress_lines: list[str] | None = None,
+) -> dict:
+    """После верного ответа — озвучка + произношение в микрофон."""
+
+    def mut(u):
+        ensure_lesson(u)
+        u["lesson"]["hub"] = "exercise_speak"
+        u["lesson"]["speak"] = {
+            "phrase": phrase,
+            "attempts": 0,
+            "level": level,
+            "topic_id": topic_id,
+            "topic_title": topic_title,
+            "next_num": next_num,
+            "topic_just_done": topic_just_done,
+            "progress_lines": progress_lines or [],
+        }
+
+    return update_lesson(user_id, mut)
+
+
+def bump_speak_attempt(user_id: str) -> dict:
+    def mut(u):
+        ensure_lesson(u)
+        speak = dict(u["lesson"].get("speak") or {})
+        speak["attempts"] = int(speak.get("attempts") or 0) + 1
+        u["lesson"]["speak"] = speak
+
+    return update_lesson(user_id, mut)
+
+
+def clear_speak_practice(user_id: str) -> dict:
+    def mut(u):
+        ensure_lesson(u)
+        u["lesson"].pop("speak", None)
+        if u["lesson"].get("hub") == "exercise_speak":
+            u["lesson"]["hub"] = "exercises"
 
     return update_lesson(user_id, mut)
 

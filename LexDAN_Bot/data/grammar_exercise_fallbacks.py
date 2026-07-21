@@ -81,7 +81,18 @@ FALLBACKS: dict[str, list[dict]] = {
             "sentence_ru": "В сумке есть телефон.",
             "sentence_en": "",
             "answer": "There is a phone in the bag.",
-            "tip": "телефон = один → There is.",
+            "accept": [
+                "There is a phone in the bag",
+                "There's a phone in the bag.",
+                "There's a phone in the bag",
+                "There is a phone in a bag.",
+                "There's a phone in a bag.",
+                "There is a telephone in the bag.",
+            ],
+            "tip": (
+                "Переводи с конца: «в сумке» → in the bag "
+                "(конкретная сумка → the). Телефон один → There is."
+            ),
         },
         {
             "kind": "write",
@@ -90,7 +101,35 @@ FALLBACKS: dict[str, list[dict]] = {
             "sentence_en": "There are five students in the class.",
             "sentence_ru": "В классе пять студентов.",
             "answer": "В классе пять студентов.",
-            "tip": "There are = есть (много).",
+            "accept": [
+                "В классе пять учеников.",
+                "В классе пять учащихся.",
+                "Пять студентов в классе.",
+                "Пять учеников в классе.",
+                "В классе есть пять студентов.",
+                "В классе есть пять учеников.",
+            ],
+            "tip": "There are = есть (много). students ≈ студенты / ученики.",
+        },
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери верный вариант.",
+            "sentence_en": "____ two windows in the room.",
+            "sentence_ru": "В комнате два окна.",
+            "options": ["There are", "There is", "It is", "There"],
+            "answer": "There are",
+            "tip": "two windows → There are.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши is или are.",
+            "sentence_en": "There ____ a big table in the kitchen.",
+            "sentence_ru": "На кухне есть большой стол.",
+            "base_form": "be",
+            "answer": "is",
+            "tip": "a table = ед. → is.",
         },
     ],
     "pronouns_be": [
@@ -227,22 +266,24 @@ FALLBACKS: dict[str, list[dict]] = {
         {
             "kind": "write",
             "subtype": "word_form",
-            "instruction_ru": "Напиши can или can't.",
-            "sentence_en": "I ____ (can) speak Chinese. I don't know it.",
-            "sentence_ru": "Я не умею говорить по-китайски.",
-            "base_form": "can",
+            "instruction_ru": "Напиши can или can't — смотри на смысл второй фразы.",
+            "sentence_en": "I ____ speak Chinese. I don't know this language at all.",
+            "sentence_ru": "Я не умею говорить по-китайски — совсем не знаю язык.",
+            "base_form": "can/can't",
             "answer": "can't",
-            "tip": "не умею = can't.",
+            "accept": ["cannot", "can not"],
+            "tip": "Вторая фраза = не знаю язык → can't / cannot.",
         },
         {
             "kind": "write",
             "subtype": "word_form",
-            "instruction_ru": "Вставь глагол без to после can.",
-            "sentence_en": "She can ____ (dance) well.",
-            "sentence_ru": "Она хорошо умеет танцевать.",
-            "base_form": "dance",
-            "answer": "dance",
-            "tip": "после can — первая форма без to.",
+            "instruction_ru": "Напиши can или can't по смыслу.",
+            "sentence_en": "Babies ____ walk when they are newborn.",
+            "sentence_ru": "Новорождённые малыши ещё не умеют ходить.",
+            "base_form": "can/can't",
+            "answer": "can't",
+            "accept": ["cannot", "can not"],
+            "tip": "Новорождённые не ходят → can't.",
         },
         {
             "kind": "write",
@@ -251,6 +292,11 @@ FALLBACKS: dict[str, list[dict]] = {
             "sentence_ru": "Я могу открыть дверь.",
             "sentence_en": "",
             "answer": "I can open the door.",
+            "accept": [
+                "I can open the door",
+                "I can open it",
+                "I can open this door",
+            ],
             "tip": "can + open.",
         },
         {
@@ -260,7 +306,33 @@ FALLBACKS: dict[str, list[dict]] = {
             "sentence_en": "Can you cook?",
             "sentence_ru": "Ты умеешь готовить?",
             "answer": "Ты умеешь готовить?",
+            "accept": [
+                "Ты можешь готовить?",
+                "Умеешь ли ты готовить?",
+                "Можешь ли ты готовить?",
+            ],
             "tip": "Can you…? = умеешь/можешь…?",
+        },
+        # банк для итогового теста (9–10)
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери правильный вариант.",
+            "sentence_en": "He ____ play the guitar.",
+            "sentence_ru": "Он умеет играть на гитаре.",
+            "options": ["can", "cans", "can to", "is can"],
+            "answer": "can",
+            "tip": "can без -s и без to.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши can или can't.",
+            "sentence_en": "Fish ____ breathe under water.",
+            "sentence_ru": "Рыбы умеют дышать под водой.",
+            "base_form": "can/can't",
+            "answer": "can",
+            "tip": "умеют = can.",
         },
     ],
     "plurals": [
@@ -331,6 +403,12 @@ FALLBACKS: dict[str, list[dict]] = {
             "sentence_ru": "У меня три яблока.",
             "sentence_en": "",
             "answer": "I have three apples.",
+            "accept": [
+                "I have three apples",
+                "I've got three apples.",
+                "I've got three apples",
+                "I have 3 apples.",
+            ],
             "tip": "apple → apples.",
         },
         {
@@ -340,7 +418,32 @@ FALLBACKS: dict[str, list[dict]] = {
             "sentence_en": "These are my books.",
             "sentence_ru": "Это мои книги.",
             "answer": "Это мои книги.",
+            "accept": [
+                "Это мои книжки.",
+                "Вот мои книги.",
+                "Эти книги мои.",
+            ],
             "tip": "books = книги.",
+        },
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери мн. число (исключение).",
+            "sentence_en": "one woman → two ____",
+            "sentence_ru": "одна женщина → две женщины",
+            "options": ["women", "womans", "womanes", "woman"],
+            "answer": "women",
+            "tip": "woman → women.",
+        },
+        {
+            "kind": "write",
+            "subtype": "word_form",
+            "instruction_ru": "Напиши мн. число (исключение).",
+            "sentence_en": "I brushed my ____ (tooth).",
+            "sentence_ru": "Я почистил зубы.",
+            "base_form": "tooth",
+            "answer": "teeth",
+            "tip": "tooth → teeth.",
         },
     ],
     "this_that": [
@@ -622,6 +725,66 @@ FALLBACKS: dict[str, list[dict]] = {
 
 # Проверенные банки перекрывают старые/короткие (this_that, articles, present_simple, …)
 FALLBACKS.update(EXTRA_FALLBACKS)
+
+# Добиваем до ≥10 заданий на тему — пул для итогового теста
+_BANK_TOP_UPS: dict[str, list[dict]] = {
+    "present_simple": [
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери форму.",
+            "sentence_en": "My brother ____ football on Sundays.",
+            "sentence_ru": "Мой брат играет в футбол по воскресеньям.",
+            "options": ["plays", "play", "playing", "played"],
+            "answer": "plays",
+            "tip": "he/brother → +s.",
+        },
+        {
+            "kind": "write",
+            "subtype": "translate_en",
+            "instruction_ru": "Переведи (Present Simple):",
+            "sentence_ru": "Она живёт в Москве.",
+            "sentence_en": "",
+            "answer": "She lives in Moscow.",
+            "accept": [
+                "She lives in Moscow",
+                "She lives in Moskva.",
+            ],
+            "tip": "she → lives.",
+        },
+    ],
+    "articles_a_an": [
+        {
+            "kind": "mcq",
+            "subtype": "mcq",
+            "instruction_ru": "Выбери a или an.",
+            "sentence_en": "She is ____ engineer.",
+            "sentence_ru": "Она инженер.",
+            "options": ["an", "a", "the", "—"],
+            "answer": "an",
+            "tip": "engineer → гласный звук → an.",
+        },
+        {
+            "kind": "write",
+            "subtype": "translate_ru",
+            "instruction_ru": "Переведи:",
+            "sentence_en": "I need an umbrella.",
+            "sentence_ru": "Мне нужен зонт.",
+            "answer": "Мне нужен зонт.",
+            "accept": [
+                "Мне нужна зонтик.",
+                "Мне нужен зонтик.",
+                "Мне нужен umbrella.",
+            ],
+            "tip": "an umbrella.",
+        },
+    ],
+}
+
+for _tid, _items in _BANK_TOP_UPS.items():
+    bank = FALLBACKS.setdefault(_tid, [])
+    if len(bank) < 10:
+        bank.extend(_items)
 
 
 TOPIC_FOCUS: dict[str, str] = {

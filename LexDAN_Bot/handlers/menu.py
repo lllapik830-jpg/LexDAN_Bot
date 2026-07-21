@@ -25,7 +25,6 @@ from services.growth import (
     ensure_growth,
     note_lesson_activity,
     profile_growth_lines,
-    is_premium,
 )
 from config import BOT_USERNAME
 from services.tg_out import say
@@ -44,6 +43,8 @@ async def open_chat(m: Message):
     last_topic = (user.get("chat_last_user_text") or "").strip()
     user["chat_recent_turns"] = []
     user["chat_recent_replies"] = []
+    user["chat_topic_offered"] = False
+    user["chat_topic_dived"] = False
 
     from services.chat_topics import chat_intro_topics_blurb, ensure_active_topic
     from services.rewards import user_plan
@@ -149,7 +150,7 @@ async def open_profile(m: Message):
     user = get_user(users, user_id)
     from services.vocabulary_state import sync_vocab_counters
     from handlers.lesson_keyboards import paywall_inline_kb
-    from services.growth import PRICE_CHAT_MONTH, PRICE_FULL_MONTH
+    from services.rewards import plan_label, user_plan
 
     ensure_growth(user)
     bind_referral_code(user_id, user)
@@ -161,7 +162,8 @@ async def open_profile(m: Message):
     words = user.get("words_learned", 0)
     phrases = user.get("phrases_learned", 0)
     growth = profile_growth_lines(user, BOT_USERNAME)
-    sub = "триал/полный" if is_premium(user) else "бесплатно"
+    plan = user_plan(user)
+    sub = plan_label(plan)
 
     await say(
         m,
@@ -171,17 +173,16 @@ async def open_profile(m: Message):
         f"📈 Уровень: {user.get('level', 'A1')}\n"
         f"📝 Слов выучено: {words}\n"
         f"💬 Фраз выучено: {phrases}\n"
-        f"💎 Подписка: {sub}\n\n"
-        f"{growth}\n\n"
-        f"💳 Тарифы: общение <b>{PRICE_CHAT_MONTH}₽/мес</b> · "
-        f"всё <b>{PRICE_FULL_MONTH}₽/мес</b>\n\n"
-        "Если тебе понравилось — нажми «Выбрать тариф» и оплати доступ.",
+        f"💎 Подписка: <b>{sub}</b>\n\n"
+        f"{growth}",
         replace=True,
         delete_tap=True,
         reply_markup=profile_menu(user),
         parse_mode="HTML",
     )
-    await say(m, "👇", reply_markup=paywall_inline_kb())
+    # Тарифы — только бесплатным; платникам кнопка не нужна
+    if plan == "free":
+        await say(m, "👇 Выбери тариф:", reply_markup=paywall_inline_kb())
 
 
 @router.message(F.text == "🆘 Поддержка")

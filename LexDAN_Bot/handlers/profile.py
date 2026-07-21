@@ -32,17 +32,30 @@ async def subscription_info(m: Message):
     save_users(users)
     from handlers.lesson_keyboards import tariffs_inline_kb
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from services.rewards import user_plan
 
     await m.answer(subscription_blurb(user), reply_markup=profile_menu(user), parse_mode="HTML")
-    rows = tariffs_inline_kb(user).inline_keyboard
-    if user.get("sub_auto") and user.get("yookassa_payment_method_id"):
-        rows = list(rows) + [
-            [InlineKeyboardButton(text="⏹ Отменить автопродление", callback_data="tariff:cancel_auto")]
-        ]
-    await m.answer(
-        "Выбери тариф:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
-    )
+    plan = user_plan(user)
+    if plan == "free":
+        rows = tariffs_inline_kb(user).inline_keyboard
+        await m.answer(
+            "Выбери тариф:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        )
+    elif user.get("sub_auto") and user.get("yookassa_payment_method_id"):
+        await m.answer(
+            "Управление подпиской:",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="⏹ Отменить автопродление",
+                            callback_data="tariff:cancel_auto",
+                        )
+                    ]
+                ]
+            ),
+        )
 
 
 @router.message(ModeFilter(MODE_PROFILE), F.text == BTN_STREAK)

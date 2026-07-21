@@ -46,9 +46,9 @@ def user_plan(user: dict) -> str:
 
 def plan_label(plan: str) -> str:
     return {
-        "free": "бесплатный",
-        "chat": f"общение {PRICE_CHAT_MONTH}₽",
-        "full": f"безлимит {PRICE_FULL_MONTH}₽",
+        "free": "начальная",
+        "chat": "продвинутая",
+        "full": "премиальная",
     }.get(plan, plan)
 
 
@@ -157,6 +157,11 @@ def format_streak_rewards_message(user: dict) -> str:
         "Пропуск дня можно закрыть сейфом (кнопка «Восстановить серию»), "
         "если сейф есть."
     )
+    if plan in {"free", "chat"}:
+        lines.append(
+            "\n💎 С <b>премиальной</b> подпиской (799₽) призы ценнее: "
+            "эксклюзивный контент Рико и розыгрыши."
+        )
     return "\n".join(lines)
 
 

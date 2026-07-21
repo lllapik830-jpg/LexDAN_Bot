@@ -353,6 +353,7 @@ def _finalize_exercise(data: dict, subtype: str, kind: str, fallback: dict) -> d
     tip = (data.get("tip") or fallback.get("tip") or "").strip()
     answer = (data.get("answer") or fallback.get("answer") or "").strip()
     base_form = (data.get("base_form") or fallback.get("base_form") or "").strip()
+    accept = list(data.get("accept") or fallback.get("accept") or [])
     options = data.get("options")
     ex_subtype = (data.get("subtype") or fallback.get("subtype") or subtype).strip()
     if subtype == "word_form" and base_form and "____" in sentence_en and f"({base_form})" not in sentence_en:
@@ -391,6 +392,7 @@ def _finalize_exercise(data: dict, subtype: str, kind: str, fallback: dict) -> d
             "prompt": prompt,
             "options": options,
             "answer": answer,
+            "accept": accept,
             "tip": tip,
             "help_count": 0,
         }
@@ -410,6 +412,7 @@ def _finalize_exercise(data: dict, subtype: str, kind: str, fallback: dict) -> d
         "prompt": prompt,
         "options": None,
         "answer": answer,
+        "accept": accept,
         "tip": tip,
         "help_count": 0,
     }
@@ -493,11 +496,68 @@ def translate_exercise_prompt(prompt: str) -> str | None:
 
 
 def _normalize_text(s: str) -> str:
-    return " ".join((s or "").strip().lower().split())
+    import re
+
+    t = (s or "").strip().lower().replace("ё", "е")
+    t = t.replace("’", "'").replace("`", "'")
+    t = re.sub(r"[.!?,;:\"«»()\[\]{}]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
 
 
-def check_word_form_answer(model_answer: str, user_answer: str) -> bool:
-    return _normalize_text(model_answer) == _normalize_text(user_answer)
+def _answer_aliases(text: str) -> set[str]:
+    """Варианты написания одного ответа (can't/cannot, there's/there is)."""
+    n = _normalize_text(text)
+    out = {n}
+    if not n:
+        return out
+    out.add(n.replace("cannot", "can't").replace("can not", "can't"))
+    out.add(n.replace("can't", "cannot"))
+    out.add(n.replace("there's", "there is"))
+    out.add(n.replace("there is", "there's"))
+    out.add(n.replace("there're", "there are"))
+    out.add(n.replace("there are", "there're"))
+    out.add(n.replace("i am", "i'm"))
+    out.add(n.replace("i'm", "i am"))
+    return {x for x in out if x}
+
+
+def answers_equivalent(model_answer: str, user_answer: str, accept: list[str] | None = None) -> bool:
+    import itertools
+    import re
+
+    user_forms = _answer_aliases(user_answer)
+    candidates: set[str] = set()
+    for a in [model_answer, *(accept or [])]:
+        candidates |= _answer_aliases(a)
+    if user_forms & candidates:
+        return True
+
+    def _article_variants(s: str) -> set[str]:
+        """Все комбинации a/the на местах артиклей (для мягкой проверки A1)."""
+        tokens = s.split()
+        idxs = [i for i, t in enumerate(tokens) if t in {"a", "the"}]
+        if not idxs or len(idxs) > 4:
+            return {s}
+        out = set()
+        for combo in itertools.product(("a", "the"), repeat=len(idxs)):
+            t2 = list(tokens)
+            for i, art in zip(idxs, combo):
+                t2[i] = art
+            out.add(" ".join(t2))
+        return out
+
+    expanded_users: set[str] = set()
+    for u in user_forms:
+        expanded_users |= _article_variants(u)
+    expanded_cands: set[str] = set()
+    for c in candidates:
+        expanded_cands |= _article_variants(c)
+    return bool(expanded_users & expanded_cands)
+
+
+def check_word_form_answer(model_answer: str, user_answer: str, accept: list[str] | None = None) -> bool:
+    return answers_equivalent(model_answer, user_answer, accept)
 
 
 def check_write_answer(
@@ -507,15 +567,31 @@ def check_write_answer(
     model_answer: str,
     user_answer: str,
     subtype: str = "write",
+    accept: list[str] | None = None,
 ) -> dict:
-    if subtype == "word_form" and check_word_form_answer(model_answer, user_answer):
+    # Локальная проверка — без GPT (быстрее и справедливее к синонимам)
+    if answers_equivalent(model_answer, user_answer, accept):
         return {"correct": True, "feedback_ru": "Верно!"}
+
+    if subtype == "word_form":
+        return {
+            "correct": False,
+            "feedback_ru": f"Нужна форма: <b>{model_answer}</b>",
+        }
 
     task_hint = ""
     if subtype == "translate_en":
-        task_hint = "Student must translate Russian to English using topic grammar."
+        task_hint = (
+            "Student must translate Russian to English using topic grammar. "
+            "Accept minor wording differences if grammar and meaning match. "
+            "Accept a/the variants when both are natural."
+        )
     elif subtype == "translate_ru":
-        task_hint = "Student must translate English to Russian. Accept close natural Russian."
+        task_hint = (
+            "Student must translate English to Russian. "
+            "Accept natural synonyms (ученики/студенты, сумка/пакет, etc.). "
+            "Do NOT reject for punctuation or capitalization."
+        )
 
     data = _ask_json(
         [
@@ -523,9 +599,9 @@ def check_write_answer(
                 "role": "system",
                 "content": (
                     "Check student's answer for a grammar exercise. "
-                    "Be fair: meaning + target grammar matter more than punctuation. "
-                    "For word_form accept only if the word form matches (ignore case). "
-                    "For A0/A1 accept very simple answers if grammar target is ok. "
+                    "Be FAIR and LENIENT with synonyms and natural wording. "
+                    "Meaning + target grammar matter more than exact wording. "
+                    "If the student answer is essentially correct, correct=true. "
                     f"{task_hint} "
                     'Return ONLY JSON: {"correct":bool,"feedback_ru":"short friendly Russian"}'
                 ),
@@ -534,13 +610,19 @@ def check_write_answer(
                 "role": "user",
                 "content": (
                     f"Level {level}. Topic {topic_title}. Subtype {subtype}.\n"
-                    f"Task: {prompt}\nModel: {model_answer}\nStudent: {user_answer}"
+                    f"Task: {prompt}\n"
+                    f"Model: {model_answer}\n"
+                    f"Also accept: {', '.join(accept or [])}\n"
+                    f"Student: {user_answer}"
                 ),
             },
         ],
         {"correct": False, "feedback_ru": "Попробуй ещё раз, чуть точнее по теме."},
         temperature=0.0,
     )
+    # страховка: если модель снова придралась к почти точному ответу
+    if not data.get("correct") and answers_equivalent(model_answer, user_answer, accept):
+        return {"correct": True, "feedback_ru": "Верно!"}
     return data
 
 

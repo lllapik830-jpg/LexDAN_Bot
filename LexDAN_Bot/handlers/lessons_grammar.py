@@ -3,7 +3,7 @@
 """
 
 from aiogram import Router, F
-from aiogram.types import Message, ReplyKeyboardMarkup, CallbackQuery
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, CallbackQuery
 from aiogram.dispatcher.event.bases import SkipHandler
 
 from handlers.filters import ModeFilter
@@ -59,6 +59,9 @@ from services.lesson_state import (
     update_grammar_test,
     clear_grammar_test,
     set_grammar_rico_chat,
+    start_speak_practice,
+    bump_speak_attempt,
+    clear_speak_practice,
     EXERCISE_TYPES,
 )
 from services.rico_tutor import (
@@ -67,6 +70,7 @@ from services.rico_tutor import (
     generate_grammar_test,
     format_grammar_test_review,
     check_write_answer,
+    answers_equivalent,
     rico_help_for_exercise,
     rico_explain_wrong_final,
     get_exercise_sentence_translation,
@@ -190,7 +194,206 @@ async def voice_in_lessons_grammar(m: Message):
     if hub == "grammar_rico_chat":
         await _rico_chat_from_voice(m, user)
         return
+    if hub == "exercise_speak":
+        await _handle_speak_practice_voice(m, user)
+        return
     await m.answer(VOICE_ONLY_TEXT, reply_markup=_kb_for_user(user), parse_mode="HTML")
+
+
+def _speak_phrase_for_exercise(ex: dict | None) -> str:
+    if not ex:
+        return ""
+    subtype = (ex.get("subtype") or "").strip()
+    answer = (ex.get("answer") or "").strip()
+    if subtype == "translate_ru":
+        return (ex.get("sentence_en") or answer).strip()
+    if subtype == "mcq" and " " in answer and len(answer) > 12:
+        return answer
+    return answer
+
+
+async def _finish_exercise_ok(
+    m: Message,
+    user_id: str,
+    level: str,
+    topic_id: str,
+    num: int,
+    text: str,
+    *,
+    ex: dict | None = None,
+    skip_speak: bool = False,
+):
+    mark_exercise_done(user_id, level, topic_id, num)
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_growth(user)
+    note_grammar_exercise_done(user)
+
+    from services.rewards import maybe_qualify_referral
+
+    to_inviter, to_friend = maybe_qualify_referral(user, users)
+    save_users(users, only=user_id)
+    if to_friend:
+        await m.answer(to_friend, parse_mode="HTML")
+    if to_inviter:
+        ref = user.get("referred_by")
+        if ref and str(ref) != user_id:
+            save_users(users, only=[user_id, str(ref)])
+            try:
+                await m.bot.send_message(int(ref), to_inviter, parse_mode="HTML")
+            except Exception:
+                pass
+
+    topic_title = (user.get("lesson") or {}).get("topic_title") or "тема"
+    extra = ""
+    topic_just_done = False
+    if is_topic_exercises_done(user, level, topic_id):
+        mark_topic_done(user_id, level, topic_id)
+        users = load_users()
+        user = get_user(users, user_id)
+        ensure_growth(user)
+        note_lesson_completed(user)
+        save_users(users, only=user_id)
+        topic_just_done = True
+        extra = f"\n\n🎉 <b>Тема «{topic_title}» полностью пройдена!</b> ✅"
+        users = load_users()
+        user = get_user(users, user_id)
+        if all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
+            extra += "\n\n🔓 Все темы пройдены — открой <b>🎯 Тест по Grammar</b> в списке тем!"
+
+    done = get_done_exercises(user, level, topic_id)
+    next_num = None
+    for n, _title in EXERCISE_TYPES:
+        if n not in done:
+            next_num = n
+            break
+
+    progress_lines = []
+    if topic_just_done or next_num is None:
+        for n, title in EXERCISE_TYPES:
+            mark = "✅" if n in done else "▫️"
+            progress_lines.append(f"{mark} Задание {n} — {title}")
+
+    speak_phrase = "" if skip_speak else _speak_phrase_for_exercise(ex)
+    if speak_phrase:
+        await m.answer(text + extra, parse_mode="HTML")
+        start_speak_practice(
+            user_id,
+            phrase=speak_phrase,
+            level=level,
+            topic_id=topic_id,
+            topic_title=topic_title,
+            next_num=None if topic_just_done else next_num,
+            topic_just_done=topic_just_done or next_num is None,
+            progress_lines=progress_lines,
+        )
+        from services.elevenlabs import send_voice_reply
+        from services.voices import RICO_VOICE_ID
+
+        await send_voice_reply(
+            m, speak_phrase, title="Rico answer", voice_id=RICO_VOICE_ID
+        )
+        await m.answer(
+            f"🗣 Теперь произнеси в микрофон:\n<b>{speak_phrase}</b>",
+            parse_mode="HTML",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="⏭ Пропустить произношение")]],
+                resize_keyboard=True,
+            ),
+        )
+        return
+
+    if topic_just_done or next_num is None:
+        clear_active_exercise(user_id)
+        lines = [text + extra, "", "📝 Прогресс:"] + progress_lines
+        await m.answer("\n".join(lines), reply_markup=exercises_menu_kb(done), parse_mode="HTML")
+        return
+
+    await m.answer(text + extra, parse_mode="HTML")
+    await _launch_exercise(m, user_id, level, topic_id, topic_title, next_num)
+
+
+async def _continue_after_speak(m: Message, user_id: str, speak: dict):
+    clear_speak_practice(user_id)
+    level = speak.get("level") or "A1"
+    topic_id = speak.get("topic_id") or ""
+    topic_title = speak.get("topic_title") or "тема"
+    next_num = speak.get("next_num")
+    topic_just_done = bool(speak.get("topic_just_done"))
+    progress_lines = list(speak.get("progress_lines") or [])
+    users = load_users()
+    user = get_user(users, user_id)
+    done = get_done_exercises(user, level, topic_id)
+
+    if topic_just_done or next_num is None:
+        clear_active_exercise(user_id)
+        lines = ["✅ Отлично, идём дальше!", "", "📝 Прогресс:"] + (
+            progress_lines
+            or [
+                f"{'✅' if n in done else '▫️'} Задание {n} — {title}"
+                for n, title in EXERCISE_TYPES
+            ]
+        )
+        await m.answer("\n".join(lines), reply_markup=exercises_menu_kb(done), parse_mode="HTML")
+        return
+
+    await _launch_exercise(m, user_id, level, topic_id, topic_title, int(next_num))
+
+
+async def _handle_speak_practice_voice(m: Message, user: dict):
+    from services.stt import recognize_english
+
+    speak = dict((user.get("lesson") or {}).get("speak") or {})
+    phrase = (speak.get("phrase") or "").strip()
+    uid = str(m.from_user.id)
+    if not phrase:
+        await _continue_after_speak(m, uid, speak)
+        return
+
+    try:
+        file = await m.bot.get_file(m.voice.file_id)
+        voice_buffer = await m.bot.download_file(file.file_path)
+        heard = (recognize_english(voice_buffer.read()) or "").strip()
+    except Exception:
+        heard = ""
+
+    if heard and answers_equivalent(phrase, heard):
+        await m.answer(f"✅ Услышал: <i>{heard}</i> — супер!", parse_mode="HTML")
+        await _continue_after_speak(m, uid, speak)
+        return
+
+    bump_speak_attempt(uid)
+    users = load_users()
+    user = get_user(users, uid)
+    attempts = int(((user.get("lesson") or {}).get("speak") or {}).get("attempts") or 0)
+    shown = heard or "…"
+    if attempts >= 2:
+        await m.answer(
+            f"Услышал: <i>{shown}</i>\n"
+            f"Эталон: <b>{phrase}</b>\n"
+            "Идём дальше — ещё потренируемся в следующих заданиях 🦜",
+            parse_mode="HTML",
+        )
+        await _continue_after_speak(m, uid, speak)
+        return
+
+    await m.answer(
+        f"Услышал: <i>{shown}</i>\n"
+        f"Попробуй ещё раз произнести:\n<b>{phrase}</b>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(
+    ModeFilter(MODE_LESSONS),
+    LessonHubFilter("exercise_speak"),
+    F.text == "⏭ Пропустить произношение",
+)
+async def skip_speak_practice(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    speak = dict((user.get("lesson") or {}).get("speak") or {})
+    await _continue_after_speak(m, str(m.from_user.id), speak)
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == BTN_GRAMMAR)
@@ -629,68 +832,6 @@ async def abandon_exercise(m: Message):
     )
 
 
-async def _finish_exercise_ok(m: Message, user_id: str, level: str, topic_id: str, num: int, text: str):
-    mark_exercise_done(user_id, level, topic_id, num)
-    users = load_users()
-    user = get_user(users, user_id)
-    ensure_growth(user)
-    note_grammar_exercise_done(user)
-
-    # Рефералка: друг закрыл 24 задания → награда пригласившему
-    from services.rewards import maybe_qualify_referral
-
-    to_inviter, to_friend = maybe_qualify_referral(user, users)
-    save_users(users, only=user_id)
-    if to_friend:
-        await m.answer(to_friend, parse_mode="HTML")
-    if to_inviter:
-        ref = user.get("referred_by")
-        if ref and str(ref) != user_id:
-            # обновить и пригласившего (награды уже в users)
-            save_users(users, only=[user_id, str(ref)])
-            try:
-                await m.bot.send_message(int(ref), to_inviter, parse_mode="HTML")
-            except Exception:
-                pass
-
-    topic_title = (user.get("lesson") or {}).get("topic_title") or "тема"
-    extra = ""
-    topic_just_done = False
-    if is_topic_exercises_done(user, level, topic_id):
-        mark_topic_done(user_id, level, topic_id)
-        users = load_users()
-        user = get_user(users, user_id)
-        ensure_growth(user)
-        note_lesson_completed(user)
-        save_users(users, only=user_id)
-        topic_just_done = True
-        extra = f"\n\n🎉 <b>Тема «{topic_title}» полностью пройдена!</b> ✅"
-        users = load_users()
-        user = get_user(users, user_id)
-        if all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
-            extra += "\n\n🔓 Все темы пройдены — открой <b>🎯 Тест по Grammar</b> в списке тем!"
-
-    done = get_done_exercises(user, level, topic_id)
-    next_num = None
-    for n, _title in EXERCISE_TYPES:
-        if n not in done:
-            next_num = n
-            break
-
-    if topic_just_done or next_num is None:
-        clear_active_exercise(user_id)
-        lines = [text + extra, "", "📝 Прогресс:"]
-        for n, title in EXERCISE_TYPES:
-            mark = "✅" if n in done else "▫️"
-            lines.append(f"{mark} Задание {n} — {title}")
-        await m.answer("\n".join(lines), reply_markup=exercises_menu_kb(done), parse_mode="HTML")
-        return
-
-    # Автопереход к следующему заданию без возврата в список
-    await m.answer(text + extra, parse_mode="HTML")
-    await _launch_exercise(m, user_id, level, topic_id, topic_title, next_num)
-
-
 async def _launch_exercise(
     m: Message,
     user_id: str,
@@ -905,7 +1046,7 @@ async def exercise_answer(m: Message):
 
         if correct:
             await _finish_exercise_ok(
-                m, uid, level, topic_id, num, "✅ Верно! Красава 🦜"
+                m, uid, level, topic_id, num, "✅ Верно! Красава 🦜", ex=ex
             )
             return
 
@@ -923,6 +1064,8 @@ async def exercise_answer(m: Message):
                 topic_id,
                 num,
                 explain + "\n\n✅ Задание засчитано (после финальной ошибки).",
+                ex=ex,
+                skip_speak=True,
             )
             return
 
@@ -950,11 +1093,13 @@ async def exercise_answer(m: Message):
         ex.get("answer") or "",
         m.text,
         subtype=subtype,
+        accept=list(ex.get("accept") or []),
     )
     if _as_bool(result.get("correct")):
         fb = result.get("feedback_ru") or "Отлично!"
-        # Не хвалим «Nice choice!» за ошибочный ввод — только за реально верный
-        await _finish_exercise_ok(m, uid, level, topic_id, num, f"✅ {fb}")
+        await _finish_exercise_ok(
+            m, uid, level, topic_id, num, f"✅ {fb}", ex=ex
+        )
     else:
         better = (result.get("better_en") or result.get("answer") or "").strip()
         fb = result.get("feedback_ru") or ""
@@ -1072,6 +1217,7 @@ async def grammar_test_answer(m: Message):
         q.get("answer") or "",
         m.text,
         subtype=subtype,
+        accept=list(q.get("accept") or []),
     )
     correct = _as_bool(result.get("correct"))
     await m.answer("✅ Верно!" if correct else "❌ Неверно.")
