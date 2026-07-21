@@ -1,4 +1,4 @@
-"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
+﻿"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
 
 from aiogram import Router, F
 from aiogram.types import Message
@@ -31,9 +31,18 @@ async def subscription_info(m: Message):
     ensure_growth(user)
     save_users(users)
     from handlers.lesson_keyboards import tariffs_inline_kb
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
     await m.answer(subscription_blurb(user), reply_markup=profile_menu(user), parse_mode="HTML")
-    await m.answer("Выбери тариф:", reply_markup=tariffs_inline_kb(user))
+    rows = tariffs_inline_kb(user).inline_keyboard
+    if user.get("sub_auto") and user.get("yookassa_payment_method_id"):
+        rows = list(rows) + [
+            [InlineKeyboardButton(text="⏹ Отменить автопродление", callback_data="tariff:cancel_auto")]
+        ]
+    await m.answer(
+        "Выбери тариф:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
 
 
 @router.message(ModeFilter(MODE_PROFILE), F.text == BTN_STREAK)

@@ -601,9 +601,14 @@ def subscription_blurb(user: dict) -> str:
         status = "✅ Безлимит «Общение» активен"
     else:
         status = "🆓 Бесплатный тариф"
+
+    auto_line = ""
+    if user.get("sub_auto") and user.get("yookassa_payment_method_id"):
+        auto_line = "\n🔁 Автопродление: <b>вкл</b>"
+
     return (
         "💎 <b>Тарифы LexDAN</b>\n\n"
-        f"Сейчас: {status}\n"
+        f"Сейчас: {status}{auto_line}\n"
         f"{discount_blurb(user)}"
         f"{lottery_status_lines(user)}\n"
         "<b>Бесплатно</b>\n"

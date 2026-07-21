@@ -57,7 +57,7 @@ def discount_blurb(user: dict) -> str:
         f"\n🏷 <b>Твоя скидка {pct}%</b> ({note})\n"
         f"• Общение: <s>{PRICE_CHAT_MONTH}₽</s> → <b>{chat}₽</b>\n"
         f"• Всё: <s>{PRICE_FULL_MONTH}₽</s> → <b>{full}₽</b>\n"
-        "Скажи про скидку поддержке при оплате — активируем по этой цене.\n"
+        "Скидка учтётся при оплате через бота.\n"
     )
 
 
