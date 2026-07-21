@@ -30,6 +30,13 @@ PLAN_CHAT = "chat"
 PLAN_FULL = "full"
 
 
+class YooKassaError(RuntimeError):
+    def __init__(self, message: str, *, status: int = 0, code: str = ""):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+
+
 def yookassa_configured() -> bool:
     return bool(YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY)
 
@@ -57,6 +64,18 @@ def _rub(amount: int) -> str:
     return f"{int(amount):.2f}"
 
 
+def _parse_error(resp: requests.Response) -> YooKassaError:
+    code = ""
+    desc = resp.text[:300]
+    try:
+        data = resp.json()
+        code = str(data.get("code") or "")
+        desc = str(data.get("description") or data.get("parameter") or desc)
+    except Exception:
+        pass
+    return YooKassaError(desc, status=resp.status_code, code=code)
+
+
 def create_payment(
     *,
     user_id: str,
@@ -67,40 +86,57 @@ def create_payment(
 ) -> dict[str, Any]:
     """
     Создать платёж с редиректом на страницу ЮKassa.
-    Возвращает объект платежа (нужны id и confirmation.confirmation_url).
+    Если сохранение карты недоступно магазину — повторяем без save_payment_method.
     """
     if not yookassa_configured():
-        raise RuntimeError("ЮKassa не настроена: нет YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY")
+        raise YooKassaError("ЮKassa не настроена: нет YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY")
 
-    payload = {
-        "amount": {"value": _rub(amount_rub), "currency": "RUB"},
-        "capture": True,
-        "confirmation": {
-            "type": "redirect",
-            "return_url": _return_url(),
-        },
-        "description": description[:128],
-        "metadata": {
-            "user_id": str(user_id),
-            "plan": plan,
-            "kind": "initial",
-        },
-        "save_payment_method": bool(save_method),
-    }
-    r = requests.post(
-        f"{API}/payments",
-        auth=_auth(),
-        headers={
-            "Idempotence-Key": str(uuid.uuid4()),
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=30,
-    )
-    if r.status_code >= 400:
-        log.error("YooKassa create_payment %s: %s", r.status_code, r.text[:500])
-        r.raise_for_status()
-    return r.json()
+    def _post(with_save: bool) -> dict[str, Any]:
+        payload = {
+            "amount": {"value": _rub(amount_rub), "currency": "RUB"},
+            "capture": True,
+            "confirmation": {
+                "type": "redirect",
+                "return_url": _return_url(),
+            },
+            "description": description[:128],
+            "metadata": {
+                "user_id": str(user_id),
+                "plan": plan,
+                "kind": "initial",
+            },
+        }
+        if with_save:
+            payload["save_payment_method"] = True
+        r = requests.post(
+            f"{API}/payments",
+            auth=_auth(),
+            headers={
+                "Idempotence-Key": str(uuid.uuid4()),
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=30,
+        )
+        if r.status_code >= 400:
+            err = _parse_error(r)
+            log.error("YooKassa create_payment %s: %s", r.status_code, r.text[:500])
+            raise err
+        return r.json()
+
+    try:
+        return _post(bool(save_method))
+    except YooKassaError as e:
+        low = str(e).lower()
+        # автоплатежи ещё не открыли магазину — даём обычную разовую оплату
+        if save_method and (
+            "save payment method" in low
+            or "forbidden" in low
+            or e.code in {"forbidden", "invalid_request"}
+        ):
+            log.warning("Retry payment without save_payment_method: %s", e)
+            return _post(False)
+        raise
 
 
 def create_recurring_payment(

@@ -1,5 +1,7 @@
 """Оплата тарифов через ЮKassa + автопродление."""
 
+import logging
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -20,6 +22,7 @@ from services.yookassa_pay import (
 from config import SUPPORT_USERNAME
 
 router = Router()
+log = logging.getLogger(__name__)
 
 
 def _pay_kb(url: str) -> InlineKeyboardMarkup:
@@ -64,11 +67,19 @@ async def _start_checkout(c: CallbackQuery, plan: str) -> None:
             description=f"LexDAN: {title} на 30 дней",
             save_method=True,
         )
-    except Exception:
+    except Exception as e:
+        log.exception("Checkout failed")
+        detail = str(e).strip() or "unknown"
+        if len(detail) > 180:
+            detail = detail[:177] + "…"
         await c.answer("Не удалось создать платёж", show_alert=True)
         contact = f"@{SUPPORT_USERNAME}" if SUPPORT_USERNAME else "поддержку"
         await c.message.answer(
-            f"Ошибка оплаты. Напиши {contact} или попробуй позже."
+            "❌ <b>Ошибка оплаты</b>\n"
+            f"<code>{detail}</code>\n\n"
+            "Проверь shopId/секретный ключ в Render Environment "
+            f"или напиши {contact}.",
+            parse_mode="HTML",
         )
         return
 
