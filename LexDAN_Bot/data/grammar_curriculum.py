@@ -621,6 +621,13 @@ GRAMMAR_BY_LEVEL: dict[str, list[dict]] = {
 }
 
 
+# Доп. темы до 12 на уровень
+from data.grammar_level_expansion import curriculum_stubs, title_map as _expansion_titles
+
+for _lvl, _extra in curriculum_stubs().items():
+    GRAMMAR_BY_LEVEL.setdefault(_lvl, []).extend(_extra)
+
+
 # Английское название → русское (для единого вида «EN / RU»)
 _TITLE_RU: dict[str, str] = {
     "alphabet": "Alphabet / Алфавит",
@@ -667,6 +674,7 @@ _TITLE_RU: dict[str, str] = {
     "register_control": "Register control / Стиль речи (register)",
     "pragmatic_softening": "Pragmatic softening / Вежливое смягчение",
 }
+_TITLE_RU.update(_expansion_titles())
 
 # Темы без заданий: только «Ознакомился»
 ACK_TOPIC_IDS = {

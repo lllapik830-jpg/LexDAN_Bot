@@ -383,6 +383,11 @@ NARRATIVE_INTROS: dict[str, str] = {
 }
 
 
+from data.grammar_level_expansion import NARRATIVES as _EXP_NARRATIVES
+
+NARRATIVE_INTROS.update(_EXP_NARRATIVES)
+
+
 def get_narrative_intro(topic_id: str) -> str | None:
     from data.grammar_formula_deep import append_formula_deep_dive
 

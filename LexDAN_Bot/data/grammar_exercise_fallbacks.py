@@ -786,6 +786,10 @@ for _tid, _items in _BANK_TOP_UPS.items():
     if len(bank) < 10:
         bank.extend(_items)
 
+from data.grammar_level_expansion import BANKS as _EXP_BANKS
+
+FALLBACKS.update(_EXP_BANKS)
+
 
 TOPIC_FOCUS: dict[str, str] = {
     "there_is_are": (

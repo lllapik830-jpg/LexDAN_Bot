@@ -353,6 +353,11 @@ GRAMMAR_SECTION_INTRO: dict[str, str] = {
 }
 
 
+from data.grammar_level_expansion import ENRICHMENTS as _EXP_ENRICHMENTS
+
+TOPIC_ENRICHMENTS.update(_EXP_ENRICHMENTS)
+
+
 def get_enrichment(topic_id: str, mode: str) -> str:
     parts = [TOPIC_ENRICHMENTS.get(topic_id, "")]
     if mode == "ack":
