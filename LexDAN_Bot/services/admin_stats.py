@@ -61,23 +61,49 @@ def chunk_html(text: str, limit: int = 3500) -> list[str]:
     return parts or [text]
 
 
+def _chat_totals(u: dict) -> tuple[int, int, int]:
+    """(text_total, voice_total, all_messages) за всё время."""
+    tot_t = int(u.get("chat_text_total") or 0)
+    tot_v = int(u.get("chat_voice_total") or 0)
+    daily = u.get("daily") or {}
+    # На случай старых данных без totals — хотя бы сегодняшний день
+    today = int(daily.get("chat_messages_today") or daily.get("chat_count") or 0)
+    all_msg = tot_t + tot_v
+    if all_msg == 0 and today:
+        all_msg = today
+    return tot_t, tot_v, all_msg
+
+
 def report_funnel() -> str:
     rows = _iter_users()
     n = len(rows)
     assessed = sum(1 for _, u in rows if u.get("assessment_done"))
+    chat_ever = 0
+    chat_msgs_all = 0
+    chat_text_all = 0
+    chat_voice_all = 0
     chat_today = 0
     chat_hit = 0
+    chat_hit_ever = 0
     grammar_hit = 0
     vocab_hit = 0
     for _, u in rows:
         daily = u.get("daily") or {}
+        tt, vt, all_msg = _chat_totals(u)
         ct = int(daily.get("chat_text_today") or 0)
         cv = int(daily.get("chat_voice_today") or 0)
         cm = int(daily.get("chat_messages_today") or daily.get("chat_count") or 0)
+        if all_msg > 0:
+            chat_ever += 1
+            chat_msgs_all += all_msg
+            chat_text_all += tt
+            chat_voice_all += vt
         if ct + cv + cm > 0:
             chat_today += 1
         if _hit_chat_limit(u):
             chat_hit += 1
+        if u.get("hit_chat_limit_ever") or _hit_chat_limit(u):
+            chat_hit_ever += 1
         if _hit_grammar_limit(u):
             grammar_hit += 1
         if _hit_vocab_limit(u):
@@ -86,11 +112,17 @@ def report_funnel() -> str:
     return (
         "📊 <b>Воронка / сводка</b>\n\n"
         f"▶️ Нажали Start (в базе): <b>{n}</b>\n"
-        f"📝 Прошли входной тест: <b>{assessed}</b>\n"
-        f"💬 Писали в «Общаться» сегодня: <b>{chat_today}</b>\n"
-        f"⛔ Упёрлись в лимит чата сегодня: <b>{chat_hit}</b>\n"
-        f"⛔ Лимит Grammar сегодня: <b>{grammar_hit}</b>\n"
-        f"⛔ Лимит Vocabulary сегодня: <b>{vocab_hit}</b>\n\n"
+        f"📝 Прошли входной тест: <b>{assessed}</b>\n\n"
+        f"💬 <b>Общаться — за всё время</b>\n"
+        f"  писали: <b>{chat_ever}</b>\n"
+        f"  сообщений: <b>{chat_msgs_all}</b> "
+        f"(текст {chat_text_all} / голос {chat_voice_all})\n"
+        f"  упирались в лимит (хотя бы раз): <b>{chat_hit_ever}</b>\n\n"
+        f"📅 <b>Сегодня</b>\n"
+        f"  писали: <b>{chat_today}</b>\n"
+        f"  ⛔ лимит чата: <b>{chat_hit}</b>\n"
+        f"  ⛔ Grammar: <b>{grammar_hit}</b>\n"
+        f"  ⛔ Vocabulary: <b>{vocab_hit}</b>\n\n"
         "Команды: /starts /chat_stats /assessed /limits /progress"
     )
 
@@ -140,57 +172,68 @@ def _hit_vocab_limit(u: dict) -> bool:
 def report_chat_stats() -> str:
     rows = _iter_users()
     lines = [
-        "💬 <b>Общаться — текст / голос</b>\n",
+        "💬 <b>Общаться — за всё время</b>\n",
         f"Лимит free: <b>{FREE_CHAT_PER_DAY}</b> сообщ./день (текст+голос).\n",
     ]
     active: list[tuple[str, dict]] = []
+    sum_t = sum_v = sum_all = 0
     for uid, u in rows:
+        tot_t, tot_v, all_msg = _chat_totals(u)
         daily = u.get("daily") or {}
-        tt = int(daily.get("chat_text_today") or 0)
-        vt = int(daily.get("chat_voice_today") or 0)
         mixed = int(daily.get("chat_messages_today") or daily.get("chat_count") or 0)
-        tot_t = int(u.get("chat_text_total") or 0)
-        tot_v = int(u.get("chat_voice_total") or 0)
-        if tt or vt or mixed or tot_t or tot_v or _hit_chat_limit(u):
+        if all_msg or mixed or _hit_chat_limit(u) or u.get("hit_chat_limit_ever"):
             active.append((uid, u))
+            sum_t += tot_t
+            sum_v += tot_v
+            sum_all += all_msg
 
     if not active:
         lines.append("Пока никто не писал в чат (или счётчики ещё пустые).")
         return "\n".join(lines)
 
-    hit = [(uid, u) for uid, u in active if _hit_chat_limit(u)]
-    if hit:
-        lines.append(f"⛔ <b>Упёрлись в лимит сегодня ({len(hit)}):</b>")
-        for uid, u in hit:
+    lines.append(
+        f"Всего писали: <b>{len(active)}</b> · "
+        f"сообщений <b>{sum_all}</b> (текст {sum_t} / голос {sum_v})\n"
+    )
+
+    hit_ever = [
+        (uid, u)
+        for uid, u in active
+        if u.get("hit_chat_limit_ever") or _hit_chat_limit(u)
+    ]
+    if hit_ever:
+        lines.append(f"⛔ <b>Упирались в лимит ({len(hit_ever)}):</b>")
+        for uid, u in hit_ever:
             daily = u.get("daily") or {}
             used = int(daily.get("chat_messages_today") or daily.get("chat_count") or 0)
-            lines.append(_line(uid, u, f"сегодня {used}/{FREE_CHAT_PER_DAY}"))
+            flag = "сегодня" if _hit_chat_limit(u) else "раньше"
+            lines.append(_line(uid, u, f"{flag} · сегодня {used}/{FREE_CHAT_PER_DAY}"))
         lines.append("")
 
-    def _sort_key(item: tuple[str, dict]) -> int:
-        uid, u = item
+    def _sort_key(item: tuple[str, dict]) -> tuple[int, int]:
+        _, u = item
+        tot_t, tot_v, all_msg = _chat_totals(u)
         daily = u.get("daily") or {}
-        return -(
+        today = (
             int(daily.get("chat_text_today") or 0)
             + int(daily.get("chat_voice_today") or 0)
             + int(daily.get("chat_messages_today") or 0)
-            + int(u.get("chat_text_total") or 0)
-            + int(u.get("chat_voice_total") or 0)
         )
+        return (-all_msg, -today)
 
-    lines.append("<b>Активность:</b>")
+    lines.append("<b>По пользователям (всё время → сегодня):</b>")
     for uid, u in sorted(active, key=_sort_key)[:60]:
         daily = u.get("daily") or {}
         tt = int(daily.get("chat_text_today") or 0)
         vt = int(daily.get("chat_voice_today") or 0)
         mixed = int(daily.get("chat_messages_today") or 0)
-        tot_t = int(u.get("chat_text_total") or 0)
-        tot_v = int(u.get("chat_voice_total") or 0)
+        tot_t, tot_v, all_msg = _chat_totals(u)
+        ever = f"всего {all_msg} (т{tot_t}/г{tot_v})"
         if tt or vt:
-            today = f"сегодня текст {tt} / голос {vt}"
+            today = f"сегодня т{tt}/г{vt}"
         else:
-            today = f"сегодня всего {mixed}"
-        lines.append(_line(uid, u, f"{today} · всего т{tot_t}/г{tot_v}"))
+            today = f"сегодня {mixed}"
+        lines.append(_line(uid, u, f"{ever} · {today}"))
     return "\n".join(lines)
 
 
@@ -290,7 +333,9 @@ def user_card_extra(u: dict) -> str:
         f"заданий Grammar: {count_completed_tasks(u)}\n"
         f"слов/фраз: {int(u.get('words_learned') or 0)}/{int(u.get('phrases_learned') or 0)}\n"
         f"чат сегодня: текст {tt} / голос {vt} / всего {cm}\n"
-        f"чат всего: т{int(u.get('chat_text_total') or 0)} / г{int(u.get('chat_voice_total') or 0)}\n"
+        f"чат всего: {_chat_totals(u)[2]} "
+        f"(т{int(u.get('chat_text_total') or 0)} / г{int(u.get('chat_voice_total') or 0)})\n"
+        f"hit_chat_limit_ever: {bool(u.get('hit_chat_limit_ever') or _hit_chat_limit(u))}\n"
         f"grammar сегодня: {int(daily.get('grammar_exercises_today') or 0)}/{grammar_daily_cap(u)}\n"
         f"vocab сегодня: {vocab_items_used_today(u)}/{vocab_daily_cap(u)}\n"
         f"лимиты: chat={_hit_chat_limit(u)} grammar={_hit_grammar_limit(u)} vocab={_hit_vocab_limit(u)}"

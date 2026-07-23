@@ -381,6 +381,7 @@ def note_chat_message(user: dict, *, kind: str = "text") -> tuple[bool, str | No
 
     if used >= FREE_CHAT_PER_DAY:
         daily["hit_chat_limit"] = True
+        user["hit_chat_limit_ever"] = True
         return False, (
             "🦜 <b>Мы здорово поболтали!</b>\n\n"
             "На сегодня хватит — мозгу и языку полезно отдохнуть.\n"
@@ -393,6 +394,7 @@ def note_chat_message(user: dict, *, kind: str = "text") -> tuple[bool, str | No
     _bump_kind()
     if daily["chat_messages_today"] >= FREE_CHAT_PER_DAY:
         daily["hit_chat_limit"] = True
+        user["hit_chat_limit_ever"] = True
     _maybe_complete_goal(user)
     return True, None
 
