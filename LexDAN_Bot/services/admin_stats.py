@@ -9,6 +9,7 @@ from services.growth import (
     FREE_CHAT_PER_DAY,
     FREE_GRAMMAR_EXERCISES_PER_DAY,
     FREE_VOCAB_ITEMS_PER_DAY,
+    backfill_chat_totals,
     ensure_growth,
     has_chat_pass,
     vocab_items_used_today,
@@ -18,14 +19,20 @@ from services.rewards import grammar_daily_cap, has_lessons_pass, user_plan, voc
 from services.vocabulary_state import sync_vocab_counters
 
 
-def _iter_users() -> list[tuple[str, dict]]:
+def _iter_users(*, persist_backfill: bool = False) -> list[tuple[str, dict]]:
     users = load_users()
     out: list[tuple[str, dict]] = []
     for uid, raw in users.items():
         if not isinstance(raw, dict):
             continue
         u = get_user(users, str(uid))
+        before = int(u.get("chat_text_total") or 0) + int(u.get("chat_voice_total") or 0)
         ensure_growth(u)
+        after = int(u.get("chat_text_total") or 0) + int(u.get("chat_voice_total") or 0)
+        if persist_backfill and after > before:
+            from services.database import save_users
+
+            save_users(users, only=str(uid))
         out.append((str(uid), u))
     out.sort(key=lambda x: float(x[1].get("first_seen_at") or 0) or 0)
     return out
@@ -63,19 +70,26 @@ def chunk_html(text: str, limit: int = 3500) -> list[str]:
 
 def _chat_totals(u: dict) -> tuple[int, int, int]:
     """(text_total, voice_total, all_messages) за всё время."""
+    backfill_chat_totals(u)
     tot_t = int(u.get("chat_text_total") or 0)
     tot_v = int(u.get("chat_voice_total") or 0)
     daily = u.get("daily") or {}
-    # На случай старых данных без totals — хотя бы сегодняшний день
     today = int(daily.get("chat_messages_today") or daily.get("chat_count") or 0)
+    today_t = int(daily.get("chat_text_today") or 0)
+    today_v = int(daily.get("chat_voice_today") or 0)
     all_msg = tot_t + tot_v
-    if all_msg == 0 and today:
-        all_msg = today
+    # Если totals ещё пустые, но сегодня уже писали — считаем сегодня
+    if all_msg == 0 and (today_t or today_v or today):
+        tot_t = today_t or (today if not today_v else 0)
+        tot_v = today_v
+        all_msg = tot_t + tot_v if (tot_t or tot_v) else today
+        if all_msg and not tot_t and not tot_v:
+            tot_t = all_msg
     return tot_t, tot_v, all_msg
 
 
 def report_funnel() -> str:
-    rows = _iter_users()
+    rows = _iter_users(persist_backfill=True)
     n = len(rows)
     assessed = sum(1 for _, u in rows if u.get("assessment_done"))
     chat_ever = 0
@@ -170,7 +184,7 @@ def _hit_vocab_limit(u: dict) -> bool:
 
 
 def report_chat_stats() -> str:
-    rows = _iter_users()
+    rows = _iter_users(persist_backfill=True)
     lines = [
         "💬 <b>Общаться — за всё время</b>\n",
         f"Лимит free: <b>{FREE_CHAT_PER_DAY}</b> сообщ./день (текст+голос).\n",

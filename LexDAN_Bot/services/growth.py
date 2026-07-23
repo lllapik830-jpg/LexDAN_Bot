@@ -34,6 +34,42 @@ def _now_ts() -> float:
     return time.time()
 
 
+def backfill_chat_totals(user: dict) -> None:
+    """
+    Восстановить all-time счётчики, если они пустые, а следы общения есть.
+    Нужно для юзеров, писавших до появления chat_*_total, и чтобы
+    дневные счётчики не «исчезали» при смене даты без записи в totals.
+    """
+    tot_t = int(user.get("chat_text_total") or 0)
+    tot_v = int(user.get("chat_voice_total") or 0)
+    if tot_t + tot_v > 0:
+        return
+
+    daily = user.get("daily") if isinstance(user.get("daily"), dict) else {}
+    tt = int(daily.get("chat_text_today") or 0)
+    vt = int(daily.get("chat_voice_today") or 0)
+    mixed = int(daily.get("chat_messages_today") or daily.get("chat_count") or 0)
+    if tt or vt:
+        user["chat_text_total"] = tt
+        user["chat_voice_total"] = vt
+        return
+    if mixed > 0:
+        user["chat_text_total"] = mixed
+        return
+
+    turns = user.get("chat_recent_turns") or []
+    n_user = sum(
+        1
+        for t in turns
+        if isinstance(t, dict) and (t.get("role") or "").lower() == "user"
+    )
+    if n_user > 0:
+        user["chat_text_total"] = n_user
+        return
+    if (user.get("chat_last_user_text") or "").strip() or user.get("last_bot_reply"):
+        user["chat_text_total"] = 1
+
+
 def ensure_growth(user: dict) -> dict:
     user.setdefault("streak", 0)
     user.setdefault("streak_last_date", "")
@@ -59,6 +95,8 @@ def ensure_growth(user: dict) -> dict:
         user["daily"] = {}
     daily = user["daily"]
     if daily.get("date") != _today():
+        # До обнуления дня — перенести дневной чат в all-time, если totals ещё пустые
+        backfill_chat_totals(user)
         user["daily"] = {
             "date": _today(),
             "chat_count": 0,
@@ -89,10 +127,13 @@ def ensure_growth(user: dict) -> dict:
         daily.setdefault("grammar_cap", FREE_GRAMMAR_EXERCISES_PER_DAY)
         daily.setdefault("vocab_cap", FREE_VOCAB_ITEMS_PER_DAY)
         daily.setdefault("chat_count", int(daily.get("chat_messages_today") or 0))
+        daily.setdefault("chat_text_today", 0)
+        daily.setdefault("chat_voice_today", 0)
         items = int(daily.get("vocab_items_today") or 0)
         wp = int(daily.get("words_today") or 0) + int(daily.get("phrases_today") or 0)
         if wp > items:
             daily["vocab_items_today"] = wp
+    backfill_chat_totals(user)
     user.setdefault("streak_rewards_claimed", [])
     user.setdefault("referral_qualified", 0)
     user.setdefault("lessons_until", 0)

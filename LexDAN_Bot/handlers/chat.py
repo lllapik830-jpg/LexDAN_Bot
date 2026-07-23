@@ -179,8 +179,8 @@ async def chat_text(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     ok, tip = note_chat_message(user, kind="text")
-    save_users(users, only=str(m.from_user.id))
     if not ok:
+        save_users(users, only=str(m.from_user.id))
         from handlers.lesson_keyboards import chat_limit_inline_kb
 
         await m.answer(
@@ -194,7 +194,7 @@ async def chat_text(m: Message):
     from services.tg_out import status
 
     async with status(m, "✨ …"):
-        await reply_as_tutor(m, user_text=text)
+        await reply_as_tutor(m, user_text=text, users=users, user=user)
 
 
 @router.message(ModeFilter(MODE_CHAT))

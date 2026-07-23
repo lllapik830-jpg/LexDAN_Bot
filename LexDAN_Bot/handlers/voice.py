@@ -26,8 +26,8 @@ async def voice_in_chat(m: Message, bot: Bot):
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     ok, tip = note_chat_message(user, kind="voice")
-    save_users(users)
     if not ok:
+        save_users(users, only=str(m.from_user.id))
         from handlers.lesson_keyboards import chat_limit_inline_kb
 
         await m.answer(
@@ -48,6 +48,8 @@ async def voice_in_chat(m: Message, bot: Bot):
             text = recognize_english(audio_bytes)
 
         if not text:
+            # Слот уже учтён — сохраняем счётчики даже при неудачном STT
+            save_users(users, only=str(m.from_user.id))
             await m.answer(
                 "❌ Не удалось распознать речь.\n"
                 "Говори по-английски чуть громче и чётче, потом попробуй снова.",
@@ -56,8 +58,11 @@ async def voice_in_chat(m: Message, bot: Bot):
             return
 
         logging.info(f"STT ok: {text}")
-        await reply_as_tutor(m, user_text=text, heard_text=text)
+        await reply_as_tutor(
+            m, user_text=text, heard_text=text, users=users, user=user
+        )
 
     except Exception as e:
+        save_users(users, only=str(m.from_user.id))
         logging.error(f"Voice error: {e}")
         await m.answer("❌ Ошибка обработки голоса. Попробуй снова.", reply_markup=chat_menu())
