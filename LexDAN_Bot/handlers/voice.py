@@ -25,7 +25,7 @@ async def voice_in_chat(m: Message, bot: Bot):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
-    ok, tip = note_chat_message(user)
+    ok, tip = note_chat_message(user, kind="voice")
     save_users(users)
     if not ok:
         from handlers.lesson_keyboards import chat_limit_inline_kb

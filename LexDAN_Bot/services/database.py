@@ -221,6 +221,9 @@ def get_user(users: dict, user_id: str) -> dict:
             "last_active_at": "",
             "reminder_sent_date": "",
             "chat_until": 0,
+            "first_seen_at": 0,
+            "chat_text_total": 0,
+            "chat_voice_total": 0,
         }
     defaults = {
         "mode": MODE_MENU,
@@ -255,6 +258,9 @@ def get_user(users: dict, user_id: str) -> dict:
         "last_active_at": "",
         "reminder_sent_date": "",
         "chat_until": 0,
+        "first_seen_at": 0,
+        "chat_text_total": 0,
+        "chat_voice_total": 0,
     }
     for key, value in defaults.items():
         users[user_id].setdefault(key, value)

@@ -54,6 +54,13 @@ router = Router()
 
 HELP = (
     "🛠 <b>Админ LexDAN</b>\n\n"
+    "<b>Воронка / реклама</b>\n"
+    "/funnel — сводка\n"
+    "/starts — кто нажал Start (id)\n"
+    "/chat_stats — текст/голос в «Общаться» + лимит\n"
+    "/assessed — кто прошёл входной тест\n"
+    "/limits — кто упёрся в лимиты сегодня\n"
+    "/progress — задания Grammar и слова Vocabulary\n\n"
     "<b>Тарифы</b>\n"
     "/grant_chat <code>id</code> [дней] — общение\n"
     "/grant_full <code>id</code> [дней] — полный доступ\n"
@@ -99,6 +106,67 @@ async def admin_help(m: Message):
     if not _is_admin(m):
         return
     await m.answer(HELP, parse_mode="HTML")
+
+
+async def _send_report(m: Message, text: str) -> None:
+    from services.admin_stats import chunk_html
+
+    for part in chunk_html(text):
+        await m.answer(part, parse_mode="HTML")
+
+
+@router.message(Command("funnel"))
+async def admin_funnel(m: Message):
+    if not _is_admin(m):
+        return
+    from services.admin_stats import report_funnel
+
+    await _send_report(m, report_funnel())
+
+
+@router.message(Command("starts"))
+async def admin_starts(m: Message):
+    if not _is_admin(m):
+        return
+    from services.admin_stats import report_starts
+
+    await _send_report(m, report_starts())
+
+
+@router.message(Command("chat_stats"))
+async def admin_chat_stats(m: Message):
+    if not _is_admin(m):
+        return
+    from services.admin_stats import report_chat_stats
+
+    await _send_report(m, report_chat_stats())
+
+
+@router.message(Command("assessed"))
+async def admin_assessed(m: Message):
+    if not _is_admin(m):
+        return
+    from services.admin_stats import report_assessed
+
+    await _send_report(m, report_assessed())
+
+
+@router.message(Command("limits"))
+async def admin_limits(m: Message):
+    if not _is_admin(m):
+        return
+    from services.admin_stats import report_limits
+
+    await _send_report(m, report_limits())
+
+
+@router.message(Command("progress"))
+async def admin_progress(m: Message):
+    if not _is_admin(m):
+        return
+    from services.admin_stats import report_progress
+
+    await _send_report(m, report_progress())
 
 
 @router.message(Command("grant_chat"))
@@ -191,6 +259,8 @@ async def admin_user(m: Message, command: CommandObject):
     chat_p, chat_d = chat_price(user)
     full_p, full_d = full_price(user)
     lot = lottery_status_lines(user)
+    from services.admin_stats import user_card_extra
+
     await m.answer(
         f"👤 <code>{uid}</code> · {user.get('name') or '—'}\n"
         f"Тариф: <b>{plan}</b>\n"
@@ -200,7 +270,8 @@ async def admin_user(m: Message, command: CommandObject):
         f"Скидка: {discount_percent(user)}%"
         f" → chat {chat_p}₽ / full {full_p}₽\n"
         f"Реф. засчитано: {int(user.get('referral_qualified') or 0)}\n"
-        f"{lot}",
+        f"{lot}\n"
+        f"{user_card_extra(user)}",
         parse_mode="HTML",
     )
 

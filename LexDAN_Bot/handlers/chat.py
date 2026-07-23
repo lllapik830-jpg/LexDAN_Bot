@@ -178,7 +178,7 @@ async def chat_text(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
-    ok, tip = note_chat_message(user)
+    ok, tip = note_chat_message(user, kind="text")
     save_users(users, only=str(m.from_user.id))
     if not ok:
         from handlers.lesson_keyboards import chat_limit_inline_kb

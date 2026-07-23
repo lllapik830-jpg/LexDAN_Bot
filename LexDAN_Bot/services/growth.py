@@ -51,6 +51,9 @@ def ensure_growth(user: dict) -> dict:
     user.setdefault("streak_burn_date", "")
     user.setdefault("last_active_at", "")
     user.setdefault("reminder_sent_date", "")
+    user.setdefault("first_seen_at", user.get("first_seen_at") or _now_ts())
+    user.setdefault("chat_text_total", int(user.get("chat_text_total") or 0))
+    user.setdefault("chat_voice_total", int(user.get("chat_voice_total") or 0))
     if not isinstance(user.get("daily"), dict):
         user["daily"] = {}
     daily = user["daily"]
@@ -59,6 +62,8 @@ def ensure_growth(user: dict) -> dict:
             "date": _today(),
             "chat_count": 0,
             "chat_messages_today": 0,
+            "chat_text_today": 0,
+            "chat_voice_today": 0,
             "lessons_completed_today": 0,
             "grammar_exercises_today": 0,
             "vocab_texts_today": 0,
@@ -68,6 +73,9 @@ def ensure_growth(user: dict) -> dict:
             "grammar_cap": FREE_GRAMMAR_EXERCISES_PER_DAY,
             "vocab_cap": FREE_VOCAB_ITEMS_PER_DAY,
             "goal_done": False,
+            "hit_chat_limit": False,
+            "hit_grammar_limit": False,
+            "hit_vocab_limit": False,
         }
     else:
         daily.setdefault("chat_messages_today", int(daily.get("chat_count") or 0))
@@ -332,16 +340,22 @@ def touch_activity(user: dict) -> None:
     user["last_active_at"] = datetime.now(MSK).isoformat()
 
 
-def note_chat_message(user: dict) -> tuple[bool, str | None]:
+def note_chat_message(user: dict, *, kind: str = "text") -> tuple[bool, str | None]:
     """
-    Учёт сообщений в «Общаться» (текст + голос в одном счётчике).
+    Учёт сообщений в «Общаться» (текст + голос в одном дневном лимите).
+    kind: "text" | "voice" — раздельные счётчики для админки.
     Бесплатно: ровно FREE_CHAT_PER_DAY сообщений в сутки, на следующем — блок.
-    Триал / полный доступ / chat_pass — без лимита.
     """
     ensure_growth(user)
     touch_activity(user)
     touch_streak(user)
     daily = user["daily"]
+    kind = "voice" if kind == "voice" else "text"
+
+    user.setdefault("chat_text_total", 0)
+    user.setdefault("chat_voice_total", 0)
+    daily.setdefault("chat_text_today", 0)
+    daily.setdefault("chat_voice_today", 0)
 
     # Синхронизация старого поля chat_count ↔ chat_messages_today
     used = int(daily.get("chat_messages_today") or 0)
@@ -350,13 +364,23 @@ def note_chat_message(user: dict) -> tuple[bool, str | None]:
         used = legacy
         daily["chat_messages_today"] = used
 
+    def _bump_kind() -> None:
+        if kind == "voice":
+            daily["chat_voice_today"] = int(daily.get("chat_voice_today") or 0) + 1
+            user["chat_voice_total"] = int(user.get("chat_voice_total") or 0) + 1
+        else:
+            daily["chat_text_today"] = int(daily.get("chat_text_today") or 0) + 1
+            user["chat_text_total"] = int(user.get("chat_text_total") or 0) + 1
+
     if has_chat_pass(user):
         daily["chat_messages_today"] = used + 1
         daily["chat_count"] = daily["chat_messages_today"]
+        _bump_kind()
         _maybe_complete_goal(user)
         return True, None
 
     if used >= FREE_CHAT_PER_DAY:
+        daily["hit_chat_limit"] = True
         return False, (
             "🦜 <b>Мы здорово поболтали!</b>\n\n"
             "На сегодня хватит — мозгу и языку полезно отдохнуть.\n"
@@ -366,6 +390,9 @@ def note_chat_message(user: dict) -> tuple[bool, str | None]:
 
     daily["chat_messages_today"] = used + 1
     daily["chat_count"] = daily["chat_messages_today"]
+    _bump_kind()
+    if daily["chat_messages_today"] >= FREE_CHAT_PER_DAY:
+        daily["hit_chat_limit"] = True
     _maybe_complete_goal(user)
     return True, None
 
@@ -397,6 +424,7 @@ def can_do_grammar_exercise(user: dict) -> tuple[bool, str | None]:
     cap = grammar_daily_cap(user)
     done = int(user["daily"].get("grammar_exercises_today") or 0)
     if done >= cap:
+        user["daily"]["hit_grammar_limit"] = True
         return False, _brain_rest_msg(what="заданий Grammar", limit=cap)
     return True, None
 
@@ -408,6 +436,13 @@ def note_grammar_exercise_done(user: dict) -> dict:
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["grammar_exercises_today"] = int(daily.get("grammar_exercises_today") or 0) + 1
+    from services.rewards import grammar_daily_cap, has_lessons_pass
+
+    if (
+        not has_lessons_pass(user)
+        and int(daily["grammar_exercises_today"]) >= grammar_daily_cap(user)
+    ):
+        daily["hit_grammar_limit"] = True
     _maybe_complete_goal(user)
     return streak_info
 
@@ -437,6 +472,7 @@ def can_learn_vocab_item(user: dict) -> tuple[bool, str | None]:
         return True, None
     cap = vocab_daily_cap(user)
     if vocab_items_used_today(user) >= cap:
+        user["daily"]["hit_vocab_limit"] = True
         return False, _brain_rest_msg(what="слов или фраз Vocabulary", limit=cap)
     return True, None
 
