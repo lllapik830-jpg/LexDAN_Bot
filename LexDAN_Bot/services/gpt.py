@@ -758,7 +758,15 @@ def _ask_json(
         if not data:
             return fallback
         merged = dict(fallback)
-        merged.update(data)
+        for key, val in data.items():
+            # не затираем полезный fallback пустыми списками/значениями
+            if val is None:
+                continue
+            if isinstance(val, list) and not val and isinstance(fallback.get(key), list):
+                continue
+            if isinstance(val, str) and not val.strip() and fallback.get(key):
+                continue
+            merged[key] = val
         return merged
     except Exception as e:
         logging.error(f"GPT json error: {e}")

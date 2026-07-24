@@ -32,6 +32,7 @@ from services.secret_missions import (
     complete_mission,
     format_card,
     evaluate_voice_attempt,
+    mission_intro,
 )
 from services.elevenlabs import send_voice_reply
 from services.stt import recognize_english
@@ -118,6 +119,9 @@ async def start_week(m: Message):
     if not active:
         await m.answer("Это задание уже недоступно.", reply_markup=_hub_kb(user))
         return
+    intro = mission_intro(MISSION_WEEK)
+    if intro:
+        await m.answer(intro, parse_mode="HTML")
     await _send_week_card(m, user)
 
 
@@ -133,6 +137,9 @@ async def start_voice(m: Message):
     if not active:
         await m.answer("Это задание уже недоступно.", reply_markup=_hub_kb(user))
         return
+    intro = mission_intro(MISSION_VOICE)
+    if intro:
+        await m.answer(intro, parse_mode="HTML")
     await _send_voice_prompt(m, user)
 
 

@@ -16,13 +16,31 @@ MISSION_VOICE = "voice_day"
 MISSION_META = {
     MISSION_WEEK: {
         "title": "📝 Разбор твоей недели",
-        "blurb": "Рико разберёт твои живые ошибки и даст 5 персональных правок «как носитель».",
+        "blurb": (
+            "Рико разберёт типичные ошибки твоего уровня (и твои фразы из чата, если они есть) "
+            "и даст 5 правок «как сказал бы носитель»."
+        ),
         "mins": "7–10 мин",
+        "intro": (
+            "🦜 <b>Рико:</b> Ого, секрет открыт! Давай разберём неделю.\n\n"
+            "Я покажу 5 ситуаций: как часто говорят ученики → как звучит естественнее → "
+            "короткий совет на русском. Читай, запоминай, жми «Далее».\n\n"
+            "Готов? Поехали 👇"
+        ),
     },
     MISSION_VOICE: {
         "title": "🗣 Голос дня",
-        "blurb": "4 фразы — говори голосом (или текстом). Рико скажет, как звучать естественнее.",
+        "blurb": (
+            "4 живые фразы под твой уровень — скажи голосом (или текстом). "
+            "Рико подскажет, как звучать естественнее."
+        ),
         "mins": "5–8 мин",
+        "intro": (
+            "🦜 <b>Рико:</b> Голос — это мышца. Сейчас 4 короткие фразы.\n\n"
+            "Слушай мою озвучку → повтори в микрофон (или напиши). "
+            "Я скажу, что услышал и как можно естественнее.\n\n"
+            "Можно «Пропустить фразу», если совсем не хочется. Погнали 🗣"
+        ),
     },
 }
 
@@ -84,18 +102,24 @@ def start_mission(user: dict, mission_id: str) -> dict | None:
     sm["inbox"] = [x for x in sm["inbox"] if x != mission_id]
     if mission_id == MISSION_WEEK:
         cards = build_week_review(user)
+        if not cards:
+            cards = _fallback_week_cards(user.get("level") or "A1")
         sm["active"] = {
             "type": MISSION_WEEK,
             "step": 0,
             "cards": cards,
+            "intro_sent": False,
         }
     elif mission_id == MISSION_VOICE:
         phrases = build_voice_phrases(user)
+        if not phrases or len(phrases) < 4:
+            phrases = _fallback_voice_phrases(user.get("level") or "A1")
         sm["active"] = {
             "type": MISSION_VOICE,
             "step": 0,
             "phrases": phrases,
             "notes": [],
+            "intro_sent": False,
         }
     else:
         return None
@@ -112,17 +136,20 @@ def complete_mission(user: dict) -> str:
     sm["active"] = None
     user["pending_secret_rico"] = bool(sm["inbox"])
 
-    # награда: бустер grammar + сейф
     set_grammar_cap_today(user, 24)
     grant_safe(user, 1)
     title = MISSION_META.get(mtype, {}).get("title", "Секрет")
     return (
         f"🏆 <b>Секрет выполнен:</b> {title}\n\n"
         "Награда:\n"
-        "• Grammar сегодня до <b>24</b> заданий\n"
+        "• сегодня до <b>24</b> баллов на уроки (Grammar + Vocab)\n"
         "• <b>+1</b> стрик-сейф 🛡️\n\n"
         "Рико гордится тобой. Завтра — снова ~15 минут 💪"
     )
+
+
+def mission_intro(mission_id: str) -> str:
+    return (MISSION_META.get(mission_id) or {}).get("intro") or ""
 
 
 def build_week_review(user: dict) -> list[dict]:
@@ -134,7 +161,7 @@ def build_week_review(user: dict) -> list[dict]:
         for t in turns
         if t.get("role") == "user" and (t.get("text") or "").strip()
     ][-8:]
-    sample = "\n".join(f"- {x}" for x in user_lines) if user_lines else "(мало сообщений)"
+    sample = "\n".join(f"- {x}" for x in user_lines) if user_lines else "(мало сообщений в чате)"
 
     from services.gpt import _ask_json
 
@@ -144,11 +171,12 @@ def build_week_review(user: dict) -> list[dict]:
             {
                 "role": "system",
                 "content": (
-                    "You are Rico, English tutor for Russian students. "
+                    "You are Rico, warm English tutor for Russian students. "
                     "Return ONLY JSON: {\"cards\":[{\"wrong\":\"...\",\"better\":\"...\","
                     "\"tip_ru\":\"...\"}]} with exactly 5 cards. "
-                    "Based on student lines (or typical CEFR mistakes if empty). "
-                    "wrong/better in English, tip_ru in Russian, short."
+                    "Prefer mistakes from the student's lines; if few lines, use typical "
+                    f"CEFR {level} mistakes for Russian speakers. "
+                    "wrong/better in English, tip_ru in Russian, concrete and short."
                 ),
             },
             {
@@ -174,83 +202,179 @@ def build_week_review(user: dict) -> list[dict]:
         better = str(c.get("better") or "").strip()
         tip = str(c.get("tip_ru") or "").strip()
         if better:
-            out.append({"wrong": wrong, "better": better, "tip_ru": tip})
-    return out or fallback
+            out.append({"wrong": wrong or "—", "better": better, "tip_ru": tip})
+    while len(out) < 5:
+        out.append(fallback[len(out) % len(fallback)])
+    return out[:5]
 
 
 def _fallback_week_cards(level: str) -> list[dict]:
-    base = [
+    by_level = {
+        "A0": [
+            {
+                "wrong": "I is student",
+                "better": "I am a student",
+                "tip_ru": "I → am. Перед профессией часто нужен a/an.",
+            },
+            {
+                "wrong": "She have a cat",
+                "better": "She has a cat",
+                "tip_ru": "he/she/it → has, не have.",
+            },
+            {
+                "wrong": "I go school",
+                "better": "I go to school",
+                "tip_ru": "go to school — предлог to обязателен.",
+            },
+            {
+                "wrong": "My name Dan",
+                "better": "My name is Dan",
+                "tip_ru": "Нужна связка is: My name is…",
+            },
+            {
+                "wrong": "I like very much pizza",
+                "better": "I like pizza very much",
+                "tip_ru": "very much обычно в конце, не перед существительным.",
+            },
+        ],
+        "A1": [
+            {
+                "wrong": "I go to school yesterday",
+                "better": "I went to school yesterday",
+                "tip_ru": "Вчера → Past Simple: go → went.",
+            },
+            {
+                "wrong": "She don't like coffee",
+                "better": "She doesn't like coffee",
+                "tip_ru": "he/she/it → doesn't, не don't.",
+            },
+            {
+                "wrong": "I am agree with you",
+                "better": "I agree with you",
+                "tip_ru": "agree — без am (это не continuous).",
+            },
+            {
+                "wrong": "How you say this?",
+                "better": "How do you say this?",
+                "tip_ru": "В вопросе нужен Do/Does: How do you…?",
+            },
+            {
+                "wrong": "I very like it",
+                "better": "I really like it / I like it a lot",
+                "tip_ru": "Не very like — really или a lot.",
+            },
+        ],
+        "A2": [
+            {
+                "wrong": "I have seen him yesterday",
+                "better": "I saw him yesterday",
+                "tip_ru": "С yesterday — Past Simple, не Present Perfect.",
+            },
+            {
+                "wrong": "If I will see her, I tell you",
+                "better": "If I see her, I'll tell you",
+                "tip_ru": "В if-условии обычно Present, will — в результате.",
+            },
+            {
+                "wrong": "I interested in music",
+                "better": "I'm interested in music",
+                "tip_ru": "interested нуждается в be: I'm interested.",
+            },
+            {
+                "wrong": "He suggested me to go",
+                "better": "He suggested that I go / He suggested going",
+                "tip_ru": "suggest не берёт me to — другая конструкция.",
+            },
+            {
+                "wrong": "Despite of the rain…",
+                "better": "Despite the rain… / In spite of the rain…",
+                "tip_ru": "despite без of; in spite of — с of.",
+            },
+        ],
+    }
+    if level in {"A0"}:
+        return by_level["A0"]
+    if level in {"A1"}:
+        return by_level["A1"]
+    if level in {"A2"}:
+        return by_level["A2"]
+    # B1+
+    return [
         {
-            "wrong": "I go to school yesterday",
-            "better": "I went to school yesterday",
-            "tip_ru": "Вчера → Past Simple: go → went.",
+            "wrong": "I look forward to meet you",
+            "better": "I look forward to meeting you",
+            "tip_ru": "После look forward to — глагол на -ing.",
         },
         {
-            "wrong": "She don't like coffee",
-            "better": "She doesn't like coffee",
-            "tip_ru": "he/she/it → doesn't, не don't.",
+            "wrong": "She explained me the rule",
+            "better": "She explained the rule to me",
+            "tip_ru": "explain something to someone — не explain me.",
         },
         {
-            "wrong": "I am agree with you",
-            "better": "I agree with you",
-            "tip_ru": "agree — без am (это не continuous).",
+            "wrong": "I used to living here",
+            "better": "I used to live here",
+            "tip_ru": "used to + V1 (не -ing).",
         },
         {
-            "wrong": "How you say this?",
-            "better": "How do you say this?",
-            "tip_ru": "Вопрос: Do/Does + подлежащее.",
+            "wrong": "It's depend on you",
+            "better": "It depends on you",
+            "tip_ru": "depend — обычный глагол: it depends.",
         },
         {
-            "wrong": "I very like it",
-            "better": "I like it a lot / I really like it",
-            "tip_ru": "Не very like — really / a lot.",
+            "wrong": "I wish I can speak better",
+            "better": "I wish I could speak better",
+            "tip_ru": "После wish о настоящем — Past: could, not can.",
         },
     ]
-    if level in {"A0", "A1"}:
-        return base
-    return base  # достаточно универсально
 
 
-def build_voice_phrases(user: dict) -> list[str]:
-    level = user.get("level") or "A1"
-    from services.gpt import _ask_json
-
+def _fallback_voice_phrases(level: str) -> list[str]:
     pools = {
         "A0": [
             "Hello! How are you today?",
             "My name is Alex.",
-            "I like coffee.",
+            "I like coffee and tea.",
             "See you tomorrow!",
         ],
         "A1": [
             "What did you do yesterday?",
             "I'm learning English every day.",
             "Can you help me, please?",
-            "That sounds great!",
+            "That sounds great — let's try!",
         ],
         "A2": [
             "I've been busy this week.",
-            "Could you say that again?",
+            "Could you say that again, please?",
             "I'm trying to sound more natural.",
             "Let's grab a coffee later.",
         ],
-    }
-    fallback = pools.get(level, pools["A2"] if level >= "B1" else pools["A1"])
-    if level in {"B1", "B2", "C1", "C2"}:
-        fallback = [
+        "B1": [
             "I've been meaning to practice speaking more.",
             "That makes sense — I hadn't thought of it that way.",
             "Could you walk me through it one more time?",
             "I'm getting more comfortable with small talk.",
-        ]
+        ],
+    }
+    if level in pools:
+        return list(pools[level])
+    if level in {"B2", "C1", "C2"}:
+        return list(pools["B1"])
+    return list(pools["A1"])
 
+
+def build_voice_phrases(user: dict) -> list[str]:
+    level = user.get("level") or "A1"
+    from services.gpt import _ask_json
+
+    fallback = _fallback_voice_phrases(level)
     data = _ask_json(
         [
             {
                 "role": "system",
                 "content": (
                     "Return ONLY JSON {\"phrases\":[\"...\",\"...\",\"...\",\"...\"]} "
-                    "— 4 short spoken English lines for pronunciation practice, CEFR-appropriate."
+                    "— 4 short spoken English lines for pronunciation practice, "
+                    f"CEFR {level}, natural conversation, not textbook drills."
                 ),
             },
             {"role": "user", "content": f"CEFR: {level}. Seed {random.random()}"},
@@ -262,7 +386,8 @@ def build_voice_phrases(user: dict) -> list[str]:
     phrases = data.get("phrases") if isinstance(data, dict) else None
     if not isinstance(phrases, list) or len(phrases) < 4:
         return fallback
-    return [str(p).strip() for p in phrases[:4] if str(p).strip()]
+    clean = [str(p).strip() for p in phrases[:4] if str(p).strip()]
+    return clean if len(clean) >= 4 else fallback
 
 
 def evaluate_voice_attempt(target: str, heard: str) -> dict:
