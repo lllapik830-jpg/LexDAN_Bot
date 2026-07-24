@@ -69,10 +69,14 @@ NEW_TOPICS: dict[str, list[dict]] = {
 
 
 def _n(tid: str, title: str, body: str) -> str:
+    """Оформление как у базовых тем: рассказ Рико + правило + примеры."""
+    short = title.split(" / ")[0].strip()
+    full = title.strip()
     return (
-        f"🦜 <b>Рико:</b> Тема <b>{title.split(' / ')[0]}</b>.\n\n"
+        f"🦜 <b>Рико:</b> Отлично, идём к теме <b>{short}</b>!\n"
+        f"<i>({full})</i>\n\n"
         f"{body}\n\n"
-        "Разберём на заданиях — и сразу в речь ✨"
+        "Сейчас закрепим это на заданиях — и сразу в речь. Я рядом ✨"
     )
 
 
@@ -715,12 +719,12 @@ def _fill_remaining_banks() -> None:
         "prepositions_time_a2": _ex_bank(
             mcq=[
                 ("Выбери предлог.", "The film starts ____ 8 pm.", "Фильм в 8 вечера.", ["at", "on", "in", "by"], "at", "at + clock."),
-                ("Выбери предлог.", "See you ____ Monday.", "Увидимся в понедельник.", ["on", "at", "in", "by"], "on", "on + day."),
+                ("Выбери предлог.", "I met her ____ Monday.", "Я встретил её в понедельник.", ["on", "at", "in", "by"], "on", "on + day."),
                 ("Выбери предлог.", "I was born ____ 2010.", "Я родился в 2010.", ["in", "on", "at", "by"], "in", "in + year."),
             ],
             words=[
+                ("Вставь нужное слово: on, at, in.", "I met her ____ Monday.", "Я встретил её в понедельник.", "on/at/in", "on", "on Monday."),
                 ("Напиши in/on/at.", "We meet ____ the morning.", "Встречаемся утром.", "in/on/at", "in", "in the morning."),
-                ("Напиши in/on/at.", "The party is ____ 5 May.", "Вечеринка 5 мая.", "in/on/at", "on", "on + date."),
                 ("Напиши in/on/at.", "He sleeps ____ night.", "Он спит ночью.", "in/on/at", "at", "at night."),
             ],
             tr_en=("Переведи:", "Урок в пятницу.", "The lesson is on Friday.", "on Friday.", ["We have a lesson on Friday."]),

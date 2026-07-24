@@ -264,12 +264,27 @@ def report_assessed() -> str:
 
 
 def report_limits() -> str:
+    from services.growth import (
+        FREE_LESSON_POINTS_PER_DAY,
+        POINT_GRAMMAR_EXERCISE,
+        POINT_VOCAB_ITEM,
+        lesson_points_cap,
+        lesson_points_used_today,
+    )
+
     rows = _iter_users()
     chat_hit = [(uid, u) for uid, u in rows if _hit_chat_limit(u)]
-    gram_hit = [(uid, u) for uid, u in rows if _hit_grammar_limit(u)]
-    vocab_hit = [(uid, u) for uid, u in rows if _hit_vocab_limit(u)]
+    lesson_hit = [
+        (uid, u)
+        for uid, u in rows
+        if (_hit_grammar_limit(u) or _hit_vocab_limit(u))
+    ]
 
-    lines = ["⛔ <b>Лимиты сегодня (бесплатные)</b>\n"]
+    lines = [
+        "⛔ <b>Лимиты сегодня (бесплатные)</b>\n",
+        f"Уроки: общий пул <b>{FREE_LESSON_POINTS_PER_DAY}</b> баллов "
+        f"(Grammar {POINT_GRAMMAR_EXERCISE} / Vocab {POINT_VOCAB_ITEM}).\n",
+    ]
 
     lines.append(f"💬 Чат ({len(chat_hit)}), лимит {FREE_CHAT_PER_DAY}:")
     if chat_hit:
@@ -280,22 +295,12 @@ def report_limits() -> str:
     else:
         lines.append("— никого")
 
-    lines.append(f"\n📘 Grammar ({len(gram_hit)}), обычно {FREE_GRAMMAR_EXERCISES_PER_DAY}:")
-    if gram_hit:
-        for uid, u in gram_hit:
-            daily = u.get("daily") or {}
-            done = int(daily.get("grammar_exercises_today") or 0)
-            cap = grammar_daily_cap(u)
-            lines.append(_line(uid, u, f"{done}/{cap}"))
-    else:
-        lines.append("— никого")
-
-    lines.append(f"\n📗 Vocabulary ({len(vocab_hit)}), обычно {FREE_VOCAB_ITEMS_PER_DAY}:")
-    if vocab_hit:
-        for uid, u in vocab_hit:
-            used = vocab_items_used_today(u)
-            cap = vocab_daily_cap(u)
-            lines.append(_line(uid, u, f"{used}/{cap}"))
+    lines.append(f"\n📘📗 Уроки — упёрлись в баллы ({len(lesson_hit)}):")
+    if lesson_hit:
+        for uid, u in lesson_hit:
+            used = lesson_points_used_today(u)
+            cap = lesson_points_cap(u)
+            lines.append(_line(uid, u, f"{used}/{cap} баллов"))
     else:
         lines.append("— никого")
 

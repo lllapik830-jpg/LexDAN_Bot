@@ -15,6 +15,12 @@ BOT_USERNAME = (os.getenv("BOT_USERNAME") or "").lstrip("@")
 # Контакт поддержки без @ (можно переопределить через SUPPORT_USERNAME в env)
 SUPPORT_USERNAME = (os.getenv("SUPPORT_USERNAME") or "lllapik").lstrip("@")
 
+# Канал бота (подписка после регистрации)
+CHANNEL_USERNAME = (os.getenv("CHANNEL_USERNAME") or "").lstrip("@")
+CHANNEL_URL = (os.getenv("CHANNEL_URL") or "").strip()
+if not CHANNEL_URL and CHANNEL_USERNAME:
+    CHANNEL_URL = f"https://t.me/{CHANNEL_USERNAME}"
+
 # Файл-«база» пользователей (fallback, если нет DATABASE_URL)
 USER_DATA_FILE = "users.json"
 

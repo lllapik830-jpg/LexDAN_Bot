@@ -39,20 +39,36 @@ async def open_chat(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     note_lesson_activity(user)
+
+    from services.moderation import ensure_moderation, is_banned, ban_remaining_text
+
+    ensure_moderation(user)
+    if is_banned(user):
+        save_users(users, only=str(m.from_user.id))
+        await m.answer(ban_remaining_text(user), parse_mode="HTML")
+        return
+
     # новая сессия — историю сбрасываем, но помним последнюю тему
     last_topic = (user.get("chat_last_user_text") or "").strip()
     user["chat_recent_turns"] = []
     user["chat_recent_replies"] = []
-    user["chat_topic_offered"] = False
-    user["chat_topic_dived"] = False
+    user["chat_topic_offered"] = True
+    user["chat_topic_dived"] = True
 
-    from services.chat_topics import chat_intro_topics_blurb, ensure_active_topic
+    from services.chat_topics import chat_intro_topics_blurb, ensure_active_topic, build_dive_topic_reply
     from services.rewards import user_plan
+    from services.elevenlabs import send_voice_reply
+    from services.voices import resolve_chat_voice_id
+    from services.database import set_last_bot_reply
 
-    ensure_active_topic(user, force_new=True)
+    active = ensure_active_topic(user, force_new=True)
     topics_blurb = chat_intro_topics_blurb(user)
     plan = user_plan(user)
+    opener_en = build_dive_topic_reply(active)
+    user["chat_recent_replies"] = [opener_en]
+    user["last_bot_reply"] = opener_en
     save_users(users, only=str(m.from_user.id))
+    set_last_bot_reply(str(m.from_user.id), opener_en)
 
     voice_line = (
         "🎙 Озвучка: <b>стандартный голос Adam</b> (на бесплатном).\n"
@@ -61,14 +77,17 @@ async def open_chat(m: Message):
         else "🎙 Можно <b>выбрать голос озвучки</b> (прослушивание бесплатно) — кнопка ниже.\n\n"
     )
 
+    seed = (active.get("seed") or "").strip()
+    title_ru = active.get("title_ru") or active.get("title_en") or "тема"
     intro = (
         "🔥 <b>Погнали общаться!</b> 🙂\n\n"
         "Пиши текстом или кидай голосовое на английском.\n"
         "Ошибёшься — поправлю <i>только грамматику/слова</i> и коротко объясню почему.\n"
         "Всё ок — скажу «молодец» и продолжим диалог ✨\n\n"
         f"{topics_blurb}\n\n"
+        f"🎯 Сейчас тема: <b>{title_ru}</b>\n"
+        f"🦜 Рико: <i>{_esc(opener_en)}</i>\n\n"
         f"{voice_line}"
-        "Цель дня: можно закрыть, если поболтаешь несколько сообщений.\n\n"
         "🌍 <b>Перевести</b> — переведу мой последний ответ\n"
         "🎙 <b>Голос озвучки</b> — послушать и выбрать голос\n"
         "🔙 <b>В меню</b> — выход"
@@ -78,7 +97,9 @@ async def open_chat(m: Message):
         intro = (
             "🔥 <b>Снова на связи!</b>\n\n"
             f"В прошлый раз ты писал(а):\n<i>«{_esc(snippet)}»</i>\n\n"
-            "Продолжим про это — или кидай новую тему 🙂\n\n"
+            f"Сегодня начнём с темы <b>{title_ru}</b> — "
+            "или напиши свою, и останемся на ней 🙂\n\n"
+            f"🦜 Рико: <i>{_esc(opener_en)}</i>\n\n"
             f"{topics_blurb}\n\n"
             f"{voice_line}"
             "🌍 <b>Перевести</b> — мой последний ответ\n"
@@ -86,6 +107,9 @@ async def open_chat(m: Message):
             "🔙 <b>В меню</b> — выход"
         )
     await say(m, intro, replace=True, delete_tap=True, reply_markup=chat_menu(), parse_mode="HTML")
+    # Голос = тот же английский вопрос, что в сообщении (полная синхронизация)
+    voice_id = resolve_chat_voice_id(user)
+    await send_voice_reply(m, opener_en, title="LexDAN topic", voice_id=voice_id)
 
 
 def _esc(text: str) -> str:

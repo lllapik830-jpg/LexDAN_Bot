@@ -178,6 +178,16 @@ async def chat_text(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
+
+    from services.moderation import guard_user_text, ensure_moderation, is_banned, ban_remaining_text
+
+    ensure_moderation(user)
+    if is_banned(user):
+        await m.answer(ban_remaining_text(user), parse_mode="HTML")
+        return
+    if not await guard_user_text(m, user, text):
+        return
+
     ok, tip = note_chat_message(user, kind="text")
     if not ok:
         save_users(users, only=str(m.from_user.id))

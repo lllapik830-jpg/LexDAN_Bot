@@ -1,10 +1,17 @@
 """
-Старт и регистрация имени + рефералка.
+Старт и регистрация имени + рефералка + правила.
 """
 
 from aiogram import Router, F
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
 
 from handlers.filters import StepFilter
 from handlers.keyboards import main_menu
@@ -20,6 +27,16 @@ from services.growth import (
     ensure_growth,
     grant_referral_bonuses,
 )
+from services.moderation import (
+    BTN_ACCEPT_RULES,
+    BTN_NAME_SURE,
+    RULES_HTML,
+    ensure_moderation,
+    guard_user_text,
+    is_banned,
+    ban_remaining_text,
+)
+from config import CHANNEL_URL, CHANNEL_USERNAME
 
 router = Router()
 
@@ -28,7 +45,16 @@ HELLO_NEW = (
     "Мы здесь, чтобы превратить твой английский из «страшно сказать» в «легко болтать».\n\n"
     "Наш рецепт простой: 15 минут в день в Telegram — болтовня, слова, грамматика. "
     "Без стресса, с твоим темпом.\n\n"
-    "🥰 А теперь давай знакомиться! Как мне тебя называть?"
+    "Сначала коротко про правила — это важно 👇"
+)
+
+ASK_NAME = "🥰 Как мне тебя называть? Напиши <b>только имя</b>, например: <b>Анна</b>"
+
+NAME_CONFIRM = (
+    "Это точно твоё имя — <b>{name}</b>?\n\n"
+    "Нужно написать <b>только имя</b>, а не фразу вроде «Hello, I'm Ann».\n"
+    "Если ошибся — просто напиши имя ещё раз.\n"
+    "Если всё верно — нажми кнопку ниже 👇"
 )
 
 WELCOME_AFTER_NAME = (
@@ -44,6 +70,95 @@ WELCOME_AGAIN = (
     "Снова привет, {name}! 🦜 Чем займёмся сегодня?"
 )
 
+CHANNEL_INVITE = (
+    "📣 <b>Подпишись на канал LexDAN</b>\n\n"
+    "Там обновления бота, советы по английскому и новости от Рико.\n"
+    "Чтобы ничего не пропустить — жми кнопку ниже 👇"
+)
+
+
+def _rules_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=BTN_ACCEPT_RULES)]],
+        resize_keyboard=True,
+    )
+
+
+def _name_sure_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=BTN_NAME_SURE, callback_data="name_confirm:yes")]
+        ]
+    )
+
+
+def _channel_kb() -> InlineKeyboardMarkup | None:
+    url = (CHANNEL_URL or "").strip()
+    if not url and CHANNEL_USERNAME:
+        url = f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"
+    if not url:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📣 Подписаться на канал", url=url)]
+        ]
+    )
+
+
+def _esc(text: str) -> str:
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _banned_name_tokens() -> set[str]:
+    return {
+        "🗣️ Общаться",
+        "📚 Уроки",
+        "📊 Профиль",
+        "🆘 Поддержка",
+        "🌍 Перевести",
+        "🔙 Вернуться в меню",
+        "💎 Подписка",
+        "🎁 Пригласить друга",
+        BTN_ACCEPT_RULES,
+        BTN_NAME_SURE,
+        "✏️ Изменить имя",
+    }
+
+
+async def _finish_registration(m: Message, user_id: str, name: str) -> None:
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_growth(user)
+    ensure_moderation(user)
+    bind_referral_code(user_id, user)
+    user["name"] = name
+    user["pending_name"] = ""
+    user["step"] = "ready"
+    user["mode"] = MODE_MENU
+    user["rules_accepted"] = True
+    grant_referral_bonuses(user_id, users)
+    save_users(users, only=user_id)
+
+    extra = ""
+    if user.get("referred_by"):
+        extra = (
+            "\n\n🎁 Ты пришёл по ссылке друга — сегодня больше баллов на уроки!"
+        )
+
+    await m.answer(
+        WELCOME_AFTER_NAME.format(name=_esc(name)) + extra,
+        reply_markup=main_menu(user),
+        parse_mode="HTML",
+    )
+    ch_kb = _channel_kb()
+    if ch_kb:
+        await m.answer(CHANNEL_INVITE, reply_markup=ch_kb, parse_mode="HTML")
+
 
 @router.message(Command("start"))
 async def start_cmd(m: Message, command: CommandObject = None):
@@ -51,24 +166,34 @@ async def start_cmd(m: Message, command: CommandObject = None):
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
+    ensure_moderation(user)
     bind_referral_code(user_id, user)
     user["mode"] = MODE_MENU
 
-    # /start ref_XXXX
     args = (command.args if command else None) or ""
     if args.startswith("ref_"):
         apply_referral_on_start(user, args[4:], users)
 
-    save_users(users)
+    if is_banned(user):
+        save_users(users, only=user_id)
+        await m.answer(ban_remaining_text(user), parse_mode="HTML")
+        return
+
+    if not user.get("rules_accepted"):
+        user["step"] = "awaiting_rules"
+        save_users(users, only=user_id)
+        await m.answer(HELLO_NEW, parse_mode="HTML")
+        await m.answer(RULES_HTML, reply_markup=_rules_kb(), parse_mode="HTML")
+        return
 
     if not user.get("name"):
         user["step"] = "awaiting_name"
-        save_users(users)
-        await m.answer(HELLO_NEW, parse_mode="HTML")
+        save_users(users, only=user_id)
+        await m.answer(ASK_NAME, parse_mode="HTML")
         return
 
     user["step"] = "ready"
-    save_users(users)
+    save_users(users, only=user_id)
     await m.answer(
         WELCOME_AGAIN.format(name=user["name"]),
         reply_markup=main_menu(user),
@@ -88,16 +213,18 @@ async def danil_test_messi(m: Message):
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
+    ensure_moderation(user)
 
     user["dev_unlock"] = True
     user["assessment_done"] = True
+    user["rules_accepted"] = True
     user["level"] = "C2"
     user["step"] = "ready"
     user["assessment"] = {}
     user["mode"] = MODE_LESSONS
     start_trial(user, days=30)
     extend_premium(user, 30)
-    save_users(users)
+    save_users(users, only=user_id)
     clear_lesson(user_id)
     set_mode(user_id, MODE_LESSONS)
 
@@ -115,44 +242,76 @@ async def danil_test_messi(m: Message):
     )
 
 
-@router.message(StepFilter("awaiting_name"), F.text)
-async def save_name(m: Message):
-    name = (m.text or "").strip()
-
-    banned = {
-        "🗣️ Общаться",
-        "📚 Уроки",
-        "📊 Профиль",
-        "🆘 Поддержка",
-        "🌍 Перевести",
-        "🔙 Вернуться в меню",
-        "💎 Подписка",
-        "🎁 Пригласить друга",
-    }
-    if not name or name.startswith("/") or len(name) > 40 or name in banned:
-        await m.answer("🙂 Напиши просто своё имя текстом, например: <b>Даня</b>", parse_mode="HTML")
-        return
-
+@router.message(StepFilter("awaiting_rules"), F.text == BTN_ACCEPT_RULES)
+async def accept_rules(m: Message):
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
-    ensure_growth(user)
-    bind_referral_code(user_id, user)
-    user["name"] = name
-    user["step"] = "ready"
-    user["mode"] = MODE_MENU
-    grant_referral_bonuses(user_id, users)
-    save_users(users)
-
-    extra = ""
-    if user.get("referred_by"):
-        extra = (
-            "\n\n🎁 Ты пришёл по ссылке друга — сегодня Grammar до <b>12</b> заданий!"
+    ensure_moderation(user)
+    user["rules_accepted"] = True
+    if user.get("name"):
+        user["step"] = "ready"
+        save_users(users, only=user_id)
+        await m.answer(
+            WELCOME_AGAIN.format(name=user["name"]),
+            reply_markup=main_menu(user),
+            parse_mode="HTML",
         )
-
+        ch_kb = _channel_kb()
+        if ch_kb:
+            await m.answer(CHANNEL_INVITE, reply_markup=ch_kb, parse_mode="HTML")
+        return
+    user["step"] = "awaiting_name"
+    save_users(users, only=user_id)
     await m.answer(
-        WELCOME_AFTER_NAME.format(name=_esc(name)) + extra,
-        reply_markup=main_menu(user),
+        ASK_NAME,
+        parse_mode="HTML",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
+            resize_keyboard=True,
+        ),
+    )
+
+
+@router.message(StepFilter("awaiting_rules"))
+async def rules_nudge(m: Message):
+    await m.answer(
+        "Сначала прими правила — кнопка <b>✅ Принимаю правила</b> ниже.",
+        reply_markup=_rules_kb(),
+        parse_mode="HTML",
+    )
+
+
+@router.message(StepFilter("awaiting_name"), F.text)
+async def save_name_draft(m: Message):
+    name = (m.text or "").strip()
+    user_id = str(m.from_user.id)
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_moderation(user)
+
+    if not await guard_user_text(m, user, name):
+        return
+
+    if (
+        not name
+        or name.startswith("/")
+        or len(name) > 40
+        or name in _banned_name_tokens()
+    ):
+        await m.answer(
+            "🙂 Напиши просто своё имя текстом, например: <b>Даня</b>",
+            parse_mode="HTML",
+        )
+        return
+
+    # Фразы вроде Hello, I'm Ann — мягко подскажем, но всё равно спросим подтверждение
+    user["pending_name"] = name
+    user["step"] = "awaiting_name_confirm"
+    save_users(users, only=user_id)
+    await m.answer(
+        NAME_CONFIRM.format(name=_esc(name)),
+        reply_markup=_name_sure_kb(),
         parse_mode="HTML",
     )
 
@@ -162,10 +321,107 @@ async def name_not_text(m: Message):
     await m.answer("🙂 Напиши своё имя обычным текстом, например: Даня")
 
 
-def _esc(text: str) -> str:
-    return (
-        (text or "")
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
+@router.message(StepFilter("awaiting_name_confirm"), F.text)
+async def rename_during_confirm(m: Message):
+    """Если ошибся — можно сразу написать имя ещё раз."""
+    name = (m.text or "").strip()
+    user_id = str(m.from_user.id)
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_moderation(user)
+
+    if name == BTN_ACCEPT_RULES:
+        return
+    if not await guard_user_text(m, user, name):
+        return
+    if (
+        not name
+        or name.startswith("/")
+        or len(name) > 40
+        or name in _banned_name_tokens()
+    ):
+        await m.answer(
+            "🙂 Напиши только имя, например: <b>Анна</b>",
+            parse_mode="HTML",
+        )
+        return
+
+    user["pending_name"] = name
+    save_users(users, only=user_id)
+    await m.answer(
+        NAME_CONFIRM.format(name=_esc(name)),
+        reply_markup=_name_sure_kb(),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "name_confirm:yes")
+async def name_confirm_yes(c: CallbackQuery):
+    user_id = str(c.from_user.id)
+    users = load_users()
+    user = get_user(users, user_id)
+    name = (user.get("pending_name") or "").strip()
+    if not name:
+        await c.answer("Сначала напиши имя текстом", show_alert=True)
+        return
+    await c.answer()
+    if c.message:
+        try:
+            await c.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        await _finish_registration(c.message, user_id, name)
+    else:
+        await c.bot.send_message(int(user_id), "Напиши /start ещё раз.")
+
+
+@router.message(StepFilter("awaiting_name_change"), F.text)
+async def save_name_change(m: Message):
+    from handlers.keyboards import profile_menu
+    from services.rewards import user_plan
+    import time
+
+    name = (m.text or "").strip()
+    user_id = str(m.from_user.id)
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_moderation(user)
+
+    if name in ("🔙 Вернуться в меню", "📊 Профиль"):
+        user["step"] = "ready"
+        save_users(users, only=user_id)
+        await m.answer("Ок, имя не меняем.", reply_markup=profile_menu(user))
+        return
+
+    if not await guard_user_text(m, user, name):
+        return
+
+    if not name or name.startswith("/") or len(name) > 40 or name in _banned_name_tokens():
+        await m.answer("🙂 Напиши только новое имя, например: <b>Анна</b>", parse_mode="HTML")
+        return
+
+    plan = user_plan(user)
+    now = time.time()
+    last = float(user.get("name_changed_at") or 0)
+    if plan != "full" and last and (now - last) < 30 * 86400:
+        left = int((30 * 86400 - (now - last)) / 86400) + 1
+        user["step"] = "ready"
+        save_users(users, only=user_id)
+        await m.answer(
+            f"Имя на твоём тарифе можно менять раз в 30 дней.\n"
+            f"Подожди ещё примерно <b>{left}</b> дн. "
+            f"На тарифе 799₽ — безлимит смены имени.",
+            reply_markup=profile_menu(user),
+            parse_mode="HTML",
+        )
+        return
+
+    user["name"] = name
+    user["name_changed_at"] = now
+    user["step"] = "ready"
+    save_users(users, only=user_id)
+    await m.answer(
+        f"✅ Готово! Теперь ты <b>{_esc(name)}</b>.",
+        reply_markup=profile_menu(user),
+        parse_mode="HTML",
     )

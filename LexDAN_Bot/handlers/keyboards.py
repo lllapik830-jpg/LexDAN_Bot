@@ -53,6 +53,7 @@ def profile_menu(user: dict | None = None) -> ReplyKeyboardMarkup:
 
     rows = [
         [KeyboardButton(text="💎 Подписка")],
+        [KeyboardButton(text="✏️ Изменить имя")],
         [KeyboardButton(text=BTN_STREAK), KeyboardButton(text=BTN_REFERRAL)],
     ]
     if user is not None and can_restore_streak(user):

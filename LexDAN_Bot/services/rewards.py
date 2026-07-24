@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from services.growth import (
     FREE_GRAMMAR_EXERCISES_PER_DAY,
+    FREE_LESSON_POINTS_PER_DAY,
     FREE_VOCAB_ITEMS_PER_DAY,
     PRICE_CHAT_MONTH,
     PRICE_FULL_MONTH,
@@ -74,33 +75,58 @@ def extend_lessons_pass(user: dict, days: float = 1) -> None:
 
 
 def grammar_daily_cap(user: dict) -> int:
+    """Дневной потолок баллов уроков (совместимое имя для бустов/админки)."""
     ensure_growth(user)
     if has_lessons_pass(user):
         return 10_000
     daily = user["daily"]
-    cap = int(daily.get("grammar_cap") or FREE_GRAMMAR_EXERCISES_PER_DAY)
-    return max(FREE_GRAMMAR_EXERCISES_PER_DAY, cap)
+    return int(
+        daily.get("lesson_points_cap")
+        or daily.get("grammar_cap")
+        or FREE_LESSON_POINTS_PER_DAY
+    )
 
 
 def vocab_daily_cap(user: dict) -> int:
+    """Сколько слов/фраз ещё можно выучить сегодня по баллам (1 слово = 2 балла)."""
+    from services.growth import (
+        POINT_VOCAB_ITEM,
+        lesson_points_remaining,
+        vocab_items_used_today,
+    )
+
     ensure_growth(user)
     if has_lessons_pass(user):
         return 10_000
-    daily = user["daily"]
-    cap = int(daily.get("vocab_cap") or FREE_VOCAB_ITEMS_PER_DAY)
-    return max(FREE_VOCAB_ITEMS_PER_DAY, cap)
+    return vocab_items_used_today(user) + lesson_points_remaining(user) // POINT_VOCAB_ITEM
 
 
 def set_grammar_cap_today(user: dict, cap: int) -> None:
     ensure_growth(user)
-    cur = int(user["daily"].get("grammar_cap") or FREE_GRAMMAR_EXERCISES_PER_DAY)
-    user["daily"]["grammar_cap"] = max(cur, int(cap))
+    cur = int(
+        user["daily"].get("lesson_points_cap")
+        or user["daily"].get("grammar_cap")
+        or FREE_LESSON_POINTS_PER_DAY
+    )
+    boosted = max(cur, int(cap))
+    user["daily"]["lesson_points_cap"] = boosted
+    user["daily"]["grammar_cap"] = boosted
 
 
 def set_vocab_cap_today(user: dict, cap: int) -> None:
     ensure_growth(user)
-    cur = int(user["daily"].get("vocab_cap") or FREE_VOCAB_ITEMS_PER_DAY)
-    user["daily"]["vocab_cap"] = max(cur, int(cap))
+    from services.growth import POINT_VOCAB_ITEM
+
+    points = max(int(cap) * POINT_VOCAB_ITEM, int(cap))
+    cur = int(
+        user["daily"].get("lesson_points_cap")
+        or user["daily"].get("grammar_cap")
+        or FREE_LESSON_POINTS_PER_DAY
+    )
+    boosted = max(cur, points)
+    user["daily"]["lesson_points_cap"] = boosted
+    user["daily"]["vocab_cap"] = boosted
+    user["daily"]["grammar_cap"] = boosted
 
 
 STREAK_MILESTONES = (7, 14, 30, 50, 100)
@@ -109,14 +135,14 @@ STREAK_MILESTONES = (7, 14, 30, 50, 100)
 def streak_reward_text(plan: str, days: int) -> str:
     table = {
         "free": {
-            7: "Бустер Grammar: сегодня до <b>24</b> заданий (≈3 темы) вместо 8",
+            7: "Бустер уроков: сегодня до <b>24</b> баллов вместо 10",
             14: "🔐 Секрет Рико: <b>Разбор твоей недели</b> (кнопка в главном меню)",
             30: "Безлимит «Общение» на <b>сутки</b>",
             50: "Скидка <b>50%</b> на любой тариф на 1 месяц",
             100: f"Месяц тарифа «Общение» ({PRICE_CHAT_MONTH}₽) — бесплатно",
         },
         "chat": {
-            7: "Бустер Grammar: сегодня до <b>24</b> заданий вместо 8",
+            7: "Бустер уроков: сегодня до <b>24</b> баллов вместо 10",
             14: "🔐 Секрет Рико: <b>Разбор твоей недели</b> (кнопка в главном меню)",
             30: "Безлимит <b>уроков</b> на сутки",
             50: "Скидка <b>50%</b> на любой тариф на 1 месяц",

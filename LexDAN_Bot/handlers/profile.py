@@ -24,6 +24,46 @@ from config import BOT_USERNAME
 router = Router()
 
 
+@router.message(ModeFilter(MODE_PROFILE), F.text == "✏️ Изменить имя")
+async def change_name_start(m: Message):
+    import time
+
+    from services.rewards import user_plan
+    from services.moderation import ensure_moderation
+
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
+    ensure_moderation(user)
+    plan = user_plan(user)
+    now = time.time()
+    last = float(user.get("name_changed_at") or 0)
+    if plan != "full" and last and (now - last) < 30 * 86400:
+        left = int((30 * 86400 - (now - last)) / 86400) + 1
+        await m.answer(
+            f"На бесплатном и тарифе «Общение» имя можно менять <b>раз в 30 дней</b>.\n"
+            f"Подожди ещё примерно <b>{left}</b> дн.\n"
+            f"На тарифе <b>799₽</b> — безлимитная смена имени.",
+            reply_markup=profile_menu(user),
+            parse_mode="HTML",
+        )
+        return
+
+    user["step"] = "awaiting_name_change"
+    save_users(users, only=str(m.from_user.id))
+    note = (
+        "Безлимит смены имени на тарифе 799₽."
+        if plan == "full"
+        else "На твоём тарифе — не чаще раза в 30 дней."
+    )
+    await m.answer(
+        f"✏️ Напиши новое имя (<b>только имя</b>, не фразу).\n{note}\n"
+        "Или «🔙 Вернуться в меню», чтобы отменить.",
+        parse_mode="HTML",
+        reply_markup=profile_menu(user),
+    )
+
+
 @router.message(ModeFilter(MODE_PROFILE), F.text == "💎 Подписка")
 async def subscription_info(m: Message):
     users = load_users()
@@ -103,6 +143,6 @@ async def profile_foolproof(m: Message):
     ensure_growth(user)
     save_users(users)
     await m.answer(
-        "🙂 В профиле: Подписка, Серия дней, Пригласить друга.",
+        "🙂 В профиле: Подписка, Изменить имя, Серия дней, Пригласить друга.",
         reply_markup=profile_menu(user),
     )

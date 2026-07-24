@@ -14,8 +14,14 @@ from services.database import get_user
 TRIAL_DAYS = 7
 REF_BONUS_DAYS = 3
 FREE_CHAT_PER_DAY = 10
-FREE_GRAMMAR_EXERCISES_PER_DAY = 8  # суммарно по всем уровням/темам
-FREE_VOCAB_ITEMS_PER_DAY = 3  # слова + фразы, общий счётчик
+# Единый дневной лимит уроков (Grammar + Vocabulary):
+# 1 задание Grammar = 1 балл, 1 слово/фраза Vocab = 2 балла, потолок 10.
+FREE_LESSON_POINTS_PER_DAY = 10
+POINT_GRAMMAR_EXERCISE = 1
+POINT_VOCAB_ITEM = 2
+# Старые константы — для совместимости бустов / админки
+FREE_GRAMMAR_EXERCISES_PER_DAY = FREE_LESSON_POINTS_PER_DAY  # ≈ макс. заданий, если только Grammar
+FREE_VOCAB_ITEMS_PER_DAY = FREE_LESSON_POINTS_PER_DAY // POINT_VOCAB_ITEM  # 5, если только vocab
 DAILY_WORDS_GOAL = 1
 DAILY_CHAT_GOAL = 3
 
@@ -109,8 +115,9 @@ def ensure_growth(user: dict) -> dict:
             "vocab_items_today": 0,
             "words_today": 0,
             "phrases_today": 0,
-            "grammar_cap": FREE_GRAMMAR_EXERCISES_PER_DAY,
-            "vocab_cap": FREE_VOCAB_ITEMS_PER_DAY,
+            "grammar_cap": FREE_LESSON_POINTS_PER_DAY,
+            "vocab_cap": FREE_LESSON_POINTS_PER_DAY,
+            "lesson_points_cap": FREE_LESSON_POINTS_PER_DAY,
             "goal_done": False,
             "hit_chat_limit": False,
             "hit_grammar_limit": False,
@@ -124,8 +131,9 @@ def ensure_growth(user: dict) -> dict:
         daily.setdefault("vocab_items_today", 0)
         daily.setdefault("words_today", 0)
         daily.setdefault("phrases_today", 0)
-        daily.setdefault("grammar_cap", FREE_GRAMMAR_EXERCISES_PER_DAY)
-        daily.setdefault("vocab_cap", FREE_VOCAB_ITEMS_PER_DAY)
+        daily.setdefault("grammar_cap", FREE_LESSON_POINTS_PER_DAY)
+        daily.setdefault("vocab_cap", FREE_LESSON_POINTS_PER_DAY)
+        daily.setdefault("lesson_points_cap", FREE_LESSON_POINTS_PER_DAY)
         daily.setdefault("chat_count", int(daily.get("chat_messages_today") or 0))
         daily.setdefault("chat_text_today", 0)
         daily.setdefault("chat_voice_today", 0)
@@ -441,36 +449,67 @@ def note_chat_message(user: dict, *, kind: str = "text") -> tuple[bool, str | No
     return True, None
 
 
-def _brain_rest_msg(*, what: str, limit: int, price: int = PRICE_FULL_MONTH) -> str:
+def _brain_rest_msg(*, what: str = "баллов", limit: int = FREE_LESSON_POINTS_PER_DAY, price: int = PRICE_FULL_MONTH) -> str:
     return (
         "🦜 <b>Мозгу нужно немного отдохнуть</b>\n\n"
-        f"Ты уже хорошо позанимался: на бесплатном тарифе — "
-        f"<b>{limit} {what}</b> в день.\n\n"
+        f"На сегодня лимит уроков исчерпан ({what}).\n\n"
+        "<b>Как считаются баллы:</b>\n"
+        f"• 1 выполненное задание Grammar = <b>{POINT_GRAMMAR_EXERCISE}</b> балл\n"
+        f"• 1 изученное слово или фраза Vocabulary = <b>{POINT_VOCAB_ITEM}</b> балла\n"
+        f"• Всего можно набрать <b>{limit}</b> баллов в день\n\n"
         "Новой информации сейчас достаточно — дай мозгу её обработать. "
-        "Возвращайся через сутки и продолжим 💚\n\n"
-        f"С подпиской за <b>{price}₽/мес</b> — безлимит уроков, "
-        "можно заниматься сколько хочешь."
+        "Завтра снова можно продолжить 💚\n\n"
+        f"С подпиской за <b>{price}₽/мес</b> — безлимит уроков."
     )
 
 
+def lesson_points_used_today(user: dict) -> int:
+    ensure_growth(user)
+    g = int(user["daily"].get("grammar_exercises_today") or 0) * POINT_GRAMMAR_EXERCISE
+    v = vocab_items_used_today(user) * POINT_VOCAB_ITEM
+    return g + v
+
+
+def lesson_points_cap(user: dict) -> int:
+    from services.rewards import has_lessons_pass
+
+    ensure_growth(user)
+    if has_lessons_pass(user):
+        return 10_000
+    daily = user["daily"]
+    return int(
+        daily.get("lesson_points_cap")
+        or daily.get("grammar_cap")
+        or FREE_LESSON_POINTS_PER_DAY
+    )
+
+
+def lesson_points_remaining(user: dict) -> int:
+    return max(0, lesson_points_cap(user) - lesson_points_used_today(user))
+
+
+def can_spend_lesson_points(user: dict, cost: int) -> tuple[bool, str | None]:
+    from services.rewards import has_lessons_pass
+
+    ensure_growth(user)
+    if has_lessons_pass(user):
+        return True, None
+    cap = lesson_points_cap(user)
+    used = lesson_points_used_today(user)
+    if used + int(cost) > cap:
+        user["daily"]["hit_grammar_limit"] = True
+        user["daily"]["hit_vocab_limit"] = True
+        return False, _brain_rest_msg(limit=cap)
+    return True, None
+
+
 def can_start_new_lesson(user: dict) -> tuple[bool, str | None]:
-    """Совместимость: лимит Grammar = упражнения в сутки, не «темы»."""
+    """Совместимость: лимит уроков = общие баллы."""
     return can_do_grammar_exercise(user)
 
 
 def can_do_grammar_exercise(user: dict) -> tuple[bool, str | None]:
-    """Бесплатно — дневной лимит Grammar (с учётом бустов streak/реф)."""
-    ensure_growth(user)
-    from services.rewards import grammar_daily_cap, has_lessons_pass
-
-    if has_lessons_pass(user):
-        return True, None
-    cap = grammar_daily_cap(user)
-    done = int(user["daily"].get("grammar_exercises_today") or 0)
-    if done >= cap:
-        user["daily"]["hit_grammar_limit"] = True
-        return False, _brain_rest_msg(what="заданий Grammar", limit=cap)
-    return True, None
+    return can_spend_lesson_points(user, POINT_GRAMMAR_EXERCISE)
 
 
 def note_grammar_exercise_done(user: dict) -> dict:
@@ -480,13 +519,11 @@ def note_grammar_exercise_done(user: dict) -> dict:
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["grammar_exercises_today"] = int(daily.get("grammar_exercises_today") or 0) + 1
-    from services.rewards import grammar_daily_cap, has_lessons_pass
+    from services.rewards import has_lessons_pass
 
-    if (
-        not has_lessons_pass(user)
-        and int(daily["grammar_exercises_today"]) >= grammar_daily_cap(user)
-    ):
+    if not has_lessons_pass(user) and lesson_points_used_today(user) >= lesson_points_cap(user):
         daily["hit_grammar_limit"] = True
+        daily["hit_vocab_limit"] = True
     _maybe_complete_goal(user)
     return streak_info
 
@@ -500,25 +537,16 @@ def vocab_items_used_today(user: dict) -> int:
 
 
 def vocab_items_remaining(user: dict) -> int:
-    from services.rewards import has_lessons_pass, vocab_daily_cap
+    from services.rewards import has_lessons_pass
 
     if has_lessons_pass(user):
         return 999
-    return max(0, vocab_daily_cap(user) - vocab_items_used_today(user))
+    # сколько слов ещё влезет по баллам
+    return lesson_points_remaining(user) // POINT_VOCAB_ITEM
 
 
 def can_learn_vocab_item(user: dict) -> tuple[bool, str | None]:
-    """Бесплатно — дневной лимит слов/фраз (с бустами)."""
-    ensure_growth(user)
-    from services.rewards import has_lessons_pass, vocab_daily_cap
-
-    if has_lessons_pass(user):
-        return True, None
-    cap = vocab_daily_cap(user)
-    if vocab_items_used_today(user) >= cap:
-        user["daily"]["hit_vocab_limit"] = True
-        return False, _brain_rest_msg(what="слов или фраз Vocabulary", limit=cap)
-    return True, None
+    return can_spend_lesson_points(user, POINT_VOCAB_ITEM)
 
 
 def can_start_vocab_text(user: dict) -> tuple[bool, str | None]:
@@ -532,7 +560,7 @@ def note_vocab_text_started(user: dict) -> None:
 
 
 def note_lesson_completed(user: dict) -> None:
-    """Тема Grammar закрыта — для статистики; дневной лимит идёт по упражнениям."""
+    """Тема Grammar закрыта — для статистики; дневной лимит идёт по баллам."""
     ensure_growth(user)
     if is_paid(user):
         return
@@ -546,7 +574,7 @@ def note_word_learned(user: dict) -> str:
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["words_today"] = int(daily.get("words_today") or 0) + 1
-    from services.rewards import has_lessons_pass, vocab_daily_cap
+    from services.rewards import has_lessons_pass
 
     if not has_lessons_pass(user):
         daily["vocab_items_today"] = vocab_items_used_today(user)
@@ -554,11 +582,10 @@ def note_word_learned(user: dict) -> str:
     wrap = format_session_wrap(
         user, kind="word", streak_info=streak_info, goal_just_done=goal_just
     )
-    if not has_lessons_pass(user) and vocab_items_used_today(user) >= vocab_daily_cap(user):
-        wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(
-            what="слов или фраз Vocabulary",
-            limit=vocab_daily_cap(user),
-        )
+    if not has_lessons_pass(user) and lesson_points_used_today(user) >= lesson_points_cap(user):
+        daily["hit_vocab_limit"] = True
+        daily["hit_grammar_limit"] = True
+        wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(limit=lesson_points_cap(user))
     return wrap
 
 
@@ -568,7 +595,7 @@ def note_phrase_learned(user: dict) -> str:
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["phrases_today"] = int(daily.get("phrases_today") or 0) + 1
-    from services.rewards import has_lessons_pass, vocab_daily_cap
+    from services.rewards import has_lessons_pass
 
     if not has_lessons_pass(user):
         daily["vocab_items_today"] = vocab_items_used_today(user)
@@ -576,11 +603,10 @@ def note_phrase_learned(user: dict) -> str:
     wrap = format_session_wrap(
         user, kind="phrase", streak_info=streak_info, goal_just_done=goal_just
     )
-    if not has_lessons_pass(user) and vocab_items_used_today(user) >= vocab_daily_cap(user):
-        wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(
-            what="слов или фраз Vocabulary",
-            limit=vocab_daily_cap(user),
-        )
+    if not has_lessons_pass(user) and lesson_points_used_today(user) >= lesson_points_cap(user):
+        daily["hit_vocab_limit"] = True
+        daily["hit_grammar_limit"] = True
+        wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(limit=lesson_points_cap(user))
     return wrap
 
 
@@ -692,8 +718,8 @@ def subscription_blurb(user: dict) -> str:
         f"{discount_blurb(user)}"
         f"{lottery_status_lines(user)}\n"
         "<b>Бесплатно</b>\n"
-        f"• Vocabulary — до {FREE_VOCAB_ITEMS_PER_DAY} слов/фраз в день\n"
-        f"• Grammar — до {FREE_GRAMMAR_EXERCISES_PER_DAY} заданий в день (все уровни)\n"
+        f"• Уроки (Grammar + Vocabulary) — до <b>{FREE_LESSON_POINTS_PER_DAY}</b> баллов/день\n"
+        f"  (задание Grammar = {POINT_GRAMMAR_EXERCISE} балл, слово/фраза = {POINT_VOCAB_ITEM} балла)\n"
         f"• общение — до {FREE_CHAT_PER_DAY} сообщ./день\n"
         "• тест уровня\n\n"
         f"<b>💬 Только общение</b> — <b>{PRICE_CHAT_MONTH}₽/мес</b>\n"

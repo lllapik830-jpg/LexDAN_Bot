@@ -62,6 +62,7 @@ from services.lesson_state import (
     start_speak_practice,
     bump_speak_attempt,
     clear_speak_practice,
+    advance_speak_phrase,
     EXERCISE_TYPES,
 )
 from services.rico_tutor import (
@@ -200,16 +201,47 @@ async def voice_in_lessons_grammar(m: Message):
     await m.answer(VOICE_ONLY_TEXT, reply_markup=_kb_for_user(user), parse_mode="HTML")
 
 
-def _speak_phrase_for_exercise(ex: dict | None) -> str:
+def _filled_sentence(ex: dict | None) -> str:
     if not ex:
         return ""
+    en = (ex.get("sentence_en") or "").strip()
+    ans = (ex.get("answer") or "").strip()
+    if not en or not ans:
+        return ""
+    if "____" not in en:
+        return ""
+    import re
+
+    s = en.replace("____", ans, 1)
+    # убрать подсказки в скобках рядом с пропуском: (white/black), (Friday)
+    s = re.sub(r"\s*\([^)]*\)", "", s)
+    return " ".join(s.split()).strip(" .") + ("." if not s.strip().endswith((".", "?", "!")) else "")
+
+
+def _speak_items_for_exercise(ex: dict | None) -> list[str]:
+    """Очередь произношения: ответ → полное предложение (для fill-in)."""
+    if not ex:
+        return []
     subtype = (ex.get("subtype") or "").strip()
     answer = (ex.get("answer") or "").strip()
     if subtype == "translate_ru":
-        return (ex.get("sentence_en") or answer).strip()
+        full = (ex.get("sentence_en") or answer).strip()
+        return [full] if full else []
     if subtype == "mcq" and " " in answer and len(answer) > 12:
-        return answer
-    return answer
+        return [answer]
+
+    items: list[str] = []
+    if answer:
+        items.append(answer)
+    filled = _filled_sentence(ex)
+    if filled and filled.lower() != answer.lower():
+        items.append(filled)
+    return items
+
+
+def _speak_phrase_for_exercise(ex: dict | None) -> str:
+    items = _speak_items_for_exercise(ex)
+    return items[0] if items else ""
 
 
 async def _finish_exercise_ok(
@@ -274,12 +306,12 @@ async def _finish_exercise_ok(
             mark = "✅" if n in done else "▫️"
             progress_lines.append(f"{mark} Задание {n} — {title}")
 
-    speak_phrase = "" if skip_speak else _speak_phrase_for_exercise(ex)
-    if speak_phrase:
+    speak_items = [] if skip_speak else _speak_items_for_exercise(ex)
+    if speak_items:
         await m.answer(text + extra, parse_mode="HTML")
         start_speak_practice(
             user_id,
-            phrase=speak_phrase,
+            phrases=speak_items,
             level=level,
             topic_id=topic_id,
             topic_title=topic_title,
@@ -290,11 +322,19 @@ async def _finish_exercise_ok(
         from services.elevenlabs import send_voice_reply
         from services.voices import RICO_VOICE_ID
 
+        first = speak_items[0]
         await send_voice_reply(
-            m, speak_phrase, title="Rico answer", voice_id=RICO_VOICE_ID
+            m, first, title="Rico answer", voice_id=RICO_VOICE_ID
         )
+        if len(speak_items) > 1:
+            hint = (
+                f"🗣 Сначала произнеси ответ:\n<b>{first}</b>\n\n"
+                f"Потом целиком предложение:\n<b>{speak_items[1]}</b>"
+            )
+        else:
+            hint = f"🗣 Теперь произнеси в микрофон:\n<b>{first}</b>"
         await m.answer(
-            f"🗣 Теперь произнеси в микрофон:\n<b>{speak_phrase}</b>",
+            hint,
             parse_mode="HTML",
             reply_markup=ReplyKeyboardMarkup(
                 keyboard=[[KeyboardButton(text="⏭ Пропустить произношение")]],
@@ -359,6 +399,21 @@ async def _handle_speak_practice_voice(m: Message, user: dict):
 
     if heard and answers_equivalent(phrase, heard):
         await m.answer(f"✅ Услышал: <i>{heard}</i> — супер!", parse_mode="HTML")
+        nxt = advance_speak_phrase(uid)
+        if nxt:
+            from services.elevenlabs import send_voice_reply
+            from services.voices import RICO_VOICE_ID
+
+            await send_voice_reply(m, nxt, title="Rico answer", voice_id=RICO_VOICE_ID)
+            await m.answer(
+                f"🗣 Теперь произнеси целиком:\n<b>{nxt}</b>",
+                parse_mode="HTML",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard=[[KeyboardButton(text="⏭ Пропустить произношение")]],
+                    resize_keyboard=True,
+                ),
+            )
+            return
         await _continue_after_speak(m, uid, speak)
         return
 
@@ -584,6 +639,11 @@ async def grammar_rico_chat_text(m: Message):
         return
     users = load_users()
     user = get_user(users, str(m.from_user.id))
+    from services.moderation import guard_user_text, ensure_moderation
+
+    ensure_moderation(user)
+    if not await guard_user_text(m, user, text):
+        return
     await _rico_chat_reply(m, user, text, show_heard=False)
 
 
@@ -1022,8 +1082,14 @@ async def exercise_answer(m: Message):
     }:
         return
 
+    from services.moderation import guard_user_text, ensure_moderation
+
     users = load_users()
     user = get_user(users, str(m.from_user.id))
+    ensure_moderation(user)
+    if not await guard_user_text(m, user, m.text):
+        return
+
     lesson = user["lesson"]
     ex = dict(lesson.get("exercise") or {})
     num = lesson.get("exercise_num")

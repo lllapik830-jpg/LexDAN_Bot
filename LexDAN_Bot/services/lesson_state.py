@@ -280,7 +280,8 @@ def start_exercise(user_id: str, num: int, exercise: dict) -> dict:
 def start_speak_practice(
     user_id: str,
     *,
-    phrase: str,
+    phrase: str | None = None,
+    phrases: list[str] | None = None,
     level: str,
     topic_id: str,
     topic_title: str,
@@ -288,13 +289,20 @@ def start_speak_practice(
     topic_just_done: bool,
     progress_lines: list[str] | None = None,
 ) -> dict:
-    """После верного ответа — озвучка + произношение в микрофон."""
+    """После верного ответа — озвучка + произношение в микрофон (можно очередь фраз)."""
+
+    queue = [p.strip() for p in (phrases or []) if (p or "").strip()]
+    if not queue and phrase:
+        queue = [phrase.strip()]
+    current = queue[0] if queue else ""
 
     def mut(u):
         ensure_lesson(u)
         u["lesson"]["hub"] = "exercise_speak"
         u["lesson"]["speak"] = {
-            "phrase": phrase,
+            "phrase": current,
+            "phrases": queue,
+            "phrase_index": 0,
             "attempts": 0,
             "level": level,
             "topic_id": topic_id,
@@ -305,6 +313,32 @@ def start_speak_practice(
         }
 
     return update_lesson(user_id, mut)
+
+
+def advance_speak_phrase(user_id: str) -> str | None:
+    """Следующая фраза в очереди произношения или None если конец."""
+
+    def mut(u):
+        ensure_lesson(u)
+        speak = dict(u["lesson"].get("speak") or {})
+        phrases = list(speak.get("phrases") or [])
+        idx = int(speak.get("phrase_index") or 0) + 1
+        if idx >= len(phrases):
+            speak["phrase"] = ""
+            speak["phrase_index"] = idx
+            u["lesson"]["speak"] = speak
+            return
+        speak["phrase_index"] = idx
+        speak["phrase"] = phrases[idx]
+        speak["attempts"] = 0
+        u["lesson"]["speak"] = speak
+
+    update_lesson(user_id, mut)
+    users = load_users()
+    u = get_user(users, str(user_id))
+    speak = (u.get("lesson") or {}).get("speak") or {}
+    nxt = (speak.get("phrase") or "").strip()
+    return nxt or None
 
 
 def bump_speak_attempt(user_id: str) -> dict:

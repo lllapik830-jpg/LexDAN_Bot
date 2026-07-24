@@ -46,13 +46,17 @@ CHAT RULES (reply_en) — ALWAYS keep the chat moving:
    question that develops THE SAME idea/topic (football → club/player/match; food → dish/place…).
 2) Never end with empty closers: "Got it", "Let's keep chatting", "Okay", "Alright",
    "Interesting" alone, or any reply WITHOUT a question mark.
-3) Stay on the student's topic. Do NOT jump to a random new topic while theirs is alive.
+3) Stay on the student's topic AND on the ACTIVE library topic if engaged.
+   If you started Present Simple / hobbies / etc. — keep developing THAT thread like a human.
+   Do NOT switch topics until the student clearly asks for another topic.
 4) Suggest a NEW concrete topic ONLY on pure small talk / "idk what to talk about" /
-   one-word dead-end with nothing left to ask. If a TOPIC LIBRARY is provided, pick from it
+   or when the student explicitly asks to change topic. If a TOPIC LIBRARY is provided, pick from it
    (prefer the ACTIVE topic). Never invent random off-library topics when the library is present.
-5) Never reuse the exact same question from recent replies; rephrase, keep the topic.
-6) 1–3 short spoken A2–B1 sentences + one question. Not a textbook.
+5) Never reuse the exact same question from recent replies; rephrase, deepen the SAME topic
+   (details, feelings, examples, comparisons) — do not stall with the same shallow question.
+6) 1–3 short spoken A2–B1 sentences + one question. Not a textbook. Sound like a friendly peer.
 7) Light praise ("Nice!") is OK only if a real follow-up question comes right after.
+8) The English in reply_en is ALSO spoken aloud — keep it natural and identical to what you mean.
 """
 
 _FALLBACK_REPLIES = [
@@ -101,6 +105,8 @@ def ask_tutor(
     recent_replies: list[str] | None = None,
     recent_turns: list[dict] | None = None,
     topic_library_block: str = "",
+    active_topic: dict | None = None,
+    topic_engaged: bool = False,
 ) -> dict:
     fallback = {
         "has_error": False,
@@ -108,7 +114,13 @@ def ask_tutor(
         "errors_ru": "",
         "tips_ru": "",
         "rule_ru": "",
-        "reply_en": _fallback_reply_for(user_text, recent_replies or []),
+        "reply_en": _fallback_reply_for(
+            user_text,
+            recent_replies or [],
+            turns=recent_turns,
+            active_topic=active_topic,
+            topic_engaged=topic_engaged,
+        ),
     }
 
     recent = [r for r in (recent_replies or []) if r][-8:]
@@ -133,8 +145,17 @@ def ask_tutor(
             + "\n".join(lines)
         )
 
-    no_topic = _looks_like_no_topic(user_text) and not _active_topic_in_turns(turns)
-    if no_topic:
+    no_topic = (
+        _looks_like_no_topic(user_text)
+        and not _active_topic_in_turns(turns)
+        and not topic_engaged
+    )
+    if topic_engaged:
+        topic_hint = (
+            "A library topic is already active — continue developing it with ONE simple "
+            "follow-up question. Do NOT ask what they want to talk about."
+        )
+    elif no_topic:
         topic_hint = (
             "Student has NO clear topic yet → answer briefly, pick ONE topic from the "
             "TOPIC LIBRARY (prefer ACTIVE), and ask that seed question (light rephrase OK)."
@@ -187,11 +208,35 @@ def ask_tutor(
         raw = response.json()["choices"][0]["message"]["content"].strip()
         parsed = _parse_tutor_json(raw) or dict(fallback)
         parsed = _sanitize_correction(user_text, parsed)
-        parsed = _ensure_diverse_reply(parsed, recent, user_text=user_text, turns=turns)
+        parsed = _ensure_diverse_reply(
+            parsed,
+            recent,
+            user_text=user_text,
+            turns=turns,
+            active_topic=active_topic,
+            topic_engaged=topic_engaged,
+        )
         return parsed
     except Exception as e:
         logging.error(f"GPT error: {e}")
         return fallback
+
+
+_RU_SMALLTALK_RE = re.compile(
+    r"^\s*(привет|здравствуй|здравствуйте|"
+    r"как дела|как ты|как жизнь|"
+    r"доброе утро|добрый день|добрый вечер|"
+    r"не знаю|без понятия)\s*[.!?]*\s*$",
+    re.I,
+)
+
+_TOPIC_ASK_RE = re.compile(
+    r"what (would you like|do you want) to talk about|"
+    r"what (topic|subject)|"
+    r"what should we talk|"
+    r"о ч[её]м.*(хочешь|поговор|говор)",
+    re.I,
+)
 
 
 def _looks_like_no_topic(text: str) -> bool:
@@ -200,10 +245,20 @@ def _looks_like_no_topic(text: str) -> bool:
         return True
     if _SMALLTALK_RE.match(t):
         return True
+    if _RU_SMALLTALK_RE.match(t):
+        return True
+    low = t.lower()
+    if re.search(r"\b(hi|hey|hello)\b", low) and re.search(
+        r"\b(how are you|how are u|how r u|how'?s it going|what'?s up)\b", low
+    ):
+        return True
+    if re.search(r"привет", low) and re.search(r"как (дела|ты|жизнь)", low):
+        return True
     # очень короткое «пустое» сообщение без существительных темы
     tokens = _normalize_tokens(t)
     return len(tokens) <= 2 and tokens[0] in {
         "hi", "hey", "hello", "ok", "okay", "yes", "no", "yeah", "idk", "thanks", "thank",
+        "привет", "да", "нет", "ок",
     }
 
 
@@ -221,7 +276,17 @@ def _fallback_reply_for(
     user_text: str,
     recent: list[str],
     turns: list[dict] | None = None,
+    active_topic: dict | None = None,
+    topic_engaged: bool = False,
 ) -> str:
+    from services.chat_topics import build_dive_topic_reply, build_suggest_topic_reply
+
+    if active_topic and not _active_topic_in_turns(turns or []):
+        if topic_engaged or _looks_like_no_topic(user_text):
+            if topic_engaged:
+                return build_dive_topic_reply(active_topic)
+            return build_suggest_topic_reply("Student", active_topic, user_text)
+
     # small talk / нет темы → предложить тему
     if _looks_like_no_topic(user_text) and not _active_topic_in_turns(turns or []):
         pool = [
@@ -239,6 +304,10 @@ def _fallback_reply_for(
     return random.choice(pool or _TOPIC_CONTINUE_REPLIES)
 
 
+def _is_meta_topic_ask(reply: str) -> bool:
+    return bool(_TOPIC_ASK_RE.search((reply or "").lower()))
+
+
 def _is_dead_reply(reply: str) -> bool:
     r = (reply or "").strip()
     if not r:
@@ -251,6 +320,11 @@ def _is_dead_reply(reply: str) -> bool:
     if "keep chatting" in low or "let's keep chat" in low:
         return True
     return False
+
+
+def _is_weak_no_topic_reply(reply: str) -> bool:
+    """Ответ снова спрашивает «о чём поговорить» вместо развития темы."""
+    return _is_meta_topic_ask(reply)
 
 
 def _strip_leading_praise(reply: str) -> str:
@@ -447,6 +521,8 @@ def _ensure_diverse_reply(
     recent: list[str],
     user_text: str = "",
     turns: list[dict] | None = None,
+    active_topic: dict | None = None,
+    topic_engaged: bool = False,
 ) -> dict:
     """Не повторять тот же вопрос; тему ученика не ломать случайным fallback."""
     reply = _clean_field(result.get("reply_en") or "")
@@ -469,9 +545,19 @@ def _ensure_diverse_reply(
             repeated = True
             break
 
-    if not reply or repeated or _is_dead_reply(reply):
-        # при активной теме не подсовываем случайную «песню» и не обрываем чат
-        reply = _fallback_reply_for(user_text, recent, turns=turns)
+    weak_no_topic = (
+        not _active_topic_in_turns(turns or [])
+        and (_is_weak_no_topic_reply(reply) or (not topic_engaged and _is_meta_topic_ask(reply)))
+    )
+
+    if not reply or repeated or _is_dead_reply(reply) or weak_no_topic:
+        reply = _fallback_reply_for(
+            user_text,
+            recent,
+            turns=turns,
+            active_topic=active_topic,
+            topic_engaged=topic_engaged,
+        )
     result["reply_en"] = reply
     return result
 

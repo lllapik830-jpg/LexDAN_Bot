@@ -799,6 +799,11 @@ async def vocab_word_practice(m: Message):
         raise SkipHandler
     users = load_users()
     user = get_user(users, str(m.from_user.id))
+    from services.moderation import guard_user_text, ensure_moderation
+
+    ensure_moderation(user)
+    if not await guard_user_text(m, user, text):
+        return
     lesson = user["lesson"]
     level = lesson["level"]
     topic_id = lesson["vocab_topic_id"]

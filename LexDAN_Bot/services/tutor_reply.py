@@ -15,6 +15,7 @@ from services.chat_topics import (
     library_prompt_block,
     pick_topic,
     resolve_chat_reply_mode,
+    wants_topic_change,
 )
 
 
@@ -54,21 +55,8 @@ async def reply_as_tutor(
 
     ensure_active_topic(user)
 
-    # если юзер явно просит другую тему — крутим библиотеку
-    low = (user_text or "").strip().lower()
-    if any(
-        p in low
-        for p in (
-            "another topic",
-            "new topic",
-            "other topic",
-            "change topic",
-            "другую тему",
-            "другая тема",
-            "смени тему",
-            "новую тему",
-        )
-    ):
+    # Меняем тему ТОЛЬКО если пользователь явно просит
+    if wants_topic_change(user_text):
         old_id = (user.get("chat_active_topic") or {}).get("id")
         user["chat_active_topic"] = pick_topic(user, avoid_ids={old_id} if old_id else set())
         user["chat_topic_offered"] = False
@@ -102,7 +90,7 @@ async def reply_as_tutor(
         user["chat_topic_offered"] = True
         user["chat_topic_dived"] = True
     else:
-        topic_engaged = bool(user.get("chat_topic_dived") or user.get("chat_topic_offered"))
+        topic_engaged = True  # уже в диалоге — держим тему
         result = ask_tutor(
             user_text,
             name,
@@ -112,6 +100,8 @@ async def reply_as_tutor(
             active_topic=active,
             topic_engaged=topic_engaged,
         )
+        user["chat_topic_offered"] = True
+        user["chat_topic_dived"] = True
     text_out, reply_en = format_tutor_message(result, heard_text=heard_text)
     if not reply_en:
         active = ensure_active_topic(user)
@@ -120,6 +110,9 @@ async def reply_as_tutor(
             or f"Sure! Let's talk about {active.get('title_en')}. {active.get('seed')}"
         )
 
+    # Синхронизация: в текст и в голос уходит ОДИН и тот же reply_en
+    result["reply_en"] = reply_en
+    text_out, reply_en = format_tutor_message(result, heard_text=heard_text)
     recent = (recent + [reply_en])[-8:]
     turns = (turns + [{"role": "bot", "text": reply_en}])[-10:]
     user["chat_recent_replies"] = recent
