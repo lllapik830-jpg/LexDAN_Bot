@@ -125,7 +125,9 @@ FORMULA_DEEP_DIVE: dict[str, str] = {
 
 
 def append_formula_deep_dive(topic_id: str, intro: str) -> str:
-    extra = FORMULA_DEEP_DIVE.get(topic_id, "")
+    from data.grammar_expansion_narratives import FORMULA_EXTRAS
+
+    extra = FORMULA_DEEP_DIVE.get(topic_id, "") or FORMULA_EXTRAS.get(topic_id, "")
     if extra and extra.strip() not in intro:
         return intro + extra
     return intro
