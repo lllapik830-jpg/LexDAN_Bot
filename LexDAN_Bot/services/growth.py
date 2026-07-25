@@ -97,6 +97,7 @@ def ensure_growth(user: dict) -> dict:
     user.setdefault("chat_text_total", int(user.get("chat_text_total") or 0))
     user.setdefault("chat_voice_total", int(user.get("chat_voice_total") or 0))
     user.setdefault("hit_chat_limit_ever", bool(user.get("hit_chat_limit_ever")))
+    user.setdefault("used_promos", list(user.get("used_promos") or []))
     if not isinstance(user.get("daily"), dict):
         user["daily"] = {}
     daily = user["daily"]

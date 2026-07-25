@@ -191,6 +191,62 @@ async def chat_text(m: Message):
     if not await guard_user_text(m, user, text):
         return
 
+    from services.promo import maybe_cleanup_expired_trial_voice
+    from services.translation import extract_say_english_payload, translate_to_english
+
+    maybe_cleanup_expired_trial_voice(user)
+
+    # «Скажи по-английски …» → перевод + текст + голос (без обычного tutor-flow)
+    ru_payload = extract_say_english_payload(text)
+    if ru_payload:
+        ok, tip = note_chat_message(user, kind="text")
+        if not ok:
+            save_users(users, only=str(m.from_user.id))
+            from handlers.lesson_keyboards import chat_limit_inline_kb
+
+            await m.answer(
+                tip or "Мы здорово поболтали!",
+                reply_markup=chat_menu(),
+                parse_mode="HTML",
+            )
+            await m.answer("👇", reply_markup=chat_limit_inline_kb())
+            return
+
+        from services.tg_out import status
+        from services.elevenlabs import send_voice_reply
+        from services.voices import resolve_chat_voice_id
+        from services.database import set_last_bot_reply
+
+        async with status(m, "✨ …"):
+            en = translate_to_english(ru_payload)
+            if not en:
+                save_users(users, only=str(m.from_user.id))
+                await m.answer(
+                    "Не получилось перевести — попробуй ещё раз чуть короче.",
+                    reply_markup=chat_menu(),
+                )
+                return
+            user["chat_last_user_text"] = text[:500]
+            turns = list(user.get("chat_recent_turns") or [])
+            turns = (turns + [
+                {"role": "user", "text": text},
+                {"role": "bot", "text": en},
+            ])[-10:]
+            user["chat_recent_turns"] = turns
+            recent = list(user.get("chat_recent_replies") or [])
+            user["chat_recent_replies"] = (recent + [en])[-8:]
+            save_users(users, only=str(m.from_user.id))
+            set_last_bot_reply(str(m.from_user.id), en)
+            await m.answer(
+                f"🇬🇧 <b>English:</b>\n{en}",
+                reply_markup=chat_menu(),
+                parse_mode="HTML",
+            )
+            await send_voice_reply(
+                m, en, title="LexDAN phrase", voice_id=resolve_chat_voice_id(user)
+            )
+        return
+
     ok, tip = note_chat_message(user, kind="text")
     if not ok:
         save_users(users, only=str(m.from_user.id))

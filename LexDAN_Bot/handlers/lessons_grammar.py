@@ -308,7 +308,8 @@ async def _finish_exercise_ok(
 
     speak_items = [] if skip_speak else _speak_items_for_exercise(ex)
     if speak_items:
-        await m.answer(text + extra, parse_mode="HTML")
+        # Сначала только «верно» + произношение; праздник темы — после ГС
+        await m.answer(text, parse_mode="HTML")
         start_speak_practice(
             user_id,
             phrases=speak_items,
@@ -318,6 +319,7 @@ async def _finish_exercise_ok(
             next_num=None if topic_just_done else next_num,
             topic_just_done=topic_just_done or next_num is None,
             progress_lines=progress_lines,
+            celebration_extra=extra,
         )
         from services.elevenlabs import send_voice_reply
         from services.voices import RICO_VOICE_ID
@@ -361,13 +363,15 @@ async def _continue_after_speak(m: Message, user_id: str, speak: dict):
     next_num = speak.get("next_num")
     topic_just_done = bool(speak.get("topic_just_done"))
     progress_lines = list(speak.get("progress_lines") or [])
+    celebration = (speak.get("celebration_extra") or "").strip()
     users = load_users()
     user = get_user(users, user_id)
     done = get_done_exercises(user, level, topic_id)
 
     if topic_just_done or next_num is None:
         clear_active_exercise(user_id)
-        lines = ["✅ Отлично, идём дальше!", "", "📝 Прогресс:"] + (
+        head = celebration.strip() if celebration else "✅ Отлично, идём дальше!"
+        lines = [head, "", "📝 Прогресс:"] + (
             progress_lines
             or [
                 f"{'✅' if n in done else '▫️'} Задание {n} — {title}"
@@ -377,6 +381,8 @@ async def _continue_after_speak(m: Message, user_id: str, speak: dict):
         await m.answer("\n".join(lines), reply_markup=exercises_menu_kb(done), parse_mode="HTML")
         return
 
+    if celebration:
+        await m.answer(celebration.strip(), parse_mode="HTML")
     await _launch_exercise(m, user_id, level, topic_id, topic_title, int(next_num))
 
 

@@ -131,6 +131,9 @@ def _banned_name_tokens() -> set[str]:
 
 
 async def _finish_registration(m: Message, user_id: str, name: str) -> None:
+    from services.promo import BTN_SKIP_PROMO
+    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
@@ -138,10 +141,29 @@ async def _finish_registration(m: Message, user_id: str, name: str) -> None:
     bind_referral_code(user_id, user)
     user["name"] = name
     user["pending_name"] = ""
+    user["rules_accepted"] = True
+    user["mode"] = MODE_MENU
+    user["step"] = "awaiting_promo"
+    grant_referral_bonuses(user_id, users)
+    save_users(users, only=user_id)
+
+    await m.answer(
+        f"Приятно познакомиться, {_esc(name)}! 🦜\n\n"
+        "Если есть <b>промокод</b> — введи его сейчас.\n"
+        "Нет кода — нажми «Пропустить».",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=BTN_SKIP_PROMO)]],
+            resize_keyboard=True,
+        ),
+        parse_mode="HTML",
+    )
+
+
+async def _send_welcome_after_promo(m: Message, user_id: str, *, promo_msg: str = "") -> None:
+    users = load_users()
+    user = get_user(users, user_id)
     user["step"] = "ready"
     user["mode"] = MODE_MENU
-    user["rules_accepted"] = True
-    grant_referral_bonuses(user_id, users)
     save_users(users, only=user_id)
 
     extra = ""
@@ -149,7 +171,10 @@ async def _finish_registration(m: Message, user_id: str, name: str) -> None:
         extra = (
             "\n\n🎁 Ты пришёл по ссылке друга — сегодня больше баллов на уроки!"
         )
+    if promo_msg:
+        extra = "\n\n" + promo_msg + extra
 
+    name = user.get("name") or "друг"
     await m.answer(
         WELCOME_AFTER_NAME.format(name=_esc(name)) + extra,
         reply_markup=main_menu(user),
@@ -203,11 +228,15 @@ async def start_cmd(m: Message, command: CommandObject = None):
 
 @router.message(Command("danil_test_messi"))
 async def danil_test_messi(m: Message):
-    """Секретная команда: разблокировать все уровни и разделы для проверки."""
+    """Секретная команда: разблокировать все уровни и разделы для проверки (только MANAGER)."""
+    from config import MANAGER_ID
     from handlers.keyboards import lessons_home_levels
     from services.database import MODE_LESSONS, set_mode
     from services.lesson_state import clear_lesson
     from services.growth import start_trial, extend_premium
+
+    if not m.from_user or m.from_user.id != MANAGER_ID:
+        return
 
     user_id = str(m.from_user.id)
     users = load_users()
@@ -219,6 +248,7 @@ async def danil_test_messi(m: Message):
     user["assessment_done"] = True
     user["rules_accepted"] = True
     user["level"] = "C2"
+    user["grammar_unlock_ceiling"] = "C2"
     user["step"] = "ready"
     user["assessment"] = {}
     user["mode"] = MODE_LESSONS
@@ -373,6 +403,51 @@ async def name_confirm_yes(c: CallbackQuery):
         await _finish_registration(c.message, user_id, name)
     else:
         await c.bot.send_message(int(user_id), "Напиши /start ещё раз.")
+
+
+@router.message(StepFilter("awaiting_promo"), F.text)
+async def promo_after_registration(m: Message):
+    from services.promo import BTN_SKIP_PROMO, apply_promo
+
+    user_id = str(m.from_user.id)
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_growth(user)
+    ensure_moderation(user)
+    text = (m.text or "").strip()
+
+    if text == BTN_SKIP_PROMO:
+        save_users(users, only=user_id)
+        await _send_welcome_after_promo(m, user_id)
+        return
+
+    if text.startswith("/"):
+        await m.answer("Введи промокод или нажми «Пропустить».")
+        return
+
+    if not await guard_user_text(m, user, text):
+        return
+
+    ok, msg = apply_promo(user, text)
+    save_users(users, only=user_id)
+    if not ok:
+        await m.answer(msg, parse_mode="HTML")
+        return
+    await _send_welcome_after_promo(m, user_id, promo_msg=msg)
+
+
+@router.message(StepFilter("awaiting_promo"))
+async def promo_nudge(m: Message):
+    from services.promo import BTN_SKIP_PROMO
+    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+    await m.answer(
+        "Введи промокод текстом или нажми «Пропустить».",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=BTN_SKIP_PROMO)]],
+            resize_keyboard=True,
+        ),
+    )
 
 
 @router.message(StepFilter("awaiting_name_change"), F.text)

@@ -288,6 +288,7 @@ def start_speak_practice(
     next_num: int | None,
     topic_just_done: bool,
     progress_lines: list[str] | None = None,
+    celebration_extra: str = "",
 ) -> dict:
     """После верного ответа — озвучка + произношение в микрофон (можно очередь фраз)."""
 
@@ -310,6 +311,7 @@ def start_speak_practice(
             "next_num": next_num,
             "topic_just_done": topic_just_done,
             "progress_lines": progress_lines or [],
+            "celebration_extra": celebration_extra or "",
         }
 
     return update_lesson(user_id, mut)

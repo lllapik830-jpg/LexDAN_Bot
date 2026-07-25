@@ -1,17 +1,5 @@
 """
-Админ-команды (только MANAGER_ID).
-
-/admin — справка
-/grant_chat <id> [дней=30]
-/grant_full <id> [дней=30]
-/revoke <id>
-/user <id>
-/paid
-/set_discount <id> <процент>
-/clear_discount <id>
-/lottery30 | /lottery30_draw
-/lottery100 | /lottery100_draw
-/lottery_ref | /lottery_ref_draw
+Админ-команды (только MANAGER_ID). Молча игнорируются у всех остальных.
 """
 
 from __future__ import annotations
@@ -53,31 +41,30 @@ from services.rewards import extend_chat_pass, user_plan
 router = Router()
 
 HELP = (
-    "🛠 <b>Админ LexDAN</b>\n\n"
-    "<b>Воронка / реклама</b>\n"
-    "/funnel — сводка\n"
-    "/starts — кто нажал Start (id)\n"
-    "/chat_stats — «Общаться» за всё время (текст/голос) + лимиты\n"
+    "🛠 <b>Админ LexDAN</b>\n"
+    f"<i>Только id <code>{MANAGER_ID}</code></i>\n\n"
+    "<b>Воронка</b>\n"
+    "/funnel — сводка воронки\n"
+    "/starts — кто нажал Start\n"
+    "/chat_stats — общение за всё время + лимиты\n"
     "/assessed — кто прошёл входной тест\n"
     "/limits — кто упёрся в лимиты сегодня\n"
-    "/progress — задания Grammar и слова Vocabulary\n\n"
-    "<b>Тарифы</b>\n"
-    "/grant_chat <code>id</code> [дней] — общение\n"
-    "/grant_full <code>id</code> [дней] — полный доступ\n"
-    "  (если у юзера скидка — спишется автоматически)\n"
-    "/revoke <code>id</code> — снять chat + full\n"
-    "/user <code>id</code> — карточка\n"
-    "/paid — кто с активным тарифом\n\n"
+    "/progress — Grammar / Vocabulary прогресс\n\n"
+    "<b>Доступы</b>\n"
+    "/grant_chat <code>id</code> [дней] — безлимит общения (399)\n"
+    "/grant_full <code>id</code> [дней] — полный доступ (799)\n"
+    "/revoke <code>id</code> — снять chat + full + DEV\n"
+    "/user <code>id</code> — карточка пользователя\n"
+    "/paid — у кого активный тариф\n"
+    "/unlock_levels — открыть <b>тебе</b> все уровни A0–C2\n"
+    "  (только себе; прогресс других не трогает)\n\n"
     "<b>Скидки</b>\n"
     "/set_discount <code>id</code> <code>%</code>\n"
     "/clear_discount <code>id</code>\n\n"
     "<b>Розыгрыши</b>\n"
-    "/lottery30 — участники (серия 30 на 799)\n"
-    "/lottery30_draw — выбрать победителя (+180 дн. full)\n"
-    "/lottery100 — участники (серия 100)\n"
-    "/lottery100_draw — победитель (приз деньгами вручную)\n"
-    "/lottery_ref — пул реф-билетов\n"
-    "/lottery_ref_draw — победитель (+30 дн. full)\n"
+    "/lottery30 · /lottery30_draw — серия 30 на 799 (+180 дн.)\n"
+    "/lottery100 · /lottery100_draw — серия 100 (15 000₽ вручную)\n"
+    "/lottery_ref · /lottery_ref_draw — реф-билеты (+30 дн.)\n"
     "/prize_pending — кому ещё не выплатили 15 000₽\n"
     "/prize_paid <code>id</code> — отметить выплату\n"
 )
@@ -106,6 +93,28 @@ async def admin_help(m: Message):
     if not _is_admin(m):
         return
     await m.answer(HELP, parse_mode="HTML")
+
+
+@router.message(Command("unlock_levels"))
+async def admin_unlock_levels(m: Message):
+    """Открыть все CEFR-уровни только админу (себе)."""
+    if not _is_admin(m):
+        return
+    uid = str(m.from_user.id)
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_growth(user)
+    user["assessment_done"] = True
+    user["grammar_unlock_ceiling"] = "C2"
+    if not (user.get("level") or "").strip():
+        user["level"] = "A1"
+    save_users(users, only=uid)
+    await m.answer(
+        "🔓 Тебе открыты <b>все уровни A0–C2</b>.\n"
+        "Входной тест помечен как пройденный.\n"
+        "Тариф не менялся — только доступ к уровням.",
+        parse_mode="HTML",
+    )
 
 
 async def _send_report(m: Message, text: str) -> None:
