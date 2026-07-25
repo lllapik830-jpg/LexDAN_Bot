@@ -18,12 +18,22 @@ BTN_TRANSLATE = "🌍 Перевести"
 BTN_RICO_HELP = "🦜 Помощь Рико"
 
 
-def level_sections_kb() -> ReplyKeyboardMarkup:
-    """Grammar + Vocabulary. L/R/S/W временно скрыты."""
+def level_sections_kb(user: dict | None = None, *, user_id: str | int | None = None) -> ReplyKeyboardMarkup:
+    """Grammar + Vocabulary; Listening виден только MANAGER (тест раздела)."""
+    from config import MANAGER_ID
+
     rows = [
         [KeyboardButton(text="📘 Grammar"), KeyboardButton(text="📗 Vocabulary")],
-        [KeyboardButton(text="⬅️ К уровням"), KeyboardButton(text="🔙 Вернуться в меню")],
     ]
+    uid = user_id
+    if uid is None and isinstance(user, dict):
+        uid = user.get("telegram_id") or user.get("id")
+    try:
+        if uid is not None and int(uid) == int(MANAGER_ID):
+            rows.insert(1, [KeyboardButton(text="🎧 Listening")])
+    except (TypeError, ValueError):
+        pass
+    rows.append([KeyboardButton(text="⬅️ К уровням"), KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 

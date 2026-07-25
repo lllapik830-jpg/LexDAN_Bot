@@ -116,14 +116,14 @@ def _topic_kb_for(level: str, topic_id: str) -> ReplyKeyboardMarkup:
     return topic_chat_kb(ack=is_ack_topic(topic))
 
 
-def _kb_for_user(user: dict) -> ReplyKeyboardMarkup:
+def _kb_for_user(user: dict, *, user_id: str | int | None = None) -> ReplyKeyboardMarkup:
     ensure_lesson(user)
     lesson = user.get("lesson") or {}
     hub = lesson.get("hub")
     level = lesson.get("level") or user.get("level") or "A1"
 
     if hub == "level_hub":
-        return level_sections_kb()
+        return level_sections_kb(user_id=user_id)
     if hub == "grammar_list":
         return grammar_topics_kb(level, user)
     if hub == "topic":
@@ -173,11 +173,18 @@ async def _show_grammar_test_question(m: Message, user: dict):
 
 async def open_level_hub(m: Message, level: str):
     set_level_hub(str(m.from_user.id), level)
+    from config import MANAGER_ID
+
+    extra = (
+        "\n🎧 <b>Listening</b> доступен тебе для теста."
+        if m.from_user and m.from_user.id == MANAGER_ID
+        else "\n🎧 Listening · 📖 Reading · 🗣 Speaking · ✍️ Writing — <i>скоро</i> 🚀"
+    )
     await m.answer(
         get_level_welcome(level)
-        + "\n\nСейчас доступны <b>Grammar</b> и <b>Vocabulary</b>.\n"
-        "🎧 Listening · 📖 Reading · 🗣 Speaking · ✍️ Writing — <i>скоро появятся</i> 🚀",
-        reply_markup=level_sections_kb(),
+        + "\n\nСейчас доступны <b>Grammar</b> и <b>Vocabulary</b>."
+        + extra,
+        reply_markup=level_sections_kb(user_id=m.from_user.id),
         parse_mode="HTML",
     )
 
@@ -198,7 +205,7 @@ async def voice_in_lessons_grammar(m: Message):
     if hub == "exercise_speak":
         await _handle_speak_practice_voice(m, user)
         return
-    await m.answer(VOICE_ONLY_TEXT, reply_markup=_kb_for_user(user), parse_mode="HTML")
+    await m.answer(VOICE_ONLY_TEXT, reply_markup=_kb_for_user(user, user_id=m.from_user.id), parse_mode="HTML")
 
 
 def _filled_sentence(ex: dict | None) -> str:
@@ -721,7 +728,7 @@ async def back_to_sections(m: Message):
     set_level_hub(str(m.from_user.id), level)
     await m.answer(
         f"🎓 Уровень {level} — выбери раздел:",
-        reply_markup=level_sections_kb(),
+        reply_markup=level_sections_kb(user_id=m.from_user.id),
     )
 
 

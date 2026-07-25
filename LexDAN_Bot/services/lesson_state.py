@@ -191,6 +191,11 @@ def clear_lesson(user_id: str) -> None:
     def mut(u):
         ensure_progress(u)
         u["lesson"] = _blank_lesson()
+        # сброс незавершённой сессии Listening (галочки тем сохраняются)
+        from services.listening_state import ensure_listening
+
+        sm = ensure_listening(u)
+        sm["session"] = None
 
     update_lesson(user_id, mut)
 

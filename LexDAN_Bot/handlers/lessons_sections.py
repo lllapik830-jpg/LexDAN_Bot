@@ -10,8 +10,8 @@ from services.lesson_state import assessment_busy, ensure_lesson, set_level_hub,
 
 router = Router()
 
+# Listening — отдельный handlers/lessons_listening.py (тест для MANAGER)
 SECTION_BUTTONS = {
-    "🎧 Listening": "listening",
     "📖 Reading": "reading",
     "🗣 Speaking": "speaking",
     "✍️ Writing": "writing",
@@ -69,5 +69,5 @@ async def section_stub_back(m: Message):
     set_level_hub(str(m.from_user.id), level)
     await m.answer(
         f"🎓 Уровень {level} — выбери раздел:",
-        reply_markup=level_sections_kb(),
+        reply_markup=level_sections_kb(user_id=m.from_user.id),
     )

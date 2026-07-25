@@ -23,6 +23,12 @@ async def back_to_main(m: Message):
     user_id = str(m.from_user.id)
     clear_assessment_phase(user_id)
     clear_lesson(user_id)
+    try:
+        from services.listening_state import clear_session as clear_listening
+
+        clear_listening(user_id)
+    except Exception:
+        pass
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)

@@ -414,7 +414,7 @@ async def open_vocabulary(m: Message):
     if not get_vocab_topics(level):
         await m.answer(
             f"🦜 Нет тем Vocabulary для уровня <b>{level}</b>.",
-            reply_markup=level_sections_kb(),
+            reply_markup=level_sections_kb(user_id=m.from_user.id),
             parse_mode="HTML",
         )
         return
@@ -1237,7 +1237,10 @@ async def vocab_back_sections(m: Message):
     level = user["lesson"].get("level") or user.get("level") or "A1"
     clear_vocab_session(str(m.from_user.id))
     set_level_hub(str(m.from_user.id), level)
-    await m.answer(f"🎓 Уровень {level} — выбери раздел:", reply_markup=level_sections_kb())
+    await m.answer(
+        f"🎓 Уровень {level} — выбери раздел:",
+        reply_markup=level_sections_kb(user_id=m.from_user.id),
+    )
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == "⬅️ К уровням")
