@@ -149,10 +149,10 @@ def streak_reward_text(plan: str, days: int) -> str:
             100: "Бесплатно <b>10 дней</b> полного доступа к урокам",
         },
         "full": {
-            7: "🔐 Секреты Рико: <b>Разбор недели</b> + <b>Голос дня</b> (в меню)",
-            14: "+<b>3 дня</b> полного доступа в подарок",
+            7: "🔐 Секреты Рико: <b>Разбор недели</b> + <b>Голос дня</b> (акценты)",
+            14: "🛡️ <b>×2</b> стрик-сейфа + ещё один <b>Голос дня</b> + билет в реф-розыгрыш",
             30: "Билет в розыгрыш полугодовой подписки (среди 30-дневных на 799)",
-            50: "Ещё один <b>Голос дня</b> от Рико",
+            50: "Ещё один <b>Голос дня</b> с разными акцентами",
             100: "Билет в розыгрыш <b>15 000₽</b> (среди 100-дневных на 799)",
         },
     }
@@ -220,9 +220,9 @@ def _grant_streak_reward(user: dict, plan: str, days: int) -> str:
 
             unlock_mission(user, MISSION_WEEK)
             return (
-                "🔥 14 дней! Открыто секретное задание Рико: "
-                "<b>Разбор твоей недели</b>.\n"
-                "Смотри кнопку <b>🔐 Секрет Рико</b> в главном меню!"
+                "🔥 14 дней! Открыт секрет Рико: <b>Разбор твоей недели</b> 📝\n"
+                "В меню появится <b>🔐 Секрет Рико</b> — 5 карточек правок "
+                "«как сказал бы носитель»."
             )
         if days == 30:
             extend_chat_pass(user, 1)
@@ -234,19 +234,20 @@ def _grant_streak_reward(user: dict, plan: str, days: int) -> str:
         if days == 100:
             extend_chat_pass(user, 30)
             return f"🔥 100 дней! Месяц тарифа «Общение» ({PRICE_CHAT_MONTH}₽)."
+        return ""
 
     if plan == "chat":
         if days == 7:
             set_grammar_cap_today(user, 24)
-            return "🔥 7 дней! Бустер: сегодня Grammar до <b>24</b> заданий."
+            return "🔥 7 дней! Бустер: сегодня до <b>24</b> баллов на уроки."
         if days == 14:
             from services.secret_missions import unlock_mission, MISSION_WEEK
 
             unlock_mission(user, MISSION_WEEK)
             return (
-                "🔥 14 дней! Открыто секретное задание Рико: "
-                "<b>Разбор твоей недели</b>.\n"
-                "Смотри кнопку <b>🔐 Секрет Рико</b> в главном меню!"
+                "🔥 14 дней на «Общение»! Секрет Рико: <b>Разбор твоей недели</b> 📝\n"
+                "Кнопка <b>🔐 Секрет Рико</b> в меню — разберём типичные ошибки "
+                "и твои фразы из чата."
             )
         if days == 30:
             extend_lessons_pass(user, 1)
@@ -258,38 +259,57 @@ def _grant_streak_reward(user: dict, plan: str, days: int) -> str:
         if days == 100:
             extend_lessons_pass(user, 10)
             return "🔥 100 дней! <b>10 дней</b> доступа к урокам."
+        return ""
 
+    # full (799 / триал)
     if days == 7:
         from services.secret_missions import unlock_mission, MISSION_WEEK, MISSION_VOICE
 
         unlock_mission(user, MISSION_WEEK)
         unlock_mission(user, MISSION_VOICE)
         return (
-            "🔥 7 дней на 799! Два секрета Рико: "
-            "<b>Разбор недели</b> и <b>Голос дня</b>.\n"
+            "🔥 7 дней на 799! Два секрета Рико:\n"
+            "📝 <b>Разбор недели</b> и 🗣 <b>Голос дня</b> "
+            "(4 фразы разными акцентами из наших голосов).\n"
             "Кнопка <b>🔐 Секрет Рико</b> — в главном меню!"
         )
     if days == 14:
-        extend_premium(user, 3)
-        return "🔥 14 дней! +<b>3 дня</b> полного доступа в подарок."
+        from services.growth import grant_safe
+        from services.secret_missions import unlock_mission, MISSION_VOICE
+
+        grant_safe(user, 2)
+        unlock_mission(user, MISSION_VOICE)
+        user["referral_lottery_tickets"] = int(user.get("referral_lottery_tickets") or 0) + 1
+        return (
+            "🔥 14 дней на 799! Вместо «лишних дней» подписки:\n"
+            "🛡️ <b>+2</b> стрик-сейфа · 🗣 ещё один <b>Голос дня</b> · "
+            "🎟 <b>+1</b> билет в реф-розыгрыш.\n"
+            "Секрет — в меню <b>🔐 Секрет Рико</b>."
+        )
     if days == 30:
         user["lottery_30"] = True
         user["lottery_30_entered_at"] = _today()
-        return "🔥 30 дней! Ты в розыгрыше полугодовой подписки (тариф 799)."
+        return (
+            "🔥 30 дней! 🎟 Билет в розыгрыш <b>полугодовой</b> подписки 799 "
+            "засчитан. Смотри статус в профиле → Подписка."
+        )
     if days == 50:
         from services.secret_missions import unlock_mission, MISSION_VOICE
 
-        # exclusive_rico_tasks — заготовка на потом (когда люди подойдут к 50)
         user["exclusive_rico_tasks"] = True
         unlock_mission(user, MISSION_VOICE)
         return (
-            "🔥 50 дней! Ещё один <b>Голос дня</b> от Рико — "
-            "кнопка <b>🔐 Секрет Рико</b> в меню."
+            "🔥 50 дней! Ещё один <b>Голос дня</b> — 4 фразы разными акцентами "
+            "(Adam, British, American, AU).\n"
+            "Кнопка <b>🔐 Секрет Рико</b> в меню."
         )
     if days == 100:
         user["lottery_100"] = True
         user["lottery_100_entered_at"] = _today()
-        return "🔥 100 дней! Ты в розыгрыше <b>15 000₽</b>."
+        return (
+            "🔥 100 дней! 🎟 Ты в розыгрыше <b>15 000₽</b>. "
+            "Билет активен — статус в профиле → Подписка."
+        )
     return ""
 
 

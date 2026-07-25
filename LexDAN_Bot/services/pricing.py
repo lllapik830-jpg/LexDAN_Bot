@@ -46,6 +46,11 @@ def full_price(user: dict) -> tuple[int, int]:
     return price_with_discount(PRICE_FULL_MONTH, user)
 
 
+def upgrade_price(user: dict) -> tuple[int, int]:
+    """Доплата с тарифа «Общение» (399) до полного — 399₽ (+ скидка если есть)."""
+    return price_with_discount(PRICE_CHAT_MONTH, user)
+
+
 def discount_blurb(user: dict) -> str:
     pct = discount_percent(user)
     if pct <= 0:

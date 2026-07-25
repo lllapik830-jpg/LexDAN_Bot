@@ -193,8 +193,10 @@ async def chat_text(m: Message):
 
     from services.promo import maybe_cleanup_expired_trial_voice
     from services.translation import extract_say_english_payload, translate_to_english
+    from handlers.trial_notify import flush_trial_ended
 
     maybe_cleanup_expired_trial_voice(user)
+    await flush_trial_ended(m, user, users, str(m.from_user.id))
 
     # «Скажи по-английски …» → перевод + текст + голос (без обычного tutor-flow)
     ru_payload = extract_say_english_payload(text)

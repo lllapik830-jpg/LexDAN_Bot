@@ -40,6 +40,10 @@ async def open_chat(m: Message):
     ensure_growth(user)
     note_lesson_activity(user)
 
+    from handlers.trial_notify import flush_trial_ended
+
+    await flush_trial_ended(m, user, users, str(m.from_user.id))
+
     from services.moderation import ensure_moderation, is_banned, ban_remaining_text
 
     ensure_moderation(user)
@@ -175,13 +179,15 @@ async def open_profile(m: Message):
     users = load_users()
     user = get_user(users, user_id)
     from services.vocabulary_state import sync_vocab_counters
-    from handlers.lesson_keyboards import paywall_inline_kb
+    from handlers.lesson_keyboards import paywall_inline_kb, upgrade_inline_kb
     from services.rewards import plan_label, user_plan
+    from handlers.trial_notify import flush_trial_ended
 
     ensure_growth(user)
     bind_referral_code(user_id, user)
     sync_vocab_counters(user)
-    save_users(users)
+    await flush_trial_ended(m, user, users, user_id)
+    save_users(users, only=user_id)
 
     name = user.get("name") or m.from_user.first_name or "Не указано"
     tasks_done = count_completed_tasks(user)
@@ -206,10 +212,15 @@ async def open_profile(m: Message):
         reply_markup=profile_menu(user),
         parse_mode="HTML",
     )
-    # Тарифы — только бесплатным; платникам кнопка не нужна
+    # Тарифы — бесплатным оба; на 399 — апгрейд до полного
     if plan == "free":
         await say(m, "👇 Выбери тариф:", reply_markup=paywall_inline_kb())
-
+    elif plan == "chat":
+        await say(
+            m,
+            "👇 Можно апгрейднуть до полного доступа:",
+            reply_markup=upgrade_inline_kb(user),
+        )
 
 @router.message(F.text == "🆘 Поддержка")
 async def open_support(m: Message):

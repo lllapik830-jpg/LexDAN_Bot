@@ -28,6 +28,7 @@ API = "https://api.yookassa.ru/v3"
 SUB_DAYS = 30
 PLAN_CHAT = "chat"
 PLAN_FULL = "full"
+PLAN_UPGRADE = "upgrade"  # доплата с 399 → 799; в описании платежа — «апгрейд»
 
 
 class YooKassaError(RuntimeError):
@@ -216,7 +217,7 @@ def apply_successful_payment(payment: dict) -> dict[str, Any] | None:
     meta = payment.get("metadata") or {}
     user_id = str(meta.get("user_id") or "").strip()
     plan = str(meta.get("plan") or "").strip()
-    if not payment_id or not user_id or plan not in (PLAN_CHAT, PLAN_FULL):
+    if not payment_id or not user_id or plan not in (PLAN_CHAT, PLAN_FULL, PLAN_UPGRADE):
         log.warning("YooKassa payment missing meta: %s", payment_id)
         return None
 
@@ -229,8 +230,12 @@ def apply_successful_payment(payment: dict) -> dict[str, Any] | None:
 
     if plan == PLAN_CHAT:
         extend_chat_pass(user, SUB_DAYS)
+        user["sub_plan"] = PLAN_CHAT
     else:
+        # full или upgrade → полный доступ
         extend_premium(user, SUB_DAYS)
+        user["sub_plan"] = PLAN_FULL
+        user["in_promo_trial"] = False
 
     consume_discount(user)
     _mark_processed(user, payment_id)
@@ -242,7 +247,6 @@ def apply_successful_payment(payment: dict) -> dict[str, Any] | None:
     elif meta.get("kind") == "renew" and user.get("yookassa_payment_method_id"):
         user["sub_auto"] = True
 
-    user["sub_plan"] = plan
     user["sub_renew_at"] = time.time() + SUB_DAYS * 86400
     user["yookassa_last_payment_id"] = payment_id
     user.pop("yookassa_renew_pending_id", None)
@@ -299,6 +303,11 @@ def plan_amount_for_user(user: dict, plan: str) -> int:
     if plan == PLAN_CHAT:
         price, _ = chat_price(user)
         return int(price)
+    if plan == PLAN_UPGRADE:
+        from services.pricing import upgrade_price
+
+        price, _ = upgrade_price(user)
+        return int(price)
     price, _ = full_price(user)
     return int(price)
 
@@ -306,6 +315,8 @@ def plan_amount_for_user(user: dict, plan: str) -> int:
 def plan_title(plan: str) -> str:
     if plan == PLAN_CHAT:
         return "Общение"
+    if plan == PLAN_UPGRADE:
+        return "Апгрейд до полного доступа"
     return "Безлимит ко всему"
 
 

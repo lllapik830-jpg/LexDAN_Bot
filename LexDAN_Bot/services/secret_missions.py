@@ -31,15 +31,17 @@ MISSION_META = {
     MISSION_VOICE: {
         "title": "🗣 Голос дня",
         "blurb": (
-            "4 живые фразы под твой уровень — скажи голосом (или текстом). "
-            "Рико подскажет, как звучать естественнее."
+            "4 живые фразы под твой уровень — каждая озвучена разным акцентом "
+            "(наши голоса: Adam, British, American, Australian). "
+            "Скажи голосом или текстом — Рико подскажет, как естественнее."
         ),
         "mins": "5–8 мин",
         "intro": (
             "🦜 <b>Рико:</b> Голос — это мышца. Сейчас 4 короткие фразы.\n\n"
-            "Слушай мою озвучку → повтори в микрофон (или напиши). "
+            "Каждую озвучу <b>другим акцентом</b> из нашей коллекции — "
+            "слушай → повтори в микрофон (или напиши).\n"
             "Я скажу, что услышал и как можно естественнее.\n\n"
-            "Можно «Пропустить фразу», если совсем не хочется. Погнали 🗣"
+            "Можно «Пропустить фразу». Погнали 🗣"
         ),
     },
 }
@@ -63,14 +65,10 @@ def ensure_missions(user: dict) -> dict:
 
 
 def unlock_mission(user: dict, mission_id: str) -> bool:
-    """Добавить миссию в inbox. True если реально добавили."""
+    """Добавить миссию в inbox (можно несколько одинаковых за разные streak-ступени)."""
     sm = ensure_missions(user)
     if mission_id not in MISSION_META:
         return False
-    if mission_id in sm["inbox"]:
-        return False
-    # можно пройти снова через N дней — пока один раз на тип, пока не в done
-    # если уже done — всё равно даём повторный unlock за новый streak-milestone
     sm["inbox"].append(mission_id)
     user["pending_secret_rico"] = True
     return True
@@ -82,7 +80,12 @@ def has_secret_entry(user: dict) -> bool:
 
 
 def inbox_missions(user: dict) -> list[str]:
-    return list(ensure_missions(user).get("inbox") or [])
+    """Уникальные id в порядке появления (для кнопок хаба)."""
+    seen: list[str] = []
+    for mid in ensure_missions(user).get("inbox") or []:
+        if mid not in seen:
+            seen.append(mid)
+    return seen
 
 
 def get_active(user: dict) -> dict | None:
@@ -97,9 +100,11 @@ def clear_active(user: dict) -> None:
 
 def start_mission(user: dict, mission_id: str) -> dict | None:
     sm = ensure_missions(user)
-    if mission_id not in sm["inbox"]:
+    inbox = list(sm.get("inbox") or [])
+    if mission_id not in inbox:
         return None
-    sm["inbox"] = [x for x in sm["inbox"] if x != mission_id]
+    inbox.remove(mission_id)  # только один экземпляр
+    sm["inbox"] = inbox
     if mission_id == MISSION_WEEK:
         cards = build_week_review(user)
         if not cards:
@@ -114,10 +119,11 @@ def start_mission(user: dict, mission_id: str) -> dict | None:
         phrases = build_voice_phrases(user)
         if not phrases or len(phrases) < 4:
             phrases = _fallback_voice_phrases(user.get("level") or "A1")
+        items = attach_accent_tour(phrases[:4], user)
         sm["active"] = {
             "type": MISSION_VOICE,
             "step": 0,
-            "phrases": phrases,
+            "phrases": items,
             "notes": [],
             "intro_sent": False,
         }
@@ -390,6 +396,44 @@ def build_voice_phrases(user: dict) -> list[str]:
     return clean if len(clean) >= 4 else fallback
 
 
+def attach_accent_tour(phrases: list[str], user: dict | None = None) -> list[dict]:
+    """
+    Привязать к фразам разные голоса из каталога LexDAN (для «Голос дня»).
+    Слушать акценты можно все; для практики не зависит от тарифа.
+    """
+    from services.voices import CHAT_VOICES, DEFAULT_VOICE_ID
+
+    tour = [
+        {
+            "key": "adam",
+            "name": "Adam",
+            "accent": "American",
+            "flag": "🇺🇸",
+            "voice_id": DEFAULT_VOICE_ID,
+        },
+    ] + list(CHAT_VOICES)
+    # 4 фразы: Adam → Scotty → Emmaline → Joe (или дальше по кругу)
+    out: list[dict] = []
+    for i, text in enumerate(list(phrases)[:4]):
+        v = tour[i % len(tour)]
+        label = f"{v['name']} · {v.get('accent') or ''} {v.get('flag') or ''}".strip()
+        out.append(
+            {
+                "text": str(text).strip(),
+                "voice_id": v["voice_id"],
+                "voice_label": label,
+                "voice_key": v["key"],
+            }
+        )
+    return out
+
+
+def phrase_text(item) -> str:
+    if isinstance(item, dict):
+        return str(item.get("text") or "").strip()
+    return str(item or "").strip()
+
+
 def evaluate_voice_attempt(target: str, heard: str) -> dict:
     from services.gpt import _ask_json
 
@@ -432,9 +476,9 @@ def format_card(i: int, total: int, card: dict) -> str:
     better = card.get("better") or "—"
     tip = card.get("tip_ru") or ""
     return (
-        f"📝 <b>Разбор {i}/{total}</b>\n\n"
-        f"Часто так: <i>{wrong}</i>\n"
-        f"Как носитель: <b>{better}</b>\n"
-        f"{('💡 ' + tip) if tip else ''}\n\n"
-        "Жми «Далее», когда запомнил."
+        f"📝 <b>Разбор недели · карточка {i}/{total}</b>\n\n"
+        f"❌ Часто так:\n<i>{wrong}</i>\n\n"
+        f"✅ Как носитель:\n<b>{better}</b>\n\n"
+        f"{('💡 ' + tip + '\n\n') if tip else ''}"
+        "Запомни пару и жми «Далее» 💚"
     )

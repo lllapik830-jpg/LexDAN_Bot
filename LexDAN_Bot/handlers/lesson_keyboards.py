@@ -177,3 +177,20 @@ def tariffs_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=full_label, callback_data="tariff:full")],
         ]
     )
+
+
+def upgrade_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
+    """Кнопка апгрейда 399 → 799 для тарифа «Общение»."""
+    from services.pricing import upgrade_price
+
+    price, disc = upgrade_price(user) if user else (399, 0)
+    label = (
+        f"🚀 Апгрейд до полного — {price}₽ (−{disc}%)"
+        if disc
+        else f"🚀 Апгрейд до полного — {price}₽"
+    )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=label, callback_data="tariff:upgrade")],
+        ]
+    )

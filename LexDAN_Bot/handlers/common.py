@@ -18,7 +18,7 @@ router = Router()
 async def back_to_main(m: Message):
     from services.database import load_users, get_user, save_users
     from services.growth import ensure_growth
-    from services.promo import maybe_cleanup_expired_trial_voice
+    from handlers.trial_notify import flush_trial_ended
 
     user_id = str(m.from_user.id)
     clear_assessment_phase(user_id)
@@ -26,7 +26,7 @@ async def back_to_main(m: Message):
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
-    maybe_cleanup_expired_trial_voice(user)
+    await flush_trial_ended(m, user, users, user_id)
     save_users(users, only=user_id)
     set_mode(user_id, MODE_MENU)
     await say(

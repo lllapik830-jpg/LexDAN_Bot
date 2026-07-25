@@ -6,7 +6,7 @@ ENGRICO77 — 7 дней полного доступа (= тариф 799).
 
 from __future__ import annotations
 
-from services.growth import ensure_growth, start_trial
+from services.growth import ensure_growth, is_premium, start_trial
 
 # code → (days_full, label)
 PROMO_CODES: dict[str, dict] = {
@@ -18,6 +18,17 @@ PROMO_CODES: dict[str, dict] = {
 }
 
 BTN_SKIP_PROMO = "⏭ Пропустить"
+
+TRIAL_ENDED_HTML = (
+    "🦜 <b>Рико на связи</b>\n\n"
+    "Пробный период закончился — но ты ничего не потерял(а)! 💚\n\n"
+    "✅ Все задания, слова и серия дней на месте\n"
+    "🎙 Голос озвучки снова обычный (Adam)\n"
+    "🗂 Библиотека тем и дневные лимиты — как на бесплатном тарифе\n"
+    "🔥 Серия сохранена; новые награды теперь по бесплатной лестнице\n\n"
+    "Хочешь снова безлимит уроков, все голоса и большую библиотеку тем?\n"
+    "Я рядом — выбери тариф ниже 😊👇"
+)
 
 
 def normalize_promo(code: str) -> str:
@@ -46,7 +57,8 @@ def apply_promo(user: dict, code: str) -> tuple[bool, str]:
     if meta["kind"] == "full_trial":
         start_trial(user, days=days)
         user["promo_trial_code"] = key
-        # голос после истечения сбросит maybe_cleanup_expired_trial_voice
+        user["in_promo_trial"] = True
+        user["trial_end_notified"] = False
 
     used.append(key)
     user["used_promos"] = used
@@ -67,3 +79,45 @@ def maybe_cleanup_expired_trial_voice(user: dict) -> None:
     ensure_growth(user)
     if user_plan(user) == "free" and user.get("chat_voice_key"):
         user["chat_voice_key"] = ""
+
+
+def pop_trial_ended_notice(user: dict) -> str | None:
+    """
+    Один раз вернуть текст о конце пробного периода.
+    Вызывать при активности пользователя или из фонового цикла.
+    """
+    ensure_growth(user)
+    if not user.get("in_promo_trial"):
+        return None
+    if is_premium(user):
+        return None
+
+    user["in_promo_trial"] = False
+    user["trial_end_notified"] = True
+    maybe_cleanup_expired_trial_voice(user)
+    return TRIAL_ENDED_HTML
+
+
+def collect_trial_ended_users() -> list[tuple[str, str]]:
+    """
+    Найти пользователей с истёкшим промо-триалом без уведомления.
+    Returns [(user_id, html_message), ...].
+    """
+    from services.database import load_users, get_user, save_users
+
+    users = load_users()
+    out: list[tuple[str, str]] = []
+    touched: list[str] = []
+    for uid, raw in list(users.items()):
+        if not isinstance(raw, dict):
+            continue
+        if not raw.get("in_promo_trial"):
+            continue
+        user = get_user(users, str(uid))
+        msg = pop_trial_ended_notice(user)
+        if msg:
+            out.append((str(uid), msg))
+            touched.append(str(uid))
+    if touched:
+        save_users(users, only=touched)
+    return out

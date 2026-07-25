@@ -69,8 +69,11 @@ async def subscription_info(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
-    save_users(users)
-    from handlers.lesson_keyboards import tariffs_inline_kb
+    from handlers.trial_notify import flush_trial_ended
+
+    await flush_trial_ended(m, user, users, str(m.from_user.id))
+    save_users(users, only=str(m.from_user.id))
+    from handlers.lesson_keyboards import tariffs_inline_kb, upgrade_inline_kb
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     from services.rewards import user_plan
 
@@ -82,6 +85,27 @@ async def subscription_info(m: Message):
             "Выбери тариф:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
         )
+    elif plan == "chat":
+        await m.answer(
+            "Хочешь уроки без лимита, все голоса и 150 тем?\n"
+            "Апгрейд до полного доступа — доплата <b>399₽</b> (или со скидкой).",
+            reply_markup=upgrade_inline_kb(user),
+            parse_mode="HTML",
+        )
+        if user.get("sub_auto") and user.get("yookassa_payment_method_id"):
+            await m.answer(
+                "Управление подпиской:",
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="⏹ Отменить автопродление",
+                                callback_data="tariff:cancel_auto",
+                            )
+                        ]
+                    ]
+                ),
+            )
     elif user.get("sub_auto") and user.get("yookassa_payment_method_id"):
         await m.answer(
             "Управление подпиской:",

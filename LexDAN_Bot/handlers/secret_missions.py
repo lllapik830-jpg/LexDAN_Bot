@@ -33,6 +33,7 @@ from services.secret_missions import (
     format_card,
     evaluate_voice_attempt,
     mission_intro,
+    phrase_text,
 )
 from services.elevenlabs import send_voice_reply
 from services.stt import recognize_english
@@ -189,16 +190,26 @@ async def _send_voice_prompt(m: Message, user: dict):
         set_mode(str(m.from_user.id), MODE_MENU)
         await m.answer(msg, reply_markup=_menu_for(user), parse_mode="HTML")
         return
-    phrase = phrases[step]
+    item = phrases[step]
+    phrase = phrase_text(item)
+    voice_label = ""
+    voice_id = None
+    if isinstance(item, dict):
+        voice_label = (item.get("voice_label") or "").strip()
+        voice_id = (item.get("voice_id") or "").strip() or None
+    accent_line = f"🎙 Акцент: <b>{voice_label}</b>\n\n" if voice_label else ""
     await m.answer(
         f"🗣 <b>Фраза {step + 1}/{len(phrases)}</b>\n\n"
+        f"{accent_line}"
         f"<b>{phrase}</b>\n\n"
         "Скажи её <b>голосом</b> (или напиши текстом). "
         "Можно «Пропустить фразу».",
         reply_markup=_hub_kb(user),
         parse_mode="HTML",
     )
-    await send_voice_reply(m, phrase, title="Rico phrase")
+    await send_voice_reply(
+        m, phrase, title="Voice day", voice_id=voice_id
+    )
 
 
 @router.message(ModeFilter(MODE_SECRET), F.text == BTN_SECRET_SKIP)
@@ -241,7 +252,7 @@ async def voice_secret(m: Message, bot: Bot):
     step = int(active.get("step") or 0)
     if step >= len(phrases):
         return
-    target = phrases[step]
+    target = phrase_text(phrases[step])
 
     await m.answer("🎧 Слушаю…", reply_markup=_hub_kb(user))
     try:
@@ -306,7 +317,7 @@ async def secret_text(m: Message):
         step = int(active.get("step") or 0)
         if step >= len(phrases):
             return
-        target = phrases[step]
+        target = phrase_text(phrases[step])
         result = evaluate_voice_attempt(target, text)
         notes = list(active.get("notes") or [])
         notes.append({"target": target, "heard": text, **result})

@@ -12,6 +12,7 @@ from services.pricing import chat_price, discount_blurb, full_price
 from services.yookassa_pay import (
     PLAN_CHAT,
     PLAN_FULL,
+    PLAN_UPGRADE,
     confirmation_url,
     create_payment,
     disable_autorenew,
@@ -39,6 +40,16 @@ async def _start_checkout(c: CallbackQuery, plan: str) -> None:
     user = get_user(users, str(c.from_user.id))
     ensure_growth(user)
 
+    if plan == PLAN_UPGRADE:
+        from services.rewards import user_plan
+
+        if user_plan(user) != "chat":
+            await c.answer(
+                "Апгрейд доступен на тарифе «Общение» (399₽).",
+                show_alert=True,
+            )
+            return
+
     if not yookassa_configured():
         contact = f"@{SUPPORT_USERNAME}" if SUPPORT_USERNAME else "поддержку"
         await c.answer()
@@ -54,17 +65,44 @@ async def _start_checkout(c: CallbackQuery, plan: str) -> None:
     pct = 0
     if plan == PLAN_CHAT:
         _, pct = chat_price(user)
+    elif plan == PLAN_UPGRADE:
+        from services.pricing import upgrade_price
+
+        _, pct = upgrade_price(user)
     else:
         _, pct = full_price(user)
 
     title = plan_title(plan)
     disc = f" (скидка {pct}%)" if pct else ""
+    if plan == PLAN_UPGRADE:
+        description = "LexDAN: апгрейд до полного доступа на 30 дней"
+        pay_blurb = (
+            f"💳 <b>Апгрейд — {price}₽</b>{disc}\n\n"
+            "Доплата с тарифа «Общение» до полного доступа на 30 дней:\n"
+            "• безлимит уроков\n"
+            "• все голоса и 150 тем\n"
+            "• премиальные награды серии\n\n"
+            "В чеке ЮKassa будет комментарий <b>«апгрейд»</b>, не «общение».\n\n"
+            "Нажми «Оплатить» 👇"
+        )
+    else:
+        description = f"LexDAN: {title} на 30 дней"
+        pay_blurb = (
+            f"💳 <b>{title} — {price}₽/мес</b>{disc}\n\n"
+            f"{discount_blurb(user)}"
+            "После оплаты подписка включится автоматически "
+            "(обычно сразу, иногда до пары минут).\n"
+            "Карта сохранится для <b>автопродления</b> — отменить можно кнопкой "
+            "в профиле / подписке.\n\n"
+            "Нажми «Оплатить» 👇"
+        )
+
     try:
         payment = create_payment(
             user_id=str(c.from_user.id),
             plan=plan,
             amount_rub=price,
-            description=f"LexDAN: {title} на 30 дней",
+            description=description,
             save_method=True,
         )
     except Exception as e:
@@ -92,15 +130,16 @@ async def _start_checkout(c: CallbackQuery, plan: str) -> None:
     save_users(users, only=str(c.from_user.id))
 
     await c.answer()
+    kb = _pay_kb(url)
+    if plan == PLAN_UPGRADE:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="💳 Оплатить апгрейд", url=url)],
+            ]
+        )
     await c.message.answer(
-        f"💳 <b>{title} — {price}₽/мес</b>{disc}\n\n"
-        f"{discount_blurb(user)}"
-        "После оплаты подписка включится автоматически "
-        "(обычно сразу, иногда до пары минут).\n"
-        "Карта сохранится для <b>автопродления</b> — отменить можно кнопкой "
-        "в профиле / подписке.\n\n"
-        "Нажми «Оплатить» 👇",
-        reply_markup=_pay_kb(url),
+        pay_blurb,
+        reply_markup=kb,
         parse_mode="HTML",
     )
 
@@ -127,6 +166,11 @@ async def tariff_chat(c: CallbackQuery):
 @router.callback_query(F.data == "tariff:full")
 async def tariff_full(c: CallbackQuery):
     await _start_checkout(c, PLAN_FULL)
+
+
+@router.callback_query(F.data == "tariff:upgrade")
+async def tariff_upgrade(c: CallbackQuery):
+    await _start_checkout(c, PLAN_UPGRADE)
 
 
 @router.callback_query(F.data == "tariff:cancel_auto")
