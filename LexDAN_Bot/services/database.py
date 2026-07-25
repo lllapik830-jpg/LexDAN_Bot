@@ -271,6 +271,17 @@ def set_mode(user_id: str, mode: str) -> dict:
     users = load_users()
     user = get_user(users, user_id)
     user["mode"] = mode
+    labels = {
+        MODE_MENU: "главное меню",
+        MODE_CHAT: "общение",
+        MODE_LESSONS: "уроки",
+        MODE_PROFILE: "профиль",
+        MODE_SECRET: "секрет Рико",
+    }
+    user["last_section"] = labels.get(mode, mode)
+    from datetime import datetime, timedelta, timezone
+
+    user["last_active_at"] = datetime.now(timezone(timedelta(hours=3))).isoformat()
     save_users(users, only=str(user_id))
     return user
 

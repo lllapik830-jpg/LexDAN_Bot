@@ -3,7 +3,7 @@
 from aiogram import Router, F
 from aiogram.types import Message
 
-from handlers.filters import ModeFilter
+from handlers.filters import ModeFilter, StepFilter
 from handlers.keyboards import profile_menu
 from services.database import MODE_PROFILE, load_users, get_user, save_users
 from services.growth import (
@@ -20,6 +20,7 @@ from services.rewards import (
     format_referral_rewards_message,
 )
 from config import BOT_USERNAME
+from services.promo import BTN_ENTER_PROMO
 
 router = Router()
 
@@ -122,6 +123,68 @@ async def subscription_info(m: Message):
         )
 
 
+@router.message(ModeFilter(MODE_PROFILE), F.text == BTN_ENTER_PROMO)
+async def profile_promo_start(m: Message):
+    from services.promo import BTN_SKIP_PROMO
+    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
+    user["step"] = "awaiting_promo_profile"
+    save_users(users, only=str(m.from_user.id))
+    await m.answer(
+        "🎟 Введи промокод текстом.\n"
+        "Или нажми «Пропустить», чтобы вернуться в профиль.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text=BTN_SKIP_PROMO)],
+                [KeyboardButton(text="🔙 Вернуться в меню")],
+            ],
+            resize_keyboard=True,
+        ),
+    )
+
+
+@router.message(StepFilter("awaiting_promo_profile"), F.text)
+async def profile_promo_enter(m: Message):
+    from services.promo import BTN_SKIP_PROMO, apply_promo
+    from handlers.keyboards import profile_menu, main_menu
+    from services.database import MODE_PROFILE, set_mode
+
+    text = (m.text or "").strip()
+    user_id = str(m.from_user.id)
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_growth(user)
+
+    if text in (BTN_SKIP_PROMO, "🔙 Вернуться в меню", "📊 Профиль"):
+        user["step"] = "ready"
+        save_users(users, only=user_id)
+        set_mode(user_id, MODE_PROFILE)
+        await m.answer("Ок, без промокода.", reply_markup=profile_menu(user))
+        return
+
+    if text.startswith("/"):
+        await m.answer("Введи промокод текстом или нажми «Пропустить».")
+        return
+
+    from services.moderation import ensure_moderation, guard_user_text
+
+    ensure_moderation(user)
+    if not await guard_user_text(m, user, text):
+        return
+
+    ok, msg = apply_promo(user, text)
+    user["step"] = "ready"
+    save_users(users, only=user_id)
+    set_mode(user_id, MODE_PROFILE)
+    if ok:
+        await m.answer(msg, reply_markup=profile_menu(user), parse_mode="HTML")
+    else:
+        await m.answer(msg, reply_markup=profile_menu(user), parse_mode="HTML")
+
+
 @router.message(ModeFilter(MODE_PROFILE), F.text == BTN_STREAK)
 async def streak_rewards_info(m: Message):
     users = load_users()
@@ -167,6 +230,6 @@ async def profile_foolproof(m: Message):
     ensure_growth(user)
     save_users(users)
     await m.answer(
-        "🙂 В профиле: Подписка, Изменить имя, Серия дней, Пригласить друга.",
+        "🙂 В профиле: Подписка, Изменить имя, Промокод, Серия дней, Пригласить друга.",
         reply_markup=profile_menu(user),
     )

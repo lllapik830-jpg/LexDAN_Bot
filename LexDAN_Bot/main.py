@@ -112,7 +112,6 @@ async def main():
         logging.info("PUBLIC_BASE_URL пуст — укажи его в env для уведомлений ЮKassa")
     asyncio.create_task(_reminder_loop())
     asyncio.create_task(_autorenew_loop())
-    asyncio.create_task(_trial_end_loop())
     await dp.start_polling(bot)
 
 
@@ -129,35 +128,6 @@ async def _reminder_loop():
         except Exception as e:
             logging.error(f"Reminder loop error: {e}")
         await asyncio.sleep(3600)
-
-
-async def _trial_end_loop():
-    """Каждые 3 минуты — уведомить об окончании промо-триала."""
-    from services.promo import collect_trial_ended_users
-    from handlers.lesson_keyboards import tariffs_inline_kb
-    from services.database import load_users, get_user
-
-    await asyncio.sleep(60)
-    while True:
-        try:
-            ended = await asyncio.to_thread(collect_trial_ended_users)
-            for uid, text in ended:
-                try:
-                    users = load_users()
-                    user = get_user(users, uid)
-                    await bot.send_message(
-                        int(uid),
-                        text,
-                        reply_markup=tariffs_inline_kb(user),
-                        parse_mode="HTML",
-                    )
-                except Exception as e:
-                    logging.warning("Trial-end notify failed for %s: %s", uid, e)
-            if ended:
-                logging.info("Trial-end notices sent: %s", len(ended))
-        except Exception as e:
-            logging.error(f"Trial-end loop error: {e}")
-        await asyncio.sleep(180)
 
 
 async def _autorenew_loop():

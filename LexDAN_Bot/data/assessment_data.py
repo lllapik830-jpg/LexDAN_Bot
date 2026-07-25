@@ -385,23 +385,22 @@ def raise_level(level: str) -> str:
 def unlock_next_level_after_grammar(user: dict, passed_level: str) -> str | None:
     """
     После сдачи Grammar-теста на passed_level открыть ровно следующий.
-    Также обновляет отображаемый user['level'], если ученик был на сданном уровне.
-    Возвращает открытый уровень или None, если уже был открыт / C2.
+    Обновляет user['level'] в профиле. Возвращает следующий уровень или None (C2).
     """
     if passed_level not in LEVELS:
         return None
     nxt = raise_level(passed_level)
     if nxt == passed_level:
         return None  # уже C2
+
     cur = user_level_ceiling(user)
-    if level_index(nxt) <= level_index(cur):
-        # уровень уже был открыт ранее — всё равно синхронизируем профиль
-        shown = user.get("level") or passed_level
-        if level_index(shown) <= level_index(passed_level):
-            user["level"] = nxt
-        return None
-    user["grammar_unlock_ceiling"] = nxt
+    if level_index(nxt) > level_index(cur):
+        user["grammar_unlock_ceiling"] = nxt
+
     shown = user.get("level") or passed_level
+    if shown not in LEVELS:
+        shown = passed_level
+    # В профиле всегда поднимаем уровень после сдачи теста этой ступени
     if level_index(shown) <= level_index(passed_level):
         user["level"] = nxt
     return nxt

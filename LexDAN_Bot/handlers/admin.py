@@ -43,30 +43,13 @@ router = Router()
 HELP = (
     "🛠 <b>Админ LexDAN</b>\n"
     f"<i>Только id <code>{MANAGER_ID}</code></i>\n\n"
-    "<b>Воронка</b>\n"
-    "/funnel — сводка воронки\n"
-    "/starts — кто нажал Start\n"
-    "/chat_stats — общение за всё время + лимиты\n"
-    "/assessed — кто прошёл входной тест\n"
-    "/limits — кто упёрся в лимиты сегодня\n"
-    "/progress — Grammar / Vocabulary прогресс\n\n"
-    "<b>Доступы</b>\n"
-    "/grant_chat <code>id</code> [дней] — безлимит общения (399)\n"
-    "/grant_full <code>id</code> [дней] — полный доступ (799)\n"
-    "/revoke <code>id</code> — снять chat + full + DEV\n"
-    "/user <code>id</code> — карточка пользователя\n"
+    "/admin — список пользователей + сводка общения\n"
+    "/user <code>id</code> — полная карточка\n"
     "/paid — у кого активный тариф\n"
-    "/unlock_levels — открыть <b>тебе</b> все уровни A0–C2\n"
-    "  (только себе; прогресс других не трогает)\n\n"
-    "<b>Скидки</b>\n"
-    "/set_discount <code>id</code> <code>%</code>\n"
-    "/clear_discount <code>id</code>\n\n"
-    "<b>Розыгрыши</b>\n"
-    "/lottery30 · /lottery30_draw — серия 30 на 799 (+180 дн.)\n"
-    "/lottery100 · /lottery100_draw — серия 100 (15 000₽ вручную)\n"
-    "/lottery_ref · /lottery_ref_draw — реф-билеты (+30 дн.)\n"
-    "/prize_pending — кому ещё не выплатили 15 000₽\n"
-    "/prize_paid <code>id</code> — отметить выплату\n"
+    "/grant_chat <code>id</code> [дней]\n"
+    "/grant_full <code>id</code> [дней]\n"
+    "/revoke <code>id</code>\n"
+    "/unlock_levels — открыть себе все уровни A0–C2\n"
 )
 
 
@@ -92,7 +75,11 @@ def _parse_uid_days(args: str | None, default_days: int = 30) -> tuple[str | Non
 async def admin_help(m: Message):
     if not _is_admin(m):
         return
-    await m.answer(HELP, parse_mode="HTML")
+    from services.admin_stats import report_admin_home, chunk_html
+
+    text = report_admin_home()
+    for part in chunk_html(text):
+        await m.answer(part, parse_mode="HTML")
 
 
 @router.message(Command("unlock_levels"))
@@ -264,25 +251,11 @@ async def admin_user(m: Message, command: CommandObject):
         return
     user = get_user(users, uid)
     ensure_growth(user)
-    plan = user_plan(user)
-    chat_p, chat_d = chat_price(user)
-    full_p, full_d = full_price(user)
-    lot = lottery_status_lines(user)
-    from services.admin_stats import user_card_extra
+    from services.admin_stats import format_user_card, chunk_html
 
-    await m.answer(
-        f"👤 <code>{uid}</code> · {user.get('name') or '—'}\n"
-        f"Тариф: <b>{plan}</b>\n"
-        f"Level: {user.get('level') or '—'} · streak: {int(user.get('streak') or 0)}\n"
-        f"premium_until days≈ {premium_days_left(user) if is_premium(user) else 0}\n"
-        f"chat_until: {user.get('chat_until') or 0}\n"
-        f"Скидка: {discount_percent(user)}%"
-        f" → chat {chat_p}₽ / full {full_p}₽\n"
-        f"Реф. засчитано: {int(user.get('referral_qualified') or 0)}\n"
-        f"{lot}\n"
-        f"{user_card_extra(user)}",
-        parse_mode="HTML",
-    )
+    for part in chunk_html(format_user_card(uid, user)):
+        await m.answer(part, parse_mode="HTML")
+    save_users(users, only=uid)
 
 
 @router.message(Command("paid"))

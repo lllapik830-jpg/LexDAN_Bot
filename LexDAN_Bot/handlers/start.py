@@ -45,7 +45,7 @@ HELLO_NEW = (
     "Мы здесь, чтобы превратить твой английский из «страшно сказать» в «легко болтать».\n\n"
     "Наш рецепт простой: 15 минут в день в Telegram — болтовня, слова, грамматика. "
     "Без стресса, с твоим темпом.\n\n"
-    "Сначала коротко про правила — это важно 👇"
+    "Сначала познакомимся — как тебя зовут?"
 )
 
 ASK_NAME = "🥰 Как мне тебя называть? Напиши <b>только имя</b>, например: <b>Анна</b>"
@@ -63,6 +63,8 @@ WELCOME_AFTER_NAME = (
     "Сначала проверим, что ты уже знаешь. Потом будем по чуть-чуть, минут по 15 в день, "
     "разбирать слова и грамматику. И обязательно разговаривать — это самое важное!\n\n"
     "Серия дней и друзья дают бустеры и секреты Рико — смотри в профиле 🔥\n\n"
+    "📣 Загляни в канал <b>@LexDan_Rico</b> — там посты об обновлениях, конкурсах и промокодах: "
+    "https://t.me/LexDan_Rico\n\n"
     "Ну что, готов начать? 👇"
 )
 
@@ -71,9 +73,9 @@ WELCOME_AGAIN = (
 )
 
 CHANNEL_INVITE = (
-    "📣 <b>Подпишись на канал LexDAN</b>\n\n"
-    "Там обновления бота, советы по английскому и новости от Рико.\n"
-    "Чтобы ничего не пропустить — жми кнопку ниже 👇"
+    "📣 <b>Канал LexDAN · @LexDan_Rico</b>\n\n"
+    "Там информационные посты об обновлениях бота, конкурсах и промокодах.\n"
+    "Подпишись, чтобы ничего не пропустить 👇"
 )
 
 
@@ -127,6 +129,7 @@ def _banned_name_tokens() -> set[str]:
         BTN_ACCEPT_RULES,
         BTN_NAME_SURE,
         "✏️ Изменить имя",
+        "🎟 Промокод",
     }
 
 
@@ -141,7 +144,8 @@ async def _finish_registration(m: Message, user_id: str, name: str) -> None:
     bind_referral_code(user_id, user)
     user["name"] = name
     user["pending_name"] = ""
-    user["rules_accepted"] = True
+    # правила — после промокода
+    user["rules_accepted"] = False
     user["mode"] = MODE_MENU
     user["step"] = "awaiting_promo"
     grant_referral_bonuses(user_id, users)
@@ -159,11 +163,26 @@ async def _finish_registration(m: Message, user_id: str, name: str) -> None:
     )
 
 
+async def _ask_rules_after_promo(m: Message, user_id: str, *, promo_msg: str = "") -> None:
+    users = load_users()
+    user = get_user(users, user_id)
+    user["step"] = "awaiting_rules"
+    user["pending_promo_msg"] = promo_msg or ""
+    save_users(users, only=user_id)
+    await m.answer(
+        "Отлично! Теперь коротко про правила — это важно 👇",
+        reply_markup=_rules_kb(),
+    )
+    await m.answer(RULES_HTML, reply_markup=_rules_kb(), parse_mode="HTML")
+
+
 async def _send_welcome_after_promo(m: Message, user_id: str, *, promo_msg: str = "") -> None:
     users = load_users()
     user = get_user(users, user_id)
     user["step"] = "ready"
     user["mode"] = MODE_MENU
+    user["rules_accepted"] = True
+    user.pop("pending_promo_msg", None)
     save_users(users, only=user_id)
 
     extra = ""
@@ -204,17 +223,31 @@ async def start_cmd(m: Message, command: CommandObject = None):
         await m.answer(ban_remaining_text(user), parse_mode="HTML")
         return
 
-    if not user.get("rules_accepted"):
-        user["step"] = "awaiting_rules"
-        save_users(users, only=user_id)
-        await m.answer(HELLO_NEW, parse_mode="HTML")
-        await m.answer(RULES_HTML, reply_markup=_rules_kb(), parse_mode="HTML")
-        return
-
+    # Имя → промо → правила → welcome
     if not user.get("name"):
         user["step"] = "awaiting_name"
         save_users(users, only=user_id)
+        await m.answer(HELLO_NEW, parse_mode="HTML")
         await m.answer(ASK_NAME, parse_mode="HTML")
+        return
+
+    if user.get("step") == "awaiting_promo":
+        from services.promo import BTN_SKIP_PROMO
+
+        save_users(users, only=user_id)
+        await m.answer(
+            "Если есть промокод — введи его. Или нажми «Пропустить».",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=BTN_SKIP_PROMO)]],
+                resize_keyboard=True,
+            ),
+        )
+        return
+
+    if not user.get("rules_accepted"):
+        user["step"] = "awaiting_rules"
+        save_users(users, only=user_id)
+        await m.answer(RULES_HTML, reply_markup=_rules_kb(), parse_mode="HTML")
         return
 
     user["step"] = "ready"
@@ -279,28 +312,17 @@ async def accept_rules(m: Message):
     user = get_user(users, user_id)
     ensure_moderation(user)
     user["rules_accepted"] = True
+    promo_msg = (user.get("pending_promo_msg") or "").strip()
+    user.pop("pending_promo_msg", None)
+
     if user.get("name"):
-        user["step"] = "ready"
         save_users(users, only=user_id)
-        await m.answer(
-            WELCOME_AGAIN.format(name=user["name"]),
-            reply_markup=main_menu(user),
-            parse_mode="HTML",
-        )
-        ch_kb = _channel_kb()
-        if ch_kb:
-            await m.answer(CHANNEL_INVITE, reply_markup=ch_kb, parse_mode="HTML")
+        await _send_welcome_after_promo(m, user_id, promo_msg=promo_msg)
         return
+
     user["step"] = "awaiting_name"
     save_users(users, only=user_id)
-    await m.answer(
-        ASK_NAME,
-        parse_mode="HTML",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
-            resize_keyboard=True,
-        ),
-    )
+    await m.answer(ASK_NAME, parse_mode="HTML")
 
 
 @router.message(StepFilter("awaiting_rules"))
@@ -418,7 +440,7 @@ async def promo_after_registration(m: Message):
 
     if text == BTN_SKIP_PROMO:
         save_users(users, only=user_id)
-        await _send_welcome_after_promo(m, user_id)
+        await _ask_rules_after_promo(m, user_id)
         return
 
     if text.startswith("/"):
@@ -433,7 +455,7 @@ async def promo_after_registration(m: Message):
     if not ok:
         await m.answer(msg, parse_mode="HTML")
         return
-    await _send_welcome_after_promo(m, user_id, promo_msg=msg)
+    await _ask_rules_after_promo(m, user_id, promo_msg=msg)
 
 
 @router.message(StepFilter("awaiting_promo"))

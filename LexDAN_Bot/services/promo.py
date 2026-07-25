@@ -18,6 +18,7 @@ PROMO_CODES: dict[str, dict] = {
 }
 
 BTN_SKIP_PROMO = "⏭ Пропустить"
+BTN_ENTER_PROMO = "🎟 Промокод"
 
 TRIAL_ENDED_HTML = (
     "🦜 <b>Рико на связи</b>\n\n"

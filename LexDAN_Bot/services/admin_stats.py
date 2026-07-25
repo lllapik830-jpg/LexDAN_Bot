@@ -347,15 +347,133 @@ def user_card_extra(u: dict) -> str:
     tt = int(daily.get("chat_text_today") or 0)
     vt = int(daily.get("chat_voice_today") or 0)
     cm = int(daily.get("chat_messages_today") or daily.get("chat_count") or 0)
+    tot_t, tot_v, tot_all = _chat_totals(u)
     return (
         f"assessment_done: {bool(u.get('assessment_done'))}\n"
         f"заданий Grammar: {count_completed_tasks(u)}\n"
         f"слов/фраз: {int(u.get('words_learned') or 0)}/{int(u.get('phrases_learned') or 0)}\n"
         f"чат сегодня: текст {tt} / голос {vt} / всего {cm}\n"
-        f"чат всего: {_chat_totals(u)[2]} "
-        f"(т{int(u.get('chat_text_total') or 0)} / г{int(u.get('chat_voice_total') or 0)})\n"
+        f"чат всего: {tot_all} (текст {tot_t} / голос {tot_v})\n"
         f"hit_chat_limit_ever: {bool(u.get('hit_chat_limit_ever') or _hit_chat_limit(u))}\n"
         f"grammar сегодня: {int(daily.get('grammar_exercises_today') or 0)}/{grammar_daily_cap(u)}\n"
         f"vocab сегодня: {vocab_items_used_today(u)}/{vocab_daily_cap(u)}\n"
         f"лимиты: chat={_hit_chat_limit(u)} grammar={_hit_grammar_limit(u)} vocab={_hit_vocab_limit(u)}"
     )
+
+
+def _fmt_last_active(u: dict) -> str:
+    raw = (u.get("last_active_at") or "").strip()
+    if not raw:
+        return "неизвестно"
+    try:
+        from datetime import datetime
+
+        dt = datetime.fromisoformat(raw)
+        return dt.strftime("%d.%m.%Y %H:%M") + " МСК"
+    except Exception:
+        return raw[:19]
+
+
+def describe_last_action(u: dict) -> str:
+    """Человекочитаемо: где был и что делал."""
+    section = (u.get("last_section") or "").strip()
+    mode = (u.get("mode") or "").strip()
+    lesson = u.get("lesson") if isinstance(u.get("lesson"), dict) else {}
+    hub = (lesson.get("hub") or "").strip()
+    bits: list[str] = []
+    if section:
+        bits.append(section)
+    elif mode:
+        bits.append(mode)
+    if hub:
+        bits.append(f"hub={hub}")
+    if lesson.get("level"):
+        bits.append(f"ур.урока {lesson.get('level')}")
+    if lesson.get("topic_title"):
+        bits.append(str(lesson.get("topic_title"))[:40])
+    chat_last = (u.get("chat_last_user_text") or "").strip()
+    if chat_last and (mode == "chat" or section == "общение"):
+        bits.append(f"чат: «{chat_last[:60]}»")
+    step = (u.get("step") or "").strip()
+    if step and step not in {"ready", ""}:
+        bits.append(f"step={step}")
+    return " · ".join(bits) if bits else "—"
+
+
+def format_user_card(uid: str, u: dict) -> str:
+    """Полная карточка пользователя для /user."""
+    ensure_growth(u)
+    sync_vocab_counters(u)
+    from services.growth import is_premium, premium_days_left, premium_time_label
+    from services.rewards import plan_label, user_plan
+    from services.pricing import lottery_status_lines, discount_percent
+
+    plan = user_plan(u)
+    tot_t, tot_v, tot_all = _chat_totals(u)
+    ceiling = u.get("grammar_unlock_ceiling") or u.get("level") or "—"
+    lot = lottery_status_lines(u)
+    promo = u.get("promo_trial_code") or "—"
+    return (
+        f"👤 <b>{_name(u)}</b> · <code>{uid}</code>\n\n"
+        f"⏰ Последний визит: <b>{_fmt_last_active(u)}</b>\n"
+        f"📍 Последнее: {describe_last_action(u)}\n\n"
+        f"📈 Уровень в профиле: <b>{u.get('level') or '—'}</b>\n"
+        f"🔓 Потолок Grammar: <b>{ceiling}</b>\n"
+        f"✅ Заданий Grammar: <b>{count_completed_tasks(u)}</b>\n"
+        f"📝 Слов: <b>{int(u.get('words_learned') or 0)}</b> · "
+        f"фраз: <b>{int(u.get('phrases_learned') or 0)}</b>\n"
+        f"🔥 Серия: <b>{int(u.get('streak') or 0)}</b> · "
+        f"сейфы: {int(u.get('streak_safes') or 0)}\n\n"
+        f"💎 Подписка: <b>{plan_label(plan)}</b> ({plan})\n"
+        f"   доступ: {premium_time_label(u)}\n"
+        f"   premium дн≈ {premium_days_left(u) if is_premium(u) else 0}\n"
+        f"   скидка: {discount_percent(u)}%\n"
+        f"   промо: {promo}\n"
+        f"   assessment: {'да' if u.get('assessment_done') else 'нет'}\n"
+        f"{lot}\n"
+        f"💬 Общение всего: текст <b>{tot_t}</b> · голос <b>{tot_v}</b> · "
+        f"сумма <b>{tot_all}</b>\n"
+        f"💬 Сегодня: "
+        f"т{int((u.get('daily') or {}).get('chat_text_today') or 0)} / "
+        f"г{int((u.get('daily') or {}).get('chat_voice_today') or 0)}\n"
+        f"🎯 Цель дня: "
+        f"{'✅' if (u.get('daily') or {}).get('goal_done') else '⏳'}\n"
+        f"🎁 Реф: приглашено {int(u.get('invite_count') or 0)}, "
+        f"засчитано {int(u.get('referral_qualified') or 0)}"
+    )
+
+
+def report_admin_home() -> str:
+    """Сводка для /admin: чат + список пользователей с id."""
+    rows = _iter_users(persist_backfill=True)
+    text_all = voice_all = 0
+    for _, u in rows:
+        t, v, _ = _chat_totals(u)
+        text_all += t
+        voice_all += v
+
+    lines = [
+        "🛠 <b>Админ LexDAN</b>\n",
+        f"Пользователей: <b>{len(rows)}</b>\n",
+        "<b>Общение (все юзеры, всё время)</b>",
+        f"• текстовых: <b>{text_all}</b>",
+        f"• голосовых: <b>{voice_all}</b>",
+        f"• всего сообщ.: <b>{text_all + voice_all}</b>\n",
+        "Команды: /user <code>id</code> · /grant_chat · /grant_full · "
+        "/revoke · /unlock_levels · /paid\n",
+        "<b>Пользователи</b>",
+    ]
+    # свежие сверху
+    sorted_rows = sorted(
+        rows,
+        key=lambda x: x[1].get("last_active_at") or "",
+        reverse=True,
+    )
+    for uid, u in sorted_rows:
+        plan = user_plan(u)
+        t, v, _ = _chat_totals(u)
+        lines.append(
+            f"• <code>{uid}</code> {_name(u)} · {u.get('level') or '—'} · "
+            f"{plan} · чат т{t}/г{v}"
+        )
+    return "\n".join(lines)

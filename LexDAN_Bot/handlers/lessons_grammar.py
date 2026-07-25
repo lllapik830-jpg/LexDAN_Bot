@@ -1225,13 +1225,16 @@ async def _advance_grammar_test(m: Message, user: dict, correct: bool, *, your: 
         users = load_users()
         user = get_user(users, uid)
         if passed:
-            _, unlocked = mark_grammar_test_passed(uid, level)
+            user, unlocked = mark_grammar_test_passed(uid, level)
+            users = load_users()
+            user = get_user(users, uid)
         else:
             unlocked = None
         text = format_grammar_test_review(mistakes, score=score, total=total, passed=passed)
         if passed and unlocked:
             text += (
                 f"\n\n🔓 <b>Открыт новый уровень: {unlocked}!</b>\n"
+                f"В профиле теперь тоже <b>{unlocked}</b>. "
                 f"Вернись к выбору уровней — он уже доступен."
             )
         users = load_users()
