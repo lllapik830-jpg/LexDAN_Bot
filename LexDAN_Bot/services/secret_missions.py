@@ -475,10 +475,11 @@ def format_card(i: int, total: int, card: dict) -> str:
     wrong = card.get("wrong") or "—"
     better = card.get("better") or "—"
     tip = card.get("tip_ru") or ""
+    tip_block = f"💡 {tip}\n\n" if tip else ""
     return (
         f"📝 <b>Разбор недели · карточка {i}/{total}</b>\n\n"
         f"❌ Часто так:\n<i>{wrong}</i>\n\n"
         f"✅ Как носитель:\n<b>{better}</b>\n\n"
-        f"{('💡 ' + tip + '\n\n') if tip else ''}"
+        f"{tip_block}"
         "Запомни пару и жми «Далее» 💚"
     )
