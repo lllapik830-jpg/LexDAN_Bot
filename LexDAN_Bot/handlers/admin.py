@@ -45,6 +45,7 @@ HELP = (
     f"<i>Только id <code>{MANAGER_ID}</code></i>\n\n"
     "/admin — список пользователей + сводка общения\n"
     "/user <code>id</code> — полная карточка\n"
+    "/starts — кто нажал /start сегодня\n"
     "/paid — у кого активный тариф\n"
     "/grant_chat <code>id</code> [дней]\n"
     "/grant_full <code>id</code> [дней]\n"

@@ -261,69 +261,216 @@ def _pace_hint(level: str) -> str:
     return "Fluent natural speech, richer vocabulary matching CEFR level."
 
 
+def _topic_blob(topic: dict) -> str:
+    return " ".join(
+        str(topic.get(k) or "")
+        for k in ("id", "title_en", "title_ru", "roles", "setting")
+    ).lower()
+
+
+def _topic_must_words(topic: dict) -> list[str]:
+    """Ключевые слова, хотя бы часть которых должна встретиться в диалоге."""
+    blob = _topic_blob(topic)
+    bags = {
+        "food": ["food", "eat", "menu", "coffee", "tea", "apple", "bread", "water", "order", "hungry", "breakfast", "lunch", "dinner", "snack", "drink"],
+        "cafe": ["coffee", "tea", "latte", "cake", "table", "order", "menu", "barista"],
+        "school": ["school", "class", "homework", "lesson", "teacher", "break"],
+        "shop": ["price", "size", "bag", "buy", "pay", "shop", "store"],
+        "bus": ["bus", "ticket", "stop", "get off", "driver"],
+        "doctor": ["doctor", "pain", "medicine", "symptom", "clinic", "nurse", "appointment"],
+        "hotel": ["hotel", "room", "check-in", "breakfast", "key", "reservation"],
+        "police": ["police", "wallet", "lost", "report", "officer"],
+        "bar": ["drink", "bar", "beer", "wine", "card", "cash"],
+        "taxi": ["taxi", "address", "traffic", "fare", "driver"],
+        "family": ["mum", "mom", "dad", "brother", "sister", "family"],
+        "weather": ["sunny", "rainy", "cold", "hot", "weather"],
+        "work": ["work", "office", "meeting", "deadline", "boss"],
+        "airport": ["flight", "gate", "boarding", "airport", "passport", "luggage"],
+        "passport": ["passport", "document", "visa", "border"],
+        "podcast": ["podcast", "episode", "listen", "show", "host"],
+        "pet": ["cat", "dog", "pet"],
+        "color": ["red", "blue", "green", "color", "colour"],
+        "number": ["number", "phone", "age"],
+        "home": ["kitchen", "room", "door", "window", "home"],
+        "gym": ["gym", "train", "exercise", "membership"],
+        "bank": ["bank", "account", "card", "pin"],
+        "interview": ["job", "experience", "interview", "hire"],
+    }
+    found: list[str] = []
+    for keys, words in [
+        (("food", "еда", "cafe", "restaurant", "бар", "bar", "snack"), bags["food"] + bags["cafe"] + bags["bar"]),
+        (("school", "класс", "homework"), bags["school"]),
+        (("shop", "store", "магазин", "shopping"), bags["shop"]),
+        (("bus", "автобус"), bags["bus"]),
+        (("doctor", "clinic", "hospital", "врач", "поликлиник"), bags["doctor"]),
+        (("hotel", "отел"), bags["hotel"]),
+        (("police", "полиц"), bags["police"]),
+        (("taxi", "такси"), bags["taxi"]),
+        (("family", "семь"), bags["family"]),
+        (("weather", "погод"), bags["weather"]),
+        (("work", "job", "office", "workplace"), bags["work"]),
+        (("airport", "flight", "boarding"), bags["airport"]),
+        (("passport", "immigration", "миграц"), bags["passport"]),
+        (("podcast", "подкаст"), bags["podcast"]),
+        (("pet", "питом"), bags["pet"]),
+        (("color", "colour", "цвет"), bags["color"]),
+        (("number", "phone", "телефон", "числ"), bags["number"]),
+        (("home", "дом", "kitchen"), bags["home"]),
+        (("gym", "спортзал"), bags["gym"]),
+        (("bank", "банк"), bags["bank"]),
+        (("interview", "собеседован"), bags["interview"]),
+    ]:
+        if any(k in blob for k in keys):
+            found.extend(words)
+    # слова из setting/title
+    for raw in (topic.get("setting"), topic.get("title_en")):
+        for w in str(raw or "").replace(",", " ").split():
+            w = w.strip().lower()
+            if len(w) >= 4 and w.isalpha():
+                found.append(w)
+    # уникальные
+    out = []
+    seen = set()
+    for w in found:
+        if w not in seen:
+            seen.add(w)
+            out.append(w)
+    return out[:24]
+
+
+def _dialogue_text(pack: dict) -> str:
+    turns = pack.get("turns") or []
+    return " ".join(str(t.get("text") or "") for t in turns if isinstance(t, dict)).lower()
+
+
+def _pack_matches_topic(pack: dict, topic: dict) -> bool:
+    text = _dialogue_text(pack)
+    if not text.strip():
+        return False
+    must = _topic_must_words(topic)
+    if not must:
+        return True
+    hits = sum(1 for w in must if w in text)
+    need = 2 if len(must) >= 4 else 1
+    if hits >= need:
+        return True
+    # жёсткий запрет: паспортный офисный фоллбек на не-паспортной теме
+    blob = _topic_blob(topic)
+    is_passport_topic = any(k in blob for k in ("passport", "immigration", "миграц", "border"))
+    if not is_passport_topic and ("passport" in text or "desk three" in text):
+        return False
+    return False
+
+
 def _fallback_pack(level: str, topic: dict) -> dict:
+    """Запасной диалог строго по теме (не универсальный «паспорт»)."""
     roles = topic.get("roles") or "two people"
+    title = topic.get("title_en") or topic.get("title_ru") or "Topic"
+    setting = topic.get("setting") or title
+    blob = _topic_blob(topic)
+    role_a = roles.split(" and ")[0].strip() if " and " in roles else "Alex"
+    role_b = roles.split(" and ")[-1].strip() if " and " in roles else "Sam"
+
+    # шаблоны по категориям
+    if any(k in blob for k in ("food", "еда", "cafe", "coffee", "restaurant", "snack", "apple", "bread")):
+        turns = [
+            ("Alex", "Hi! What would you like to eat today?"),
+            ("Sam", "I'd like an apple and a sandwich, please."),
+            ("Alex", "Sure. Do you want tea or water with that?"),
+            ("Sam", "Water, please. How much is it?"),
+            ("Alex", "It's five pounds altogether."),
+            ("Sam", "Okay. Can I also get a small cake?"),
+            ("Alex", "Of course. Here you are."),
+            ("Sam", "Thank you! This looks delicious."),
+        ]
+        t1 = [
+            {"question": "What does Sam order first?", "options": ["Soup", "An apple and a sandwich", "Only tea", "Pizza"], "correct": 1, "explain_wrong_ru": "Сэм заказал яблоко и сэндвич.", "options_ru": ["Суп", "Яблоко и сэндвич", "Только чай", "Пиццу"]},
+            {"question": "What drink does Sam choose?", "options": ["Tea", "Coffee", "Water", "Juice"], "correct": 2, "explain_wrong_ru": "Сэм попросил воду.", "options_ru": ["Чай", "Кофе", "Воду", "Сок"]},
+            {"question": "How much is the food?", "options": ["Two pounds", "Five pounds", "Ten pounds", "Free"], "correct": 1, "explain_wrong_ru": "Алекс сказал: пять фунтов.", "options_ru": ["2 фунта", "5 фунтов", "10 фунтов", "Бесплатно"]},
+        ]
+        t2 = [
+            {"statement": "Sam orders pizza.", "is_true": False, "explain_ru": "Сэм заказал яблоко, сэндвич и потом торт — не пиццу."},
+            {"statement": "Alex offers tea or water.", "is_true": True, "explain_ru": "Алекс спросил: чай или вода."},
+            {"statement": "Sam also asks for a small cake.", "is_true": True, "explain_ru": "В конце Сэм попросил ещё маленький торт."},
+        ]
+        events = ["Alex greets the guest", "Sam orders apple and sandwich", "Sam chooses water", "Sam asks for a cake"]
+    elif any(k in blob for k in ("cafe", "barista", "кофе")):
+        turns = [
+            ("Alex", "Good morning! What can I get you?"),
+            ("Sam", "A latte and a croissant, please."),
+            ("Alex", "Sure. For here or to go?"),
+            ("Sam", "To go, please."),
+            ("Alex", "Anything else? We have muffins too."),
+            ("Sam", "No, that's all. How much is it?"),
+            ("Alex", "Four pounds fifty."),
+            ("Sam", "Here you are. Thanks!"),
+        ]
+        t1 = [
+            {"question": "What drink does Sam order?", "options": ["Tea", "Latte", "Water", "Juice"], "correct": 1, "explain_wrong_ru": "Сэм заказал латте.", "options_ru": ["Чай", "Латте", "Воду", "Сок"]},
+            {"question": "Is the order for here or to go?", "options": ["For here", "To go", "Both", "Not said"], "correct": 1, "explain_wrong_ru": "Сэм сказал «to go».", "options_ru": ["Здесь", "С собой", "И то и то", "Не сказано"]},
+            {"question": "How much does it cost?", "options": ["£2", "£4.50", "£10", "Free"], "correct": 1, "explain_wrong_ru": "Цена — four pounds fifty.", "options_ru": ["2£", "4.50£", "10£", "Бесплатно"]},
+        ]
+        t2 = [
+            {"statement": "Sam wants a muffin.", "is_true": False, "explain_ru": "Сэм отказался от маффинов."},
+            {"statement": "Alex offers muffins.", "is_true": True, "explain_ru": "Бариста предложил маффины."},
+            {"statement": "Sam orders a croissant.", "is_true": True, "explain_ru": "Да, латте и круассан."},
+        ]
+        events = ["Alex greets customer", "Sam orders latte and croissant", "Sam chooses to go", "Sam pays"]
+    elif any(k in blob for k in ("police", "полиц", "wallet")):
+        turns = [
+            ("Alex", "Good afternoon. How can I help you?"),
+            ("Sam", "I lost my wallet this morning."),
+            ("Alex", "Where did you lose it?"),
+            ("Sam", "Near the bus stop on Green Street."),
+            ("Alex", "What colour is the wallet?"),
+            ("Sam", "It's black, with my ID card inside."),
+            ("Alex", "Alright. Please fill in this form."),
+            ("Sam", "Okay. Thank you, officer."),
+        ]
+        t1 = [
+            {"question": "What did Sam lose?", "options": ["Phone", "Keys", "Wallet", "Bag"], "correct": 2, "explain_wrong_ru": "Сэм потерял кошелёк.", "options_ru": ["Телефон", "Ключи", "Кошелёк", "Сумку"]},
+            {"question": "Where was it lost?", "options": ["In a shop", "Near a bus stop", "At home", "At school"], "correct": 1, "explain_wrong_ru": "Около автобусной остановки.", "options_ru": ["В магазине", "У остановки", "Дома", "В школе"]},
+            {"question": "What colour is the wallet?", "options": ["Red", "Blue", "Black", "Brown"], "correct": 2, "explain_wrong_ru": "Кошелёк чёрный.", "options_ru": ["Красный", "Синий", "Чёрный", "Коричневый"]},
+        ]
+        t2 = [
+            {"statement": "Sam lost a phone.", "is_true": False, "explain_ru": "Потерян кошелёк, не телефон."},
+            {"statement": "There is an ID card in the wallet.", "is_true": True, "explain_ru": "Сэм сказал, что внутри ID."},
+            {"statement": "The officer asks Sam to fill a form.", "is_true": True, "explain_ru": "Офицер попросил заполнить форму."},
+        ]
+        events = ["Officer offers help", "Sam reports lost wallet", "Sam describes colour", "Sam fills the form"]
+    else:
+        # универсальный шаблон из setting — без паспорта
+        turns = [
+            ("Alex", f"Hello! Let's talk about {title}."),
+            ("Sam", f"Sure. I'm here about {setting}."),
+            ("Alex", "Okay. What do you need today?"),
+            ("Sam", "I need a little help, please."),
+            ("Alex", "No problem. Can you tell me more?"),
+            ("Sam", "Yes. It is important for me."),
+            ("Alex", "Alright. We can do it step by step."),
+            ("Sam", "Great, thank you so much!"),
+        ]
+        t1 = [
+            {"question": f"What is the dialogue mainly about?", "options": [title, "Sports only", "A passport office", "Math homework"], "correct": 0, "explain_wrong_ru": f"Тема разговора — {title}.", "options_ru": [str(topic.get("title_ru") or title), "Только спорт", "Паспортный стол", "Домашка по математике"]},
+            {"question": "Does Sam ask for help?", "options": ["Yes", "No", "Maybe later", "Not clear"], "correct": 0, "explain_wrong_ru": "Сэм просит помощи.", "options_ru": ["Да", "Нет", "Позже", "Неясно"]},
+            {"question": "How does Alex want to proceed?", "options": ["Step by step", "Never", "Tomorrow only", "By email only"], "correct": 0, "explain_wrong_ru": "Алекс предлагает шаг за шагом.", "options_ru": ["Шаг за шагом", "Никогда", "Только завтра", "Только по почте"]},
+        ]
+        t2 = [
+            {"statement": "The speakers talk about a passport desk.", "is_true": False, "explain_ru": f"Диалог про «{title}», не про паспортный стол."},
+            {"statement": "Alex offers to help.", "is_true": True, "explain_ru": "Алекс готов помочь."},
+            {"statement": "Sam says thank you at the end.", "is_true": True, "explain_ru": "В конце Сэм благодарит."},
+        ]
+        events = ["Alex greets Sam", "Sam explains the need", "Alex offers step-by-step help", "Sam thanks Alex"]
+
     return {
         "speakers": [
-            {"name": "David", "gender": "male", "role": roles.split(" and ")[0] if " and " in roles else "person A"},
-            {"name": "Emily", "gender": "female", "role": roles.split(" and ")[-1] if " and " in roles else "person B"},
+            {"name": "Alex", "gender": "male", "role": role_a},
+            {"name": "Sam", "gender": "female", "role": role_b},
         ],
-        "turns": [
-            {"speaker": "David", "text": "Good afternoon. How can I help you today?"},
-            {"speaker": "Emily", "text": "Hi. I need some help with this, please."},
-            {"speaker": "David", "text": "Of course. Can you tell me what happened?"},
-            {"speaker": "Emily", "text": "Sure. It started this morning around nine."},
-            {"speaker": "David", "text": "Alright. Do you have your document with you?"},
-            {"speaker": "Emily", "text": "Yes, here it is. I also brought my passport."},
-            {"speaker": "David", "text": "Perfect. Please wait five minutes at desk three."},
-            {"speaker": "Emily", "text": "Thank you. I'll wait there."},
-        ],
-        "task1": [
-            {
-                "question": "What time did Emily's problem start?",
-                "options": ["At seven", "At eight", "At nine", "At ten"],
-                "correct": 2,
-                "explain_wrong_ru": "Эмили сказала, что всё началось около девяти утра.",
-                "options_ru": ["В семь", "В восемь", "В девять", "В десять"],
-            },
-            {
-                "question": "What extra document did Emily bring?",
-                "options": ["A ticket", "A passport", "A map", "A photo"],
-                "correct": 1,
-                "explain_wrong_ru": "Эмили сказала, что принесла ещё паспорт.",
-                "options_ru": ["Билет", "Паспорт", "Карту", "Фото"],
-            },
-            {
-                "question": "Where should Emily wait?",
-                "options": ["Desk one", "Desk two", "Desk three", "Outside"],
-                "correct": 2,
-                "explain_wrong_ru": "Дэвид попросил подождать у стойки номер три.",
-                "options_ru": ["Стойка 1", "Стойка 2", "Стойка 3", "Снаружи"],
-            },
-        ],
-        "task2": [
-            {
-                "statement": "Emily asked for help in the evening.",
-                "is_true": False,
-                "explain_ru": "Разговор днём (Good afternoon), а проблема началась утром.",
-            },
-            {
-                "statement": "David asked Emily to wait five minutes.",
-                "is_true": True,
-                "explain_ru": "Дэвид сказал подождать пять минут у стойки три.",
-            },
-            {
-                "statement": "Emily forgot her passport.",
-                "is_true": False,
-                "explain_ru": "Эмили как раз сказала, что паспорт с собой.",
-            },
-        ],
-        "task3_events": [
-            "David offers to help",
-            "Emily explains the morning problem",
-            "Emily shows her passport",
-            "David asks her to wait at desk three",
-        ],
+        "turns": [{"speaker": a, "text": b} for a, b in turns],
+        "task1": t1,
+        "task2": t2,
+        "task3_events": events,
     }
 
 
@@ -333,7 +480,10 @@ def generate_listening_pack(level: str, topic: dict) -> dict:
     fallback = _fallback_pack(level, topic)
     setting = topic.get("setting") or topic.get("title_en") or "everyday situation"
     roles = topic.get("roles") or "two people in a realistic situation"
+    title_en = topic.get("title_en") or "Topic"
+    title_ru = topic.get("title_ru") or title_en
     pace = _pace_hint(level)
+    must = ", ".join(_topic_must_words(topic)[:12]) or setting
     data = _ask_json(
         [
             {
@@ -341,33 +491,42 @@ def generate_listening_pack(level: str, topic: dict) -> dict:
                 "content": (
                     "Create CEFR listening practice JSON for Russian learners. ONLY JSON.\n"
                     "Keys: speakers, turns, task1, task2, task3_events.\n"
-                    "speakers: exactly 2 {name, gender:male|female, role}. Names fit the roles "
-                    "(e.g. officer/citizen, bartender/guest, doctor/patient) — NOT always friends.\n"
-                    f"turns: exactly 8 {{speaker,text}}. {pace} Setting: {setting}. Roles: {roles}.\n"
-                    "task1: 3 MCQs {question, options[4], correct(0-3), explain_wrong_ru, options_ru[4]}.\n"
-                    "  Questions = listening comprehension (facts from dialogue). NOT grammar.\n"
-                    "  options_ru = Russian translations of the 4 options in the same order.\n"
-                    "  explain_wrong_ru = short Russian explanation if student picks wrong.\n"
-                    "task2: 3 TRUE/FALSE {statement, is_true, explain_ru}.\n"
-                    "  CRITICAL: task2 must test DIFFERENT facts than task1 — no paraphrases of the same 3 questions.\n"
-                    "  Mix true and false. Statements about details NOT asked in task1.\n"
-                    "task3_events: 4 short English event phrases in correct chronology.\n"
+                    "speakers: exactly 2 {name, gender:male|female, role}. Names fit the roles.\n"
+                    f"CRITICAL TOPIC LOCK: The WHOLE dialogue MUST be about «{title_en}» / «{title_ru}».\n"
+                    f"Setting: {setting}. Roles: {roles}.\n"
+                    f"Use these topic words naturally: {must}.\n"
+                    "FORBIDDEN: invent a different situation (e.g. passport desk, documents, immigration) "
+                    "unless the topic itself is about that.\n"
+                    f"turns: exactly 8 {{speaker,text}}. {pace}\n"
+                    "task1: 3 MCQs {question, options[4], correct(0-3), explain_wrong_ru, options_ru[4]} "
+                    "ONLY about facts from THIS dialogue.\n"
+                    "task2: 3 TRUE/FALSE {statement, is_true, explain_ru} about DIFFERENT facts than task1.\n"
+                    "task3_events: 4 short English event phrases in correct chronology from THIS dialogue.\n"
                     f"CEFR level: {level}."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"Level:{level}\nTopic:{topic.get('title_en')} / {topic.get('title_ru')}\n"
-                    f"Roles:{roles}\nSetting:{setting}\nSeed:{random.random()}"
+                    f"Level:{level}\nTopic EN:{title_en}\nTopic RU:{title_ru}\n"
+                    f"Roles:{roles}\nSetting:{setting}\n"
+                    f"Write ONLY about this topic. Seed:{random.random()}"
                 ),
             },
         ],
         fallback,
-        temperature=0.6,
+        temperature=0.45,
         max_tokens=1600,
     )
     pack = _normalize_pack(data, fallback)
+    if not _pack_matches_topic(pack, topic):
+        log.warning(
+            "Listening pack off-topic for %s/%s — using topic fallback",
+            topic.get("id"),
+            title_en,
+        )
+        pack = _normalize_pack(fallback, fallback)
+
     sp = pack["speakers"]
     g0 = (sp[0].get("gender") or "male").lower()
     g1 = (sp[1].get("gender") or "female").lower()
@@ -381,7 +540,6 @@ def generate_listening_pack(level: str, topic: dict) -> dict:
         name: {"key": v["key"], "voice_id": v["voice_id"], "voice_name": v["name"]}
         for name, v in voice_map.items()
     }
-    # пронумерованные реплики — подпись = имя голоса + номер (Jessa 1, Alex 3)
     numbered = []
     for i, t in enumerate(pack["turns"], start=1):
         vinfo = pack["voice_map"].get(t["speaker"]) or {}

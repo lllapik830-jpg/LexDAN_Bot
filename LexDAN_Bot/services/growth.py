@@ -94,6 +94,7 @@ def ensure_growth(user: dict) -> dict:
     user.setdefault("last_active_at", "")
     user.setdefault("reminder_sent_date", "")
     user.setdefault("first_seen_at", user.get("first_seen_at") or _now_ts())
+    user.setdefault("last_start_at", float(user.get("last_start_at") or 0))
     user.setdefault("chat_text_total", int(user.get("chat_text_total") or 0))
     user.setdefault("chat_voice_total", int(user.get("chat_voice_total") or 0))
     user.setdefault("hit_chat_limit_ever", bool(user.get("hit_chat_limit_ever")))

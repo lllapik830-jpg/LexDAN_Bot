@@ -1,6 +1,6 @@
 """
 Промокоды LexDAN.
-ENGRICO77 — 7 дней полного доступа (= тариф 799).
+ENGRICO77 — 7 дней полного доступа (= тариф 799) включая Listening.
 Прогресс (задания, слова, стрик) не сбрасывается после окончания.
 """
 
@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from services.growth import ensure_growth, is_premium, start_trial
 
-# code → (days_full, label)
+# code → meta
 PROMO_CODES: dict[str, dict] = {
     "ENGRICO77": {
         "days": 7,
         "kind": "full_trial",
-        "title": "7 дней полного доступа (как тариф 799₽)",
+        "title": "7 дней полного доступа (как тариф 799₽), включая Listening",
+        "listening": True,
     },
 }
 
@@ -26,8 +27,9 @@ TRIAL_ENDED_HTML = (
     "✅ Все задания, слова и серия дней на месте\n"
     "🎙 Голос озвучки снова обычный (Adam)\n"
     "🗂 Библиотека тем и дневные лимиты — как на бесплатном тарифе\n"
+    "🎧 Listening снова только в премиум-подписке\n"
     "🔥 Серия сохранена; новые награды теперь по бесплатной лестнице\n\n"
-    "Хочешь снова безлимит уроков, все голоса и большую библиотеку тем?\n"
+    "Хочешь снова безлимит уроков, Listening, все голоса и большую библиотеку тем?\n"
     "Я рядом — выбери тариф ниже 😊👇"
 )
 
@@ -39,7 +41,7 @@ def normalize_promo(code: str) -> str:
 def apply_promo(user: dict, code: str) -> tuple[bool, str]:
     """
     Применить промокод. Returns (ok, html_message).
-    Один код — один раз на пользователя (по списку used_promos).
+    Каждый код — строго один раз на пользователя.
     """
     ensure_growth(user)
     key = normalize_promo(code)
@@ -50,9 +52,17 @@ def apply_promo(user: dict, code: str) -> tuple[bool, str]:
     if not meta:
         return False, "🤔 Такой промокод не найден. Проверь написание или нажми «Пропустить»."
 
-    used = list(user.get("used_promos") or [])
-    if key in used:
-        return False, "Этот промокод ты уже активировал(а)."
+    used = [normalize_promo(x) for x in list(user.get("used_promos") or []) if x]
+    already = key in used or normalize_promo(str(user.get("promo_trial_code") or "")) == key
+    if already:
+        # на всякий случай зафиксируем в used_promos
+        if key not in used:
+            used.append(key)
+            user["used_promos"] = used
+        return False, (
+            f"🔒 Промокод <b>{key}</b> уже был активирован на этом аккаунте.\n"
+            "Повторно использовать его нельзя."
+        )
 
     days = int(meta["days"])
     if meta["kind"] == "full_trial":
@@ -60,12 +70,19 @@ def apply_promo(user: dict, code: str) -> tuple[bool, str]:
         user["promo_trial_code"] = key
         user["in_promo_trial"] = True
         user["trial_end_notified"] = False
+        if meta.get("listening"):
+            user["promo_listening"] = True
 
     used.append(key)
     user["used_promos"] = used
+    listen_line = (
+        "\n🎧 Открыт ранний доступ к <b>Listening</b> на время пробного периода."
+        if meta.get("listening")
+        else ""
+    )
     return True, (
         f"🎉 Промокод <b>{key}</b> активирован!\n\n"
-        f"{meta['title']}.\n"
+        f"{meta['title']}.{listen_line}\n"
         "Доступны уроки без лимита, общение без лимита, все голоса и библиотека тем.\n"
         "Стрик и рефералка в этот период работают как на тарифе 799₽.\n\n"
         "Когда 7 дней закончатся — прогресс (задания, слова, стрик) сохранится, "
@@ -80,6 +97,8 @@ def maybe_cleanup_expired_trial_voice(user: dict) -> None:
     ensure_growth(user)
     if user_plan(user) == "free" and user.get("chat_voice_key"):
         user["chat_voice_key"] = ""
+    if user_plan(user) == "free":
+        user["promo_listening"] = False
 
 
 def pop_trial_ended_notice(user: dict) -> str | None:
@@ -95,6 +114,7 @@ def pop_trial_ended_notice(user: dict) -> str | None:
 
     user["in_promo_trial"] = False
     user["trial_end_notified"] = True
+    user["promo_listening"] = False
     maybe_cleanup_expired_trial_voice(user)
     return TRIAL_ENDED_HTML
 

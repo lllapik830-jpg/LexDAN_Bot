@@ -206,6 +206,8 @@ async def _send_welcome_after_promo(m: Message, user_id: str, *, promo_msg: str 
 
 @router.message(Command("start"))
 async def start_cmd(m: Message, command: CommandObject = None):
+    import time
+
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
@@ -213,6 +215,7 @@ async def start_cmd(m: Message, command: CommandObject = None):
     ensure_moderation(user)
     bind_referral_code(user_id, user)
     user["mode"] = MODE_MENU
+    user["last_start_at"] = time.time()
 
     args = (command.args if command else None) or ""
     if args.startswith("ref_"):

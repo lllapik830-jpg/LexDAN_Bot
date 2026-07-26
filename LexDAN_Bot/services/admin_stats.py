@@ -137,19 +137,47 @@ def report_funnel() -> str:
         f"  ⛔ лимит чата: <b>{chat_hit}</b>\n"
         f"  ⛔ Grammar: <b>{grammar_hit}</b>\n"
         f"  ⛔ Vocabulary: <b>{vocab_hit}</b>\n\n"
-        "Команды: /starts /chat_stats /assessed /limits /progress"
+        "Команды: /starts (сегодня) /chat_stats /assessed /limits /progress"
     )
 
 
-def report_starts(*, limit: int = 80) -> str:
+def report_starts(*, limit: int = 100) -> str:
+    """Кто нажал /start сегодня (по last_start_at / first_seen_at)."""
+    from datetime import date
+    import time
+
+    today = date.today().isoformat()
     rows = _iter_users()
-    lines = [f"▶️ <b>Кто запустил бота</b> (всего {len(rows)})\n"]
-    for i, (uid, u) in enumerate(rows[:limit], 1):
+    today_rows: list[tuple[str, dict, float]] = []
+    for uid, u in rows:
+        ts = float(u.get("last_start_at") or 0) or float(u.get("first_seen_at") or 0)
+        if not ts:
+            continue
+        try:
+            day = time.strftime("%Y-%m-%d", time.localtime(ts))
+        except (OverflowError, OSError, ValueError):
+            continue
+        if day == today:
+            today_rows.append((uid, u, ts))
+    today_rows.sort(key=lambda x: x[2], reverse=True)
+
+    lines = [
+        f"▶️ <b>Кто нажал /start сегодня</b> ({today})\n",
+        f"Всего: <b>{len(today_rows)}</b>\n",
+    ]
+    if not today_rows:
+        lines.append("Пока никто не жал /start сегодня.")
+        return "\n".join(lines)
+
+    for i, (uid, u, ts) in enumerate(today_rows[:limit], 1):
         plan = user_plan(u)
-        test = "✅тест" if u.get("assessment_done") else "—"
-        lines.append(f"{i}. <code>{uid}</code> {_name(u)} · {plan} · {test}")
-    if len(rows) > limit:
-        lines.append(f"\n…и ещё {len(rows) - limit}. Смотри /progress или /user id")
+        hhmm = time.strftime("%H:%M", time.localtime(ts))
+        new = " · 🆕" if not u.get("name") else ""
+        lines.append(
+            f"{i}. <code>{uid}</code> {_name(u)} · {hhmm} · {plan}{new}"
+        )
+    if len(today_rows) > limit:
+        lines.append(f"\n…и ещё {len(today_rows) - limit}")
     return "\n".join(lines)
 
 
