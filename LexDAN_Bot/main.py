@@ -36,8 +36,8 @@ dp.include_routers(
     lessons_sections.router,
     chat.router,
     lessons.router,
+    collection.router,  # до profile catch-all
     profile.router,
-    collection.router,
 )
 
 app = Flask(__name__)

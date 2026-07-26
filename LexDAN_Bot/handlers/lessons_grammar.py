@@ -802,9 +802,7 @@ async def acknowledge_topic(m: Message):
         reply_markup=grammar_topics_kb(level, user),
         parse_mode="HTML",
     )
-    from services.collection import grant_collection_drop_message
-
-    await grant_collection_drop_message(m, str(m.from_user.id))
+    # ack-темы без 8 заданий — коллекцию не выдаём (только после полного закрытия упражнений)
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == "📝 Задания")

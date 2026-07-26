@@ -197,6 +197,15 @@ async def open_profile(m: Message):
     plan = user_plan(user)
     sub = plan_label(plan)
 
+    from config import CHANNEL_URL, CHANNEL_USERNAME
+
+    ch_url = (CHANNEL_URL or "").strip()
+    if not ch_url and CHANNEL_USERNAME:
+        ch_url = f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"
+    channel_line = (
+        f'📢 <a href="{ch_url}">НАШ КАНАЛ</a>\n\n' if ch_url else ""
+    )
+
     await say(
         m,
         "📊 <b>Твой профиль</b>\n\n"
@@ -206,11 +215,13 @@ async def open_profile(m: Message):
         f"📝 Слов выучено: {words}\n"
         f"💬 Фраз выучено: {phrases}\n"
         f"💎 Подписка: <b>{sub}</b>\n\n"
+        f"{channel_line}"
         f"{growth}",
         replace=True,
         delete_tap=True,
         reply_markup=profile_menu(user, user_id=m.from_user.id),
         parse_mode="HTML",
+        disable_web_page_preview=True,
     )
     # Тарифы — бесплатным оба; на 399 — апгрейд до полного
     if plan == "free":

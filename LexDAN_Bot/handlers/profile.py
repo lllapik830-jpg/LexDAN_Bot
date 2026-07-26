@@ -1,4 +1,4 @@
-"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
+﻿"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
 
 from aiogram import Router, F
 from aiogram.types import Message
@@ -251,11 +251,20 @@ async def restore_streak_btn(m: Message):
 
 @router.message(ModeFilter(MODE_PROFILE))
 async def profile_foolproof(m: Message):
+    from services.collection import BTN_COLLECTION
+    from aiogram.dispatcher.event.bases import SkipHandler
+
+    text = (m.text or "").strip()
+    # коллекция / цифры альбома — другим хендлерам
+    if text == BTN_COLLECTION or text == "⬅️ В профиль" or text.isdigit():
+        raise SkipHandler
+
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
-    save_users(users)
+    save_users(users, only=str(m.from_user.id))
     await m.answer(
-        "🙂 В профиле: Подписка, Изменить имя, Промокод, Серия дней, Пригласить друга.",
+        "🙂 В профиле: Подписка, Коллекция (если доступна), Изменить имя, "
+        "Промокод, Серия дней, Пригласить друга.",
         reply_markup=profile_menu(user, user_id=m.from_user.id),
     )
