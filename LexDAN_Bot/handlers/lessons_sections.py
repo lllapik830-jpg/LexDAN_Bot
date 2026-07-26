@@ -11,8 +11,8 @@ from services.lesson_state import assessment_busy, ensure_lesson, set_level_hub,
 router = Router()
 
 # Listening — handlers/lessons_listening.py
+# Reading — handlers/lessons_reading.py
 SECTION_BUTTONS = {
-    "📖 Reading": "reading",
     "🗣 Speaking": "speaking",
     "✍️ Writing": "writing",
 }

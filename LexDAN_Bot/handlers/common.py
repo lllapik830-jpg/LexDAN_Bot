@@ -29,6 +29,12 @@ async def back_to_main(m: Message):
         clear_listening(user_id)
     except Exception:
         pass
+    try:
+        from services.reading_state import clear_session as clear_reading
+
+        clear_reading(user_id)
+    except Exception:
+        pass
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
