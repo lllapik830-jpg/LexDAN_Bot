@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from services.database import load_users, get_user, save_users
 
 
 def ensure_listening(user: dict) -> dict:
     if "listening" not in user or not isinstance(user.get("listening"), dict):
-        user["listening"] = {"progress": {}, "session": None}
+        user["listening"] = {"progress": {}, "session": None, "daily_date": "", "daily_used": 0}
     sm = user["listening"]
     if not isinstance(sm.get("progress"), dict):
         sm["progress"] = {}
+    if "daily_date" not in sm:
+        sm["daily_date"] = ""
+    if "daily_used" not in sm:
+        sm["daily_used"] = 0
     return sm
 
 
@@ -21,6 +27,55 @@ def progress_key(level: str, topic_id: str) -> str:
 def is_topic_done(user: dict, level: str, topic_id: str) -> bool:
     sm = ensure_listening(user)
     return bool(sm["progress"].get(progress_key(level, topic_id)))
+
+
+def _today() -> str:
+    return date.today().isoformat()
+
+
+def listening_daily_cap(user: dict) -> int | None:
+    """None = безлимит (799 / триал). Иначе дневной лимит ситуаций."""
+    from services.rewards import user_plan
+
+    if user_plan(user) == "full":
+        return None
+    return 1  # free + 399
+
+def listening_used_today(user: dict) -> int:
+    sm = ensure_listening(user)
+    if sm.get("daily_date") != _today():
+        return 0
+    return int(sm.get("daily_used") or 0)
+
+
+def can_start_listening(user: dict) -> tuple[bool, str]:
+    """Можно ли начать новую ситуацию сегодня."""
+    cap = listening_daily_cap(user)
+    if cap is None:
+        return True, ""
+    used = listening_used_today(user)
+    if used >= cap:
+        return (
+            False,
+            "🎧 На твоём тарифе — <b>1 ситуация Listening в день</b>.\n"
+            "Лимит на сегодня уже использован. Завтра снова можно, "
+            "или открой полный доступ (799₽) без дневного лимита.",
+        )
+    return True, ""
+
+
+def consume_listening_slot(user_id: str) -> dict:
+    """Списать одну ситуацию за сегодня (при старте диалога)."""
+
+    def mut(u):
+        sm = ensure_listening(u)
+        today = _today()
+        if sm.get("daily_date") != today:
+            sm["daily_date"] = today
+            sm["daily_used"] = 0
+        sm["daily_used"] = int(sm.get("daily_used") or 0) + 1
+
+    return _save(user_id, mut)
 
 
 def _save(user_id: str, mutator) -> dict:

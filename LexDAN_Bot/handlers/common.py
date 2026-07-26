@@ -33,6 +33,9 @@ async def back_to_main(m: Message):
     user = get_user(users, user_id)
     ensure_growth(user)
     await flush_trial_ended(m, user, users, user_id)
+    # сбросить зависший ввод промокода, чтобы секреты/меню не ломались
+    if (user.get("step") or "") in {"awaiting_promo_profile", "awaiting_promo", "awaiting_name_change"}:
+        user["step"] = "ready"
     save_users(users, only=user_id)
     set_mode(user_id, MODE_MENU)
     await say(

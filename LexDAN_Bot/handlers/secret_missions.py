@@ -69,6 +69,10 @@ async def open_secret_hub(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
+    # если застряли на вводе промокода — сбросить, иначе секреты «ломаются»
+    if (user.get("step") or "") in {"awaiting_promo_profile", "awaiting_promo"}:
+        user["step"] = "ready"
+        save_users(users, only=str(m.from_user.id))
     ensure_missions(user)
     if not has_secret_entry(user):
         await m.answer(
@@ -80,7 +84,7 @@ async def open_secret_hub(m: Message):
         return
 
     set_mode(str(m.from_user.id), MODE_SECRET)
-    save_users(users)
+    save_users(users, only=str(m.from_user.id))
     active = get_active(user)
     if active:
         await _resume_active(m, user)

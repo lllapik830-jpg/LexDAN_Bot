@@ -37,13 +37,15 @@ def _clean_models() -> list[str]:
     return out
 
 
-def elevenlabs_tts(text: str, voice_id: str | None = None) -> bytes | None:
+def elevenlabs_tts(text: str, voice_id: str | None = None, *, slow: bool = False) -> bytes | None:
     """Текст → MP3 через ElevenLabs. None = не удалось."""
-    audio, _err = elevenlabs_tts_detail(text, voice_id=voice_id)
+    audio, _err = elevenlabs_tts_detail(text, voice_id=voice_id, slow=slow)
     return audio
 
 
-def elevenlabs_tts_detail(text: str, voice_id: str | None = None) -> tuple[bytes | None, str]:
+def elevenlabs_tts_detail(
+    text: str, voice_id: str | None = None, *, slow: bool = False
+) -> tuple[bytes | None, str]:
     text = (text or "").strip()
     if not text:
         return None, "empty text"
@@ -55,6 +57,16 @@ def elevenlabs_tts_detail(text: str, voice_id: str | None = None) -> tuple[bytes
     # Лимит символов на запрос
     if len(text) > 900:
         text = text[:900].rsplit(" ", 1)[0] + "…"
+
+    voice_settings = {
+        "stability": 0.7 if slow else 0.5,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+        "use_speaker_boost": True,
+    }
+    # speed поддерживается новыми моделями (0.7–1.2); старые могут игнорить
+    if slow:
+        voice_settings["speed"] = 0.82
 
     last_err = "unknown"
     for model_id in _clean_models():
@@ -70,10 +82,7 @@ def elevenlabs_tts_detail(text: str, voice_id: str | None = None) -> tuple[bytes
                 json={
                     "text": text,
                     "model_id": model_id,
-                    "voice_settings": {
-                        "stability": 0.5,
-                        "similarity_boost": 0.75,
-                    },
+                    "voice_settings": voice_settings,
                 },
                 timeout=35,
             )
@@ -98,7 +107,7 @@ def elevenlabs_tts_detail(text: str, voice_id: str | None = None) -> tuple[bytes
     return None, last_err
 
 
-def gtts_tts(text: str) -> bytes | None:
+def gtts_tts(text: str, *, slow: bool = False) -> bytes | None:
     """Запасная озвучка Google TTS (работает с Render)."""
     text = (text or "").strip()
     if not text:
@@ -109,7 +118,7 @@ def gtts_tts(text: str) -> bytes | None:
         from gtts import gTTS
 
         buf = BytesIO()
-        gTTS(text=text, lang="en", slow=False).write_to_fp(buf)
+        gTTS(text=text, lang="en", slow=slow).write_to_fp(buf)
         data = buf.getvalue()
         return data or None
     except Exception as e:
@@ -117,16 +126,18 @@ def gtts_tts(text: str) -> bytes | None:
         return None
 
 
-def synthesize_speech(text: str, voice_id: str | None = None) -> tuple[bytes | None, str]:
+def synthesize_speech(
+    text: str, voice_id: str | None = None, *, slow: bool = False
+) -> tuple[bytes | None, str]:
     """
     Сначала ElevenLabs, при ошибке — gTTS.
     Возвращает (mp3_bytes, source) где source = 'elevenlabs' | 'gtts' | ''.
     """
-    audio, err = elevenlabs_tts_detail(text, voice_id=voice_id)
+    audio, err = elevenlabs_tts_detail(text, voice_id=voice_id, slow=slow)
     if audio:
         return audio, "elevenlabs"
     logging.warning(f"ElevenLabs unavailable ({err}), falling back to gTTS")
-    audio = gtts_tts(text)
+    audio = gtts_tts(text, slow=slow)
     if audio:
         return audio, "gtts"
     return None, ""
@@ -185,11 +196,12 @@ async def send_voice_reply(
     *,
     title: str = "LexDAN",
     voice_id: str | None = None,
+    slow: bool = False,
 ) -> bool:
     """Сгенерировать и отправить голосовое. True если ушло."""
     from aiogram.types import FSInputFile
 
-    mp3_bytes, source = synthesize_speech(text, voice_id=voice_id)
+    mp3_bytes, source = synthesize_speech(text, voice_id=voice_id, slow=slow)
     if not mp3_bytes:
         logging.error("All TTS backends failed")
         await message.answer("⚠️ Текст готов, но голос сейчас не отправился. Попробуй ещё раз чуть позже.")

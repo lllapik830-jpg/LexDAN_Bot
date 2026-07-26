@@ -10,7 +10,7 @@ from services.lesson_state import assessment_busy, ensure_lesson, set_level_hub,
 
 router = Router()
 
-# Listening — отдельный handlers/lessons_listening.py (тест для MANAGER)
+# Listening — handlers/lessons_listening.py
 SECTION_BUTTONS = {
     "📖 Reading": "reading",
     "🗣 Speaking": "speaking",

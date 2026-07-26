@@ -149,8 +149,10 @@ async def profile_promo_start(m: Message):
 @router.message(StepFilter("awaiting_promo_profile"), F.text)
 async def profile_promo_enter(m: Message):
     from services.promo import BTN_SKIP_PROMO, apply_promo
-    from handlers.keyboards import profile_menu, main_menu
-    from services.database import MODE_PROFILE, set_mode
+    from handlers.keyboards import profile_menu
+    from services.database import MODE_PROFILE, MODE_MENU, set_mode
+    from services.secret_missions import BTN_SECRET
+    from aiogram.dispatcher.event.bases import SkipHandler
 
     text = (m.text or "").strip()
     user_id = str(m.from_user.id)
@@ -158,12 +160,35 @@ async def profile_promo_enter(m: Message):
     user = get_user(users, user_id)
     ensure_growth(user)
 
-    if text in (BTN_SKIP_PROMO, "🔙 Вернуться в меню", "📊 Профиль"):
+    # Меню / секреты / разделы — не считать промокодом
+    menu_like = {
+        BTN_SKIP_PROMO,
+        "🔙 Вернуться в меню",
+        "📊 Профиль",
+        "🗣️ Общаться",
+        "📚 Уроки",
+        "🆘 Поддержка",
+        BTN_SECRET,
+        "💎 Подписка",
+        BTN_STREAK,
+        BTN_REFERRAL,
+        BTN_ENTER_PROMO,
+        "✏️ Изменить имя",
+    }
+    if text in menu_like or text.startswith("🔐"):
         user["step"] = "ready"
         save_users(users, only=user_id)
+        if text == BTN_SECRET:
+            set_mode(user_id, MODE_MENU)
+            raise SkipHandler
+        if text == "🔙 Вернуться в меню":
+            set_mode(user_id, MODE_MENU)
+            raise SkipHandler
         set_mode(user_id, MODE_PROFILE)
-        await m.answer("Ок, без промокода.", reply_markup=profile_menu(user))
-        return
+        if text in (BTN_SKIP_PROMO, "📊 Профиль"):
+            await m.answer("Ок, без промокода.", reply_markup=profile_menu(user))
+            return
+        raise SkipHandler
 
     if text.startswith("/"):
         await m.answer("Введи промокод текстом или нажми «Пропустить».")
@@ -179,10 +204,7 @@ async def profile_promo_enter(m: Message):
     user["step"] = "ready"
     save_users(users, only=user_id)
     set_mode(user_id, MODE_PROFILE)
-    if ok:
-        await m.answer(msg, reply_markup=profile_menu(user), parse_mode="HTML")
-    else:
-        await m.answer(msg, reply_markup=profile_menu(user), parse_mode="HTML")
+    await m.answer(msg, reply_markup=profile_menu(user), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_PROFILE), F.text == BTN_STREAK)
