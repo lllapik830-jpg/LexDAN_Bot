@@ -324,7 +324,7 @@ async def _finish_exercise_ok(
             topic_id=topic_id,
             topic_title=topic_title,
             next_num=None if topic_just_done else next_num,
-            topic_just_done=topic_just_done or next_num is None,
+            topic_just_done=topic_just_done,
             progress_lines=progress_lines,
             celebration_extra=extra,
         )
