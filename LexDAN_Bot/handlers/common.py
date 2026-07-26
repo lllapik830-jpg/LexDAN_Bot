@@ -42,6 +42,7 @@ async def back_to_main(m: Message):
     # сбросить зависший ввод промокода, чтобы секреты/меню не ломались
     if (user.get("step") or "") in {"awaiting_promo_profile", "awaiting_promo", "awaiting_name_change"}:
         user["step"] = "ready"
+    user["collection_hub"] = ""
     save_users(users, only=user_id)
     set_mode(user_id, MODE_MENU)
     await say(

@@ -209,7 +209,7 @@ async def open_profile(m: Message):
         f"{growth}",
         replace=True,
         delete_tap=True,
-        reply_markup=profile_menu(user),
+        reply_markup=profile_menu(user, user_id=m.from_user.id),
         parse_mode="HTML",
     )
     # Тарифы — бесплатным оба; на 399 — апгрейд до полного

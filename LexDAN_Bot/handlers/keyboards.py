@@ -47,16 +47,21 @@ def back_to_menu() -> ReplyKeyboardMarkup:
     )
 
 
-def profile_menu(user: dict | None = None) -> ReplyKeyboardMarkup:
+def profile_menu(
+    user: dict | None = None, *, user_id: str | int | None = None
+) -> ReplyKeyboardMarkup:
     from services.growth import BTN_RESTORE_STREAK, can_restore_streak
     from services.rewards import BTN_STREAK, BTN_REFERRAL
     from services.promo import BTN_ENTER_PROMO
+    from services.collection import BTN_COLLECTION, collection_allowed
 
     rows = [
         [KeyboardButton(text="💎 Подписка")],
-        [KeyboardButton(text="✏️ Изменить имя"), KeyboardButton(text=BTN_ENTER_PROMO)],
-        [KeyboardButton(text=BTN_STREAK), KeyboardButton(text=BTN_REFERRAL)],
     ]
+    if collection_allowed(user_id):
+        rows.append([KeyboardButton(text=BTN_COLLECTION)])
+    rows.append([KeyboardButton(text="✏️ Изменить имя"), KeyboardButton(text=BTN_ENTER_PROMO)])
+    rows.append([KeyboardButton(text=BTN_STREAK), KeyboardButton(text=BTN_REFERRAL)])
     if user is not None and can_restore_streak(user):
         rows.append([KeyboardButton(text=BTN_RESTORE_STREAK)])
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])

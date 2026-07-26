@@ -1,4 +1,4 @@
-﻿"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
+"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
 
 from aiogram import Router, F
 from aiogram.types import Message
@@ -45,7 +45,7 @@ async def change_name_start(m: Message):
             f"На бесплатном и тарифе «Общение» имя можно менять <b>раз в 30 дней</b>.\n"
             f"Подожди ещё примерно <b>{left}</b> дн.\n"
             f"На тарифе <b>799₽</b> — безлимитная смена имени.",
-            reply_markup=profile_menu(user),
+            reply_markup=profile_menu(user, user_id=m.from_user.id),
             parse_mode="HTML",
         )
         return
@@ -61,7 +61,7 @@ async def change_name_start(m: Message):
         f"✏️ Напиши новое имя (<b>только имя</b>, не фразу).\n{note}\n"
         "Или «🔙 Вернуться в меню», чтобы отменить.",
         parse_mode="HTML",
-        reply_markup=profile_menu(user),
+        reply_markup=profile_menu(user, user_id=m.from_user.id),
     )
 
 
@@ -78,7 +78,7 @@ async def subscription_info(m: Message):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     from services.rewards import user_plan
 
-    await m.answer(subscription_blurb(user), reply_markup=profile_menu(user), parse_mode="HTML")
+    await m.answer(subscription_blurb(user), reply_markup=profile_menu(user, user_id=m.from_user.id), parse_mode="HTML")
     plan = user_plan(user)
     if plan == "free":
         rows = tariffs_inline_kb(user).inline_keyboard
@@ -152,6 +152,8 @@ async def profile_promo_enter(m: Message):
     from handlers.keyboards import profile_menu
     from services.database import MODE_PROFILE, MODE_MENU, set_mode
     from services.secret_missions import BTN_SECRET
+    from services.collection import BTN_COLLECTION
+    from services.rewards import BTN_STREAK, BTN_REFERRAL
     from aiogram.dispatcher.event.bases import SkipHandler
 
     text = (m.text or "").strip()
@@ -173,7 +175,9 @@ async def profile_promo_enter(m: Message):
         BTN_STREAK,
         BTN_REFERRAL,
         BTN_ENTER_PROMO,
+        BTN_COLLECTION,
         "✏️ Изменить имя",
+        "⬅️ В профиль",
     }
     if text in menu_like or text.startswith("🔐"):
         user["step"] = "ready"
@@ -186,7 +190,7 @@ async def profile_promo_enter(m: Message):
             raise SkipHandler
         set_mode(user_id, MODE_PROFILE)
         if text in (BTN_SKIP_PROMO, "📊 Профиль"):
-            await m.answer("Ок, без промокода.", reply_markup=profile_menu(user))
+            await m.answer("Ок, без промокода.", reply_markup=profile_menu(user, user_id=m.from_user.id))
             return
         raise SkipHandler
 
@@ -204,7 +208,7 @@ async def profile_promo_enter(m: Message):
     user["step"] = "ready"
     save_users(users, only=user_id)
     set_mode(user_id, MODE_PROFILE)
-    await m.answer(msg, reply_markup=profile_menu(user), parse_mode="HTML")
+    await m.answer(msg, reply_markup=profile_menu(user, user_id=m.from_user.id), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_PROFILE), F.text == BTN_STREAK)
@@ -215,7 +219,7 @@ async def streak_rewards_info(m: Message):
     save_users(users)
     await m.answer(
         format_streak_rewards_message(user),
-        reply_markup=profile_menu(user),
+        reply_markup=profile_menu(user, user_id=m.from_user.id),
         parse_mode="HTML",
     )
 
@@ -230,7 +234,7 @@ async def invite_friend(m: Message):
     save_users(users)
     await m.answer(
         format_referral_rewards_message(user, BOT_USERNAME),
-        reply_markup=profile_menu(user),
+        reply_markup=profile_menu(user, user_id=m.from_user.id),
         parse_mode="HTML",
     )
 
@@ -242,7 +246,7 @@ async def restore_streak_btn(m: Message):
     ensure_growth(user)
     ok, text = restore_streak(user)
     save_users(users)
-    await m.answer(text, reply_markup=profile_menu(user), parse_mode="HTML")
+    await m.answer(text, reply_markup=profile_menu(user, user_id=m.from_user.id), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_PROFILE))
@@ -253,5 +257,5 @@ async def profile_foolproof(m: Message):
     save_users(users)
     await m.answer(
         "🙂 В профиле: Подписка, Изменить имя, Промокод, Серия дней, Пригласить друга.",
-        reply_markup=profile_menu(user),
+        reply_markup=profile_menu(user, user_id=m.from_user.id),
     )

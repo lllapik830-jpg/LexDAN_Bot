@@ -840,7 +840,7 @@ async def vocab_word_practice(m: Message):
         )
         return
 
-    finish_word_practice(str(m.from_user.id), level, topic_id, word["en"])
+    _user, drop_result = finish_word_practice(str(m.from_user.id), level, topic_id, word["en"])
     from services.growth import (
         note_word_learned,
         ensure_growth,
@@ -848,12 +848,16 @@ async def vocab_word_practice(m: Message):
         is_paid,
     )
     from handlers.lesson_keyboards import lesson_limit_inline_kb
+    from services.collection import send_drop_result
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     wrap = note_word_learned(user)
-    save_users(users)
+    save_users(users, only=str(m.from_user.id))
+
+    if drop_result:
+        await send_drop_result(m, user, drop_result)
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))

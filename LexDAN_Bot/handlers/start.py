@@ -490,7 +490,7 @@ async def save_name_change(m: Message):
     if name in ("🔙 Вернуться в меню", "📊 Профиль"):
         user["step"] = "ready"
         save_users(users, only=user_id)
-        await m.answer("Ок, имя не меняем.", reply_markup=profile_menu(user))
+        await m.answer("Ок, имя не меняем.", reply_markup=profile_menu(user, user_id=m.from_user.id))
         return
 
     if not await guard_user_text(m, user, name):
@@ -511,7 +511,7 @@ async def save_name_change(m: Message):
             f"Имя на твоём тарифе можно менять раз в 30 дней.\n"
             f"Подожди ещё примерно <b>{left}</b> дн. "
             f"На тарифе 799₽ — безлимит смены имени.",
-            reply_markup=profile_menu(user),
+            reply_markup=profile_menu(user, user_id=m.from_user.id),
             parse_mode="HTML",
         )
         return
@@ -522,6 +522,6 @@ async def save_name_change(m: Message):
     save_users(users, only=user_id)
     await m.answer(
         f"✅ Готово! Теперь ты <b>{_esc(name)}</b>.",
-        reply_markup=profile_menu(user),
+        reply_markup=profile_menu(user, user_id=m.from_user.id),
         parse_mode="HTML",
     )

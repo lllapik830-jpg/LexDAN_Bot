@@ -792,3 +792,6 @@ async def _finish_topic_ok(m: Message, uid: str, sess: dict, *, after_help: bool
         reply_markup=listening_topics_kb(level, user),
         parse_mode="HTML",
     )
+    from services.collection import grant_collection_drop_message
+
+    await grant_collection_drop_message(m, uid)

@@ -69,16 +69,18 @@ def mark_phrase_learned(user_id: str, level: str, topic_id: str, en: str) -> dic
     return update_lesson(user_id, mut)
 
 
-def finish_word_practice(user_id: str, level: str, topic_id: str, en: str) -> dict:
-    """Засчитать слово + убрать из батча + вернуть hub к списку слов — одним сохранением."""
+def finish_word_practice(user_id: str, level: str, topic_id: str, en: str) -> tuple[dict, dict | None]:
+    """Засчитать слово + убрать из батча. Returns (user, collection_drop_result|None)."""
     key = item_key(level, topic_id, en)
     en_l = (en or "").strip().lower()
+    drop_holder: list[dict | None] = [None]
 
     def mut(u):
         ensure_lesson(u)
         ensure_vocab_progress(u)
         words = list(u["vocabulary_progress"]["words"])
-        if key not in words:
+        newly = key not in words
+        if newly:
             words.append(key)
         u["vocabulary_progress"]["words"] = words
         u["words_learned"] = len(words)
@@ -94,7 +96,14 @@ def finish_word_practice(user_id: str, level: str, topic_id: str, en: str) -> di
         u["lesson"]["vocab_used_sentences"] = []
         u["lesson"]["vocab_mode"] = "words"
 
-    return update_lesson(user_id, mut)
+        if newly:
+            from services.collection import note_vocab_word_learned, try_grant_drop
+
+            if note_vocab_word_learned(u, user_id=str(user_id)):
+                drop_holder[0] = try_grant_drop(u, user_id=str(user_id))
+
+    user = update_lesson(user_id, mut)
+    return user, drop_holder[0]
 
 
 def finish_phrase_practice(user_id: str, level: str, topic_id: str, en: str) -> dict:
