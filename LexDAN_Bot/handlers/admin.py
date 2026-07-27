@@ -45,6 +45,8 @@ HELP = (
     f"<i>Только id <code>{MANAGER_ID}</code></i>\n\n"
     "/admin — список пользователей + сводка общения\n"
     "/user <code>id</code> — полная карточка\n"
+    "/top — топ по использованию (чат/grammar/vocab/listening)\n"
+    "/others — без активности в разделах\n"
     "/starts — кто нажал /start сегодня\n"
     "/paid — у кого активный тариф\n"
     "/grant_chat <code>id</code> [дней]\n"
@@ -119,6 +121,24 @@ async def admin_funnel(m: Message):
     from services.admin_stats import report_funnel
 
     await _send_report(m, report_funnel())
+
+
+@router.message(Command("top"))
+async def admin_top(m: Message):
+    if not _is_admin(m):
+        return
+    from services.admin_stats import report_top
+
+    await _send_report(m, report_top())
+
+
+@router.message(Command("others"))
+async def admin_others(m: Message):
+    if not _is_admin(m):
+        return
+    from services.admin_stats import report_others
+
+    await _send_report(m, report_others())
 
 
 @router.message(Command("starts"))

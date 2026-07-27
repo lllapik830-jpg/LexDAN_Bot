@@ -15,8 +15,16 @@ from services.growth import (
     vocab_items_used_today,
 )
 from services.lesson_state import count_completed_tasks
-from services.rewards import grammar_daily_cap, has_lessons_pass, user_plan, vocab_daily_cap
+from services.listening_state import ensure_listening
+from services.rewards import (
+    count_grammar_exercises_done,
+    grammar_daily_cap,
+    has_lessons_pass,
+    user_plan,
+    vocab_daily_cap,
+)
 from services.vocabulary_state import sync_vocab_counters
+from config import MANAGER_ID
 
 
 def _iter_users(*, persist_backfill: bool = False) -> list[tuple[str, dict]]:
@@ -471,6 +479,108 @@ def format_user_card(uid: str, u: dict) -> str:
     )
 
 
+def _count_listening_topics(u: dict) -> int:
+    sm = ensure_listening(u)
+    prog = sm.get("progress") or {}
+    return sum(1 for v in prog.values() if v)
+
+
+def _usage_metrics(u: dict) -> dict[str, int]:
+    """Счётчики разделов за всё время."""
+    sync_vocab_counters(u)
+    text_n, voice_n, _ = _chat_totals(u)
+    grammar_n = count_grammar_exercises_done(u)
+    words_n = int(u.get("words_learned") or 0)
+    phrases_n = int(u.get("phrases_learned") or 0)
+    listening_n = _count_listening_topics(u)
+    total = text_n + voice_n + grammar_n + words_n + phrases_n + listening_n
+    return {
+        "text": text_n,
+        "voice": voice_n,
+        "grammar": grammar_n,
+        "words": words_n,
+        "phrases": phrases_n,
+        "listening": listening_n,
+        "sum": total,
+    }
+
+
+def _plan_top_label(u: dict) -> str:
+    """Для /top и /others: free | full (chat тоже показываем явно)."""
+    plan = user_plan(u)
+    if plan == "full":
+        return "full"
+    if plan == "chat":
+        return "chat"
+    return "free"
+
+
+def report_top(*, limit: int = 80) -> str:
+    """
+    Топ по сумме: чат (текст+голос) + grammar задания + слова + фразы + listening темы.
+    Админ (MANAGER) не включается. Без активности — в /others.
+    """
+    rows = _iter_users(persist_backfill=True)
+    scored: list[tuple[str, dict, dict[str, int]]] = []
+    for uid, u in rows:
+        if str(uid) == str(MANAGER_ID):
+            continue
+        m = _usage_metrics(u)
+        if m["sum"] <= 0:
+            continue
+        scored.append((uid, u, m))
+
+    scored.sort(key=lambda x: (-x[2]["sum"], -x[2]["grammar"], -x[2]["text"]))
+
+    lines = [
+        "🏆 <b>Топ по использованию</b>\n",
+        f"В топе: <b>{len(scored)}</b> · без активности → /others\n",
+        "Сумма = голос + текст + grammar + слова + фразы + listening\n",
+    ]
+    if not scored:
+        lines.append("Пока никого с активностью.")
+        return "\n".join(lines)
+
+    for i, (uid, u, m) in enumerate(scored[:limit], 1):
+        lines.append(
+            f"<b>{i}.</b> <code>{uid}</code> {_name(u)} · {_plan_top_label(u)}\n"
+            f"   🎤{m['voice']} · 💬{m['text']} · 📘{m['grammar']} · "
+            f"📝{m['words']}+{m['phrases']} · 🎧{m['listening']} · "
+            f"Σ<b>{m['sum']}</b>"
+        )
+    if len(scored) > limit:
+        lines.append(f"\n…и ещё {len(scored) - limit}")
+    return "\n".join(lines)
+
+
+def report_others(*, limit: int = 120) -> str:
+    """Юзеры без действий в разделах (чат/grammar/vocab/listening). Без админа."""
+    rows = _iter_users(persist_backfill=True)
+    idle: list[tuple[str, dict]] = []
+    for uid, u in rows:
+        if str(uid) == str(MANAGER_ID):
+            continue
+        m = _usage_metrics(u)
+        if m["sum"] <= 0:
+            idle.append((uid, u))
+
+    idle.sort(key=lambda x: float(x[1].get("first_seen_at") or 0) or 0, reverse=True)
+
+    lines = [
+        "👻 <b>Без активности в разделах</b>\n",
+        f"Всего: <b>{len(idle)}</b> · как только сделают что-то → /top\n",
+    ]
+    if not idle:
+        lines.append("Всех уже видно в /top.")
+        return "\n".join(lines)
+
+    for uid, u in idle[:limit]:
+        lines.append(f"• <code>{uid}</code> {_name(u)} · {_plan_top_label(u)}")
+    if len(idle) > limit:
+        lines.append(f"\n…и ещё {len(idle) - limit}")
+    return "\n".join(lines)
+
+
 def report_admin_home() -> str:
     """Сводка для /admin: чат + список пользователей с id."""
     rows = _iter_users(persist_backfill=True)
@@ -487,8 +597,8 @@ def report_admin_home() -> str:
         f"• текстовых: <b>{text_all}</b>",
         f"• голосовых: <b>{voice_all}</b>",
         f"• всего сообщ.: <b>{text_all + voice_all}</b>\n",
-        "Команды: /user <code>id</code> · /grant_chat · /grant_full · "
-        "/revoke · /unlock_levels · /paid\n",
+        "Команды: /top · /others · /user <code>id</code> · /grant_chat · "
+        "/grant_full · /revoke · /unlock_levels · /paid\n",
         "<b>Пользователи</b>",
     ]
     # свежие сверху
