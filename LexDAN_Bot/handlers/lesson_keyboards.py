@@ -19,13 +19,13 @@ BTN_RICO_HELP = "🦜 Помощь Рико"
 
 
 def level_sections_kb(user: dict | None = None, *, user_id: str | int | None = None) -> ReplyKeyboardMarkup:
-    """Grammar + Vocabulary; Listening — премиум; Reading — только MANAGER (тест)."""
-    from services.growth import is_premium, ensure_growth
+    """Grammar + Vocabulary + Listening; Reading — только MANAGER (тест)."""
     from services.database import load_users, get_user
     from config import MANAGER_ID
 
     rows = [
         [KeyboardButton(text="📘 Grammar"), KeyboardButton(text="📗 Vocabulary")],
+        [KeyboardButton(text="🎧 Listening")],
     ]
     u = user
     uid = user_id
@@ -34,10 +34,6 @@ def level_sections_kb(user: dict | None = None, *, user_id: str | int | None = N
         u = get_user(users, str(uid))
     if uid is None and isinstance(u, dict):
         uid = u.get("telegram_id") or u.get("id")
-    if isinstance(u, dict):
-        ensure_growth(u)
-        if is_premium(u):
-            rows.append([KeyboardButton(text="🎧 Listening")])
     # Reading — ранний доступ только админу
     try:
         if uid is not None and int(uid) == int(MANAGER_ID):

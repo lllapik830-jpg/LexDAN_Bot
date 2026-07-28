@@ -163,30 +163,23 @@ def _roles_phrase(topic: dict) -> str:
 
 
 async def open_listening_for_level(m: Message, user: dict, level: str) -> None:
-    from services.growth import is_premium, ensure_growth, PRICE_FULL_MONTH
-    from handlers.lesson_keyboards import tariffs_inline_kb
+    from services.growth import ensure_growth
+    from services.rewards import user_plan
 
     uid = str(m.from_user.id)
     ensure_growth(user)
-    if not is_premium(user):
-        await m.answer(
-            "🎧 <b>Listening</b> — ранний доступ в подписке "
-            f"<b>Премиальная</b> ({PRICE_FULL_MONTH}₽/мес).\n\n"
-            "Диалоги, задания на понимание и голоса — уже внутри.\n"
-            "Оформи премиум в боте и успей попробовать первым 👇",
-            reply_markup=level_sections_kb(user=user, user_id=uid),
-            parse_mode="HTML",
-        )
-        await m.answer("Тарифы:", reply_markup=tariffs_inline_kb(user))
-        return
-
     set_listening_list(uid, level)
     users = load_users()
     user = get_user(users, uid)
     ensure_listening(user)
+    plan = user_plan(user)
+    if plan == "full":
+        limit_note = "Безлимит ситуаций на твоём тарифе ✨"
+    else:
+        limit_note = "На free и 399₽ — <b>1 ситуация в день</b> · на 799₽ — безлимит."
     await m.answer(
         f"🎧 <b>Listening · {level}</b>\n\n"
-        "Ранний доступ · премиум ✨\n"
+        f"{limit_note}\n"
         "Выбери тему — короткий диалог + 3 задания на понимание.\n"
         "Если выйдешь посреди темы, прогресс темы сбросится.",
         reply_markup=listening_topics_kb(level, user),

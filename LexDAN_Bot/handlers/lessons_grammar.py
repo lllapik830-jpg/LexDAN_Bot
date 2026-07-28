@@ -175,14 +175,14 @@ async def open_level_hub(m: Message, level: str):
     set_level_hub(str(m.from_user.id), level)
     from config import MANAGER_ID
 
-    extra = (
-        "\n🎧 <b>Listening</b> доступен тебе для теста."
-        if m.from_user and m.from_user.id == MANAGER_ID
-        else "\n🎧 Listening · 📖 Reading · 🗣 Speaking · ✍️ Writing — <i>скоро</i> 🚀"
-    )
+    extra = "\n🎧 <b>Listening</b> уже доступен."
+    if m.from_user and m.from_user.id == MANAGER_ID:
+        extra += "\n📖 <b>Reading</b> — тестовый доступ."
+    else:
+        extra += "\n📖 Reading · 🗣 Speaking · ✍️ Writing — <i>скоро</i> 🚀"
     await m.answer(
         get_level_welcome(level)
-        + "\n\nСейчас доступны <b>Grammar</b> и <b>Vocabulary</b>."
+        + "\n\nСейчас доступны <b>Grammar</b>, <b>Vocabulary</b> и <b>Listening</b>."
         + extra,
         reply_markup=level_sections_kb(user_id=m.from_user.id),
         parse_mode="HTML",
