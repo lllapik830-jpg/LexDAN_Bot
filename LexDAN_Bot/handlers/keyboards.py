@@ -54,12 +54,16 @@ def profile_menu(
     from services.rewards import BTN_STREAK, BTN_REFERRAL
     from services.promo import BTN_ENTER_PROMO
     from services.collection import BTN_COLLECTION, collection_allowed
+    from services.event_magic import BTN_HALL_OF_FAME, BTN_LEADERBOARD
 
     rows = [
         [KeyboardButton(text="💎 Подписка")],
     ]
     if collection_allowed(user_id):
         rows.append([KeyboardButton(text=BTN_COLLECTION)])
+        rows.append(
+            [KeyboardButton(text=BTN_LEADERBOARD), KeyboardButton(text=BTN_HALL_OF_FAME)]
+        )
     rows.append([KeyboardButton(text="✏️ Изменить имя"), KeyboardButton(text=BTN_ENTER_PROMO)])
     rows.append([KeyboardButton(text=BTN_STREAK), KeyboardButton(text=BTN_REFERRAL)])
     if user is not None and can_restore_streak(user):

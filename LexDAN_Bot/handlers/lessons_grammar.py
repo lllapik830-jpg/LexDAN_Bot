@@ -262,11 +262,24 @@ async def _finish_exercise_ok(
     ex: dict | None = None,
     skip_speak: bool = False,
 ):
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_growth(user)
+    done_before = get_done_exercises(user, level, topic_id)
+    newly_done = num not in done_before
+
     mark_exercise_done(user_id, level, topic_id, num)
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
     note_grammar_exercise_done(user)
+
+    from services.collection import collection_allowed
+    from services.event_magic import add_grammar_points, remember_tg_username
+
+    if newly_done and collection_allowed(user_id):
+        remember_tg_username(user, getattr(m.from_user, "username", None))
+        add_grammar_points(user)
 
     from services.rewards import maybe_qualify_referral
 

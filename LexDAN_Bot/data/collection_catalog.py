@@ -1,4 +1,4 @@
-"""Каталог коллекции Рико — 15 элементов."""
+"""Каталог ивента «Магические элементы» — 15 карт."""
 
 from __future__ import annotations
 
@@ -25,17 +25,17 @@ RARITY_WEIGHTS = (
 
 COLLECTION_ELEMENTS: list[dict] = [
     {"id": 1, "rarity": RARITY_COMMON, "title_ru": "Привет, Рико", "title_en": "Hello Rico"},
-    {"id": 2, "rarity": RARITY_COMMON, "title_ru": "Азбука", "title_en": "ABC Blocks"},
+    {"id": 2, "rarity": RARITY_COMMON, "title_ru": "Магическая азбука", "title_en": "Magic ABC"},
     {"id": 3, "rarity": RARITY_COMMON, "title_ru": "Книжный червь", "title_en": "Bookworm"},
-    {"id": 4, "rarity": RARITY_COMMON, "title_ru": "Слушатель", "title_en": "Listener"},
+    {"id": 4, "rarity": RARITY_COMMON, "title_ru": "Волшебный голос", "title_en": "Magic Voice"},
     {"id": 5, "rarity": RARITY_COMMON, "title_ru": "У Big Ben", "title_en": "Big Ben"},
-    {"id": 6, "rarity": RARITY_COMMON, "title_ru": "Tea time", "title_en": "Tea Time"},
-    {"id": 7, "rarity": RARITY_COMMON, "title_ru": "Заметки", "title_en": "Notes"},
+    {"id": 6, "rarity": RARITY_COMMON, "title_ru": "Магический чай", "title_en": "Magic Tea"},
+    {"id": 7, "rarity": RARITY_COMMON, "title_ru": "Галерея легенд", "title_en": "Gallery of Legends"},
     {"id": 8, "rarity": RARITY_RARE, "title_ru": "Детектив Рико", "title_en": "Detective Rico"},
     {"id": 9, "rarity": RARITY_RARE, "title_ru": "Путешественник", "title_en": "Traveler"},
-    {"id": 10, "rarity": RARITY_RARE, "title_ru": "DJ Рико", "title_en": "DJ Rico"},
-    {"id": 11, "rarity": RARITY_RARE, "title_ru": "Шеф-повар", "title_en": "Chef Rico"},
-    {"id": 12, "rarity": RARITY_RARE, "title_ru": "У моста", "title_en": "Tower Bridge"},
+    {"id": 10, "rarity": RARITY_RARE, "title_ru": "Драконий квест", "title_en": "Dragon Quest"},
+    {"id": 11, "rarity": RARITY_RARE, "title_ru": "Сокровище LexDan", "title_en": "LexDan Treasure"},
+    {"id": 12, "rarity": RARITY_RARE, "title_ru": "Триумф знаний", "title_en": "Triumph of Knowledge"},
     {"id": 13, "rarity": RARITY_VERY_RARE, "title_ru": "Выпускник", "title_en": "Graduate"},
     {"id": 14, "rarity": RARITY_VERY_RARE, "title_ru": "Grammar Guard", "title_en": "Grammar Guard"},
     {"id": 15, "rarity": RARITY_VERY_RARE, "title_ru": "Король English", "title_en": "King of English"},

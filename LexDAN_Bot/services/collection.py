@@ -1,4 +1,4 @@
-"""Коллекция Рико: дропы, дубликаты, pity, финал."""
+"""Магические элементы: дропы, дубликаты, pity, финал."""
 
 from __future__ import annotations
 
@@ -18,20 +18,23 @@ from data.collection_catalog import (
 
 log = logging.getLogger(__name__)
 
-BTN_COLLECTION = "🧩 Коллекция Рико"
+BTN_COLLECTION = "🎴 Магические элементы"
 DUP_PITY_NEED = 5
-VOCAB_DROP_EVERY = 5
+VOCAB_DROP_EVERY = 3
 
 
 def collection_allowed(user_id: str | int | None) -> bool:
-    """Пока коллекция только для MANAGER (тест)."""
-    from config import MANAGER_ID
+    """Коллекция и кнопки ивента доступны всем пользователям."""
+    return user_id is not None
 
-    try:
-        return user_id is not None and int(user_id) == int(MANAGER_ID)
-    except (TypeError, ValueError):
+
+def event_drops_allowed(user_id: str | int | None = None) -> bool:
+    """Дропы карт только во время активного ивента (+ доступ)."""
+    if user_id is not None and not collection_allowed(user_id):
         return False
+    from services.event_magic import is_event_active
 
+    return is_event_active()
 
 def ensure_collection(user: dict) -> dict:
     if "collection" not in user or not isinstance(user.get("collection"), dict):
@@ -234,10 +237,10 @@ def grant_collection_finale(user: dict) -> None:
 
 def note_vocab_word_learned(user: dict, user_id: str | None = None) -> bool:
     """
-    Учесть +1 выученное слово. True = пора дропать (каждые 5).
-    Если коллекция полная / нет доступа — False.
+    Учесть +1 выученное слово. True = пора дропать (каждые 3).
+    Если коллекция полная / нет доступа / ивент неактивен — False.
     """
-    if user_id is not None and not collection_allowed(user_id):
+    if not event_drops_allowed(user_id):
         return False
     c = ensure_collection(user)
     if c.get("complete"):
@@ -257,16 +260,16 @@ def _unlock_comment(rarity: str, title: str) -> str:
         return (
             f"🦜 <b>Рико:</b> ВОУ!!! 🌟🌟🌟 Это <b>очень редкий</b> элемент «{title}»!\n"
             "Такую карточку ловят единицы — ты сейчас на другом уровне! "
-            "Сохрани её и гордись, это почти легенда коллекции 👑✨"
+            "Сохрани её и гордись, это почти легенда 👑✨"
         )
     if rarity == RARITY_RARE:
         return (
             f"🦜 <b>Рико:</b> Ого, смотри! 💎 Выпал <b>редкий</b> элемент «{title}».\n"
-            "Это уже серьёзный кусочек коллекции — Рико впечатлён!"
+            "Это уже серьёзный кусочек «Магических элементов» — Рико впечатлён!"
         )
     return (
         f"🦜 <b>Рико:</b> Класс! Открыт новый элемент «{title}». "
-        "Ещё один шаг к полной коллекции 💚"
+        "Ещё один шаг к полной коллекции магических элементов 💚"
     )
 
 
@@ -287,37 +290,37 @@ def format_drop_caption(result: dict) -> str:
         return (
             f"♻️ Дубликат <b>#{int(el_id):02d}</b> · {title}\n"
             f"Прогресс дубликатов: <b>{dup}/{DUP_PITY_NEED}</b>\n"
-            f"Коллекция: {owned_n}/{TOTAL_ELEMENTS}"
+            f"Магические элементы: {owned_n}/{TOTAL_ELEMENTS}"
         )
 
     if kind == "pity_new":
         msg = (
             f"🎁 За 5 дубликатов — новый элемент!\n"
             f"✨ <b>#{int(el_id):02d}</b> · {rarity}: {title}\n"
-            f"Коллекция: {owned_n}/{TOTAL_ELEMENTS}\n\n"
+            f"Магические элементы: {owned_n}/{TOTAL_ELEMENTS}\n\n"
             f"{_unlock_comment(rarity_key, title)}"
         )
         if result.get("finale"):
             msg += (
-                "\n\n🏆 <b>Коллекция собрана!</b>\n"
-                "🦜 Финальная награда готовится — скоро расскажу, что ты получишь 💚"
+                "\n\n🏆 <b>Все 15 элементов собраны!</b>\n"
+                "🦜 Теперь тебе открыты баллы ивента в альбоме и в «Гонке лидеров» 💚"
             )
         return msg
 
     if kind in {"new", "complete"}:
         head = "✨ Новый элемент открыт!"
         if kind == "complete":
-            head = "🏆 Коллекция собрана! Последний элемент:"
+            head = "🏆 Все элементы собраны! Последний:"
         msg = (
             f"{head}\n"
             f"<b>#{int(el_id):02d}</b> · {rarity}: {title}\n"
-            f"Коллекция: {owned_n}/{TOTAL_ELEMENTS}\n\n"
+            f"Магические элементы: {owned_n}/{TOTAL_ELEMENTS}\n\n"
             f"{_unlock_comment(rarity_key, title)}"
         )
         if result.get("finale"):
             msg += (
-                "\n\n🦜 <b>Рико:</b> Ты собрал(а) все 15 карточек! "
-                "Финальная награда готовится — скоро расскажу, что ты получишь 💚"
+                "\n\n🦜 <b>Рико:</b> Ты собрал(а) все 15 магических элементов! "
+                "Баллы ивента теперь видны — продолжай занятия и поднимайся в топ 💚"
             )
         return msg
 
@@ -325,15 +328,28 @@ def format_drop_caption(result: dict) -> str:
 
 
 def format_album_text(user: dict) -> str:
+    from services.event_magic import (
+        can_show_points,
+        format_points,
+        get_points,
+        is_event_active,
+    )
+
     c = ensure_collection(user)
     have = owned_ids(user)
     lines = [
-        "🧩 <b>Коллекция Рико</b>\n",
+        "🎴 <b>Магические элементы</b>\n",
         f"Собрано: <b>{len(have)}/{TOTAL_ELEMENTS}</b>",
         f"Дубликаты до бонуса: <b>{int(c.get('dup_count') or 0)}/{DUP_PITY_NEED}</b>\n",
     ]
     if c.get("complete"):
-        lines.append("✅ Коллекция полная — новые карточки больше не выпадают.\n")
+        lines.append("✅ Альбом полный — новые карточки больше не выпадают.\n")
+    elif not is_event_active():
+        lines.append("⏳ Карты выпадают только во время ивента.\n")
+    if can_show_points(user):
+        lines.append(f"🏅 Баллы ивента: <b>{format_points(get_points(user))}</b>\n")
+    else:
+        lines.append("🔒 Баллы ивента откроются после всех 15 элементов.\n")
     for e in COLLECTION_ELEMENTS:
         i = int(e["id"])
         rar = RARITY_LABEL_RU.get(e["rarity"], "")
@@ -391,8 +407,8 @@ async def send_drop_result(message, user: dict, result: dict) -> None:
 
 
 def try_grant_drop(user: dict, user_id: str | int | None = None) -> dict | None:
-    """Если доступ есть и коллекция неполная — применить дроп."""
-    if user_id is not None and not collection_allowed(user_id):
+    """Если доступ есть, ивент активен и коллекция неполная — применить дроп."""
+    if not event_drops_allowed(user_id):
         return None
     ensure_collection(user)
     if is_complete(user):
@@ -402,7 +418,7 @@ def try_grant_drop(user: dict, user_id: str | int | None = None) -> dict | None:
 
 async def grant_collection_drop_message(message, user_id: str) -> None:
     """Загрузить user, дропнуть если можно, сохранить, отправить фото+комментарий."""
-    if not collection_allowed(user_id):
+    if not event_drops_allowed(user_id):
         return
     from services.database import load_users, get_user, save_users
     from services.growth import ensure_growth

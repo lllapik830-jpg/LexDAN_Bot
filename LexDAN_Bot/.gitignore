@@ -1,5 +1,6 @@
 .env
 users.json
+magic_event_state.json
 __pycache__/
 *.pyc
 .venv/

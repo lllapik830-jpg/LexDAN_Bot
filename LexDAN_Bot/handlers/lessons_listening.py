@@ -772,10 +772,23 @@ async def _finish_topic_ok(m: Message, uid: str, sess: dict, *, after_help: bool
     level = sess.get("level") or "A1"
     topic_id = sess.get("topic_id") or ""
     title = sess.get("topic_title") or "тема"
+    users = load_users()
+    user = get_user(users, uid)
+
+    already_done = is_topic_done(user, level, topic_id)
     mark_topic_done(uid, level, topic_id)
     set_listening_list(uid, level)
     users = load_users()
     user = get_user(users, uid)
+    from services.collection import collection_allowed, grant_collection_drop_message
+    from services.event_magic import add_listening_points, remember_tg_username
+
+    if (not already_done) and collection_allowed(uid):
+        remember_tg_username(user, getattr(m.from_user, "username", None))
+        add_listening_points(user)
+        from services.database import save_users
+
+        save_users(users, only=uid)
     if after_help:
         head = "Тема засчитана после разбора ✅"
     else:
@@ -785,6 +798,6 @@ async def _finish_topic_ok(m: Message, uid: str, sess: dict, *, after_help: bool
         reply_markup=listening_topics_kb(level, user),
         parse_mode="HTML",
     )
-    from services.collection import grant_collection_drop_message
 
-    await grant_collection_drop_message(m, uid)
+    if not already_done:
+        await grant_collection_drop_message(m, uid)

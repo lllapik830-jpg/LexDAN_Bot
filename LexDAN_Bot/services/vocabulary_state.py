@@ -97,8 +97,15 @@ def finish_word_practice(user_id: str, level: str, topic_id: str, en: str) -> tu
         u["lesson"]["vocab_mode"] = "words"
 
         if newly:
-            from services.collection import note_vocab_word_learned, try_grant_drop
+            from services.collection import (
+                collection_allowed,
+                note_vocab_word_learned,
+                try_grant_drop,
+            )
+            from services.event_magic import add_vocab_points
 
+            if collection_allowed(user_id):
+                add_vocab_points(u)
             if note_vocab_word_learned(u, user_id=str(user_id)):
                 drop_holder[0] = try_grant_drop(u, user_id=str(user_id))
 

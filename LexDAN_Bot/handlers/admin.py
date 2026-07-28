@@ -53,6 +53,10 @@ HELP = (
     "/grant_full <code>id</code> [дней]\n"
     "/revoke <code>id</code>\n"
     "/unlock_levels — открыть себе все уровни A0–C2\n"
+    "/event — статус ивента + баллы по Grammar/Vocab/Listening\n"
+    "/event_force on|off — форс-активация (тест)\n"
+    "/event_announce [force] — рассылка «ивент начался»\n"
+    "/event_finalize — подвести итоги и выдать призы\n"
 )
 
 
@@ -531,3 +535,77 @@ async def admin_prize_paid(m: Message, command: CommandObject):
         )
     except Exception:
         pass
+
+
+@router.message(Command("event"))
+async def admin_event_status(m: Message):
+    if not _is_admin(m):
+        return
+    from services.event_magic import format_event_admin_chunks
+
+    for chunk in format_event_admin_chunks():
+        await m.answer(chunk, parse_mode="HTML")
+
+
+@router.message(Command("event_force"))
+async def admin_event_force(m: Message, command: CommandObject):
+    if not _is_admin(m):
+        return
+    from services.event_magic import set_force_active, status_text
+
+    arg = (command.args or "").strip().lower()
+    if arg not in {"on", "off", "1", "0"}:
+        await m.answer("Формат: /event_force on|off")
+        return
+    on = arg in {"on", "1"}
+    set_force_active(on)
+    await m.answer(
+        f"{'✅ force_active включён' if on else '⏹ force_active выключен'}\n\n{status_text()}",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("event_announce"))
+async def admin_event_announce(m: Message, command: CommandObject):
+    if not _is_admin(m):
+        return
+    from services.event_magic import broadcast_event_start
+
+    force = (command.args or "").strip().lower() in {"force", "1", "redo"}
+    await m.answer("📣 Рассылаю анонс ивента…")
+    result = await broadcast_event_start(m.bot, force=force)
+    if result.get("already"):
+        await m.answer(
+            "Анонс уже был отправлен. Повторить: /event_announce force"
+        )
+        return
+    await m.answer(
+        f"✅ Готово.\nОтправлено: {result.get('sent', 0)}\n"
+        f"Ошибок: {result.get('fail', 0)}"
+    )
+
+
+@router.message(Command("event_finalize"))
+async def admin_event_finalize(m: Message, command: CommandObject):
+    if not _is_admin(m):
+        return
+    from services.event_magic import finalize_event, format_points
+
+    force = (command.args or "").strip().lower() in {"force", "redo", "1"}
+    result = finalize_event(force=force)
+    if result.get("already"):
+        await m.answer(
+            "Итоги уже были подведены. Чтобы пересчитать: /event_finalize force"
+        )
+        return
+    top = result.get("top") or []
+    lines = ["✅ Итоги ивента зафиксированы.\n", "Топ:"]
+    if not top:
+        lines.append("пусто (никто не набрал баллов)")
+    for r in top:
+        un = (r.get("username") or "").strip()
+        who = f"@{un}" if un else (r.get("name") or r.get("user_id"))
+        lines.append(
+            f"{r.get('place')}. {who} — {format_points(float(r.get('points') or 0))}"
+        )
+    await m.answer("\n".join(lines))

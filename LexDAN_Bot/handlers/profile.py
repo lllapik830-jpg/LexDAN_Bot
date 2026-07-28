@@ -1,4 +1,4 @@
-﻿"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
+"""Раздел «Профиль» — статистика, подписка, рефералка, стрик."""
 
 from aiogram import Router, F
 from aiogram.types import Message
@@ -153,6 +153,7 @@ async def profile_promo_enter(m: Message):
     from services.database import MODE_PROFILE, MODE_MENU, set_mode
     from services.secret_missions import BTN_SECRET
     from services.collection import BTN_COLLECTION
+    from services.event_magic import BTN_HALL_OF_FAME, BTN_LEADERBOARD
     from services.rewards import BTN_STREAK, BTN_REFERRAL
     from aiogram.dispatcher.event.bases import SkipHandler
 
@@ -176,6 +177,8 @@ async def profile_promo_enter(m: Message):
         BTN_REFERRAL,
         BTN_ENTER_PROMO,
         BTN_COLLECTION,
+        BTN_LEADERBOARD,
+        BTN_HALL_OF_FAME,
         "✏️ Изменить имя",
         "⬅️ В профиль",
     }
@@ -252,11 +255,17 @@ async def restore_streak_btn(m: Message):
 @router.message(ModeFilter(MODE_PROFILE))
 async def profile_foolproof(m: Message):
     from services.collection import BTN_COLLECTION
+    from services.event_magic import BTN_HALL_OF_FAME, BTN_LEADERBOARD
     from aiogram.dispatcher.event.bases import SkipHandler
 
     text = (m.text or "").strip()
-    # коллекция / цифры альбома — другим хендлерам
-    if text == BTN_COLLECTION or text == "⬅️ В профиль" or text.isdigit():
+    # альбом / гонка / зал / цифры — другим хендлерам
+    if text in (
+        BTN_COLLECTION,
+        BTN_LEADERBOARD,
+        BTN_HALL_OF_FAME,
+        "⬅️ В профиль",
+    ) or text.isdigit():
         raise SkipHandler
 
     users = load_users()
@@ -264,7 +273,7 @@ async def profile_foolproof(m: Message):
     ensure_growth(user)
     save_users(users, only=str(m.from_user.id))
     await m.answer(
-        "🙂 В профиле: Подписка, Коллекция (если доступна), Изменить имя, "
-        "Промокод, Серия дней, Пригласить друга.",
+        "🙂 В профиле: Подписка, Магические элементы, Гонка лидеров, Зал славы, "
+        "Изменить имя, Промокод, Серия дней, Пригласить друга.",
         reply_markup=profile_menu(user, user_id=m.from_user.id),
     )

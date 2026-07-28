@@ -115,7 +115,30 @@ async def main():
         logging.info("PUBLIC_BASE_URL пуст — укажи его в env для уведомлений ЮKassa")
     asyncio.create_task(_reminder_loop())
     asyncio.create_task(_autorenew_loop())
+    asyncio.create_task(_event_finalize_loop())
+    asyncio.create_task(_event_announce_once())
     await dp.start_polling(bot)
+
+
+async def _event_announce_once():
+    """После старта сервиса — разослать анонс ивента один раз (если ещё не слали)."""
+    from services.event_magic import broadcast_event_start, is_event_active
+
+    await asyncio.sleep(20)
+    try:
+        if not is_event_active():
+            return
+        result = await broadcast_event_start(bot, force=False)
+        if result.get("already"):
+            logging.info("Event announce already sent earlier")
+        elif result.get("ok"):
+            logging.info(
+                "Event announce sent=%s fail=%s",
+                result.get("sent"),
+                result.get("fail"),
+            )
+    except Exception as e:
+        logging.error(f"Event announce error: {e}")
 
 
 async def _reminder_loop():
@@ -131,6 +154,24 @@ async def _reminder_loop():
         except Exception as e:
             logging.error(f"Reminder loop error: {e}")
         await asyncio.sleep(3600)
+
+
+async def _event_finalize_loop():
+    """Раз в 15 мин — авто-итоги ивента после EVENT_END."""
+    from services.event_magic import maybe_auto_finalize
+
+    await asyncio.sleep(60)
+    while True:
+        try:
+            result = await asyncio.to_thread(maybe_auto_finalize)
+            if result and not result.get("already"):
+                logging.info(
+                    "Magic event auto-finalized, top=%s",
+                    len(result.get("top") or []),
+                )
+        except Exception as e:
+            logging.error(f"Event finalize loop error: {e}")
+        await asyncio.sleep(900)
 
 
 async def _autorenew_loop():

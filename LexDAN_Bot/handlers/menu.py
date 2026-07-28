@@ -198,6 +198,11 @@ async def open_profile(m: Message):
     sub = plan_label(plan)
 
     from config import CHANNEL_URL, CHANNEL_USERNAME
+    from services.event_magic import profile_title_line, remember_tg_username
+
+    remember_tg_username(user, getattr(m.from_user, "username", None))
+    save_users(users, only=user_id)
+    title_line = profile_title_line(user)
 
     ch_url = (CHANNEL_URL or "").strip()
     if not ch_url and CHANNEL_USERNAME:
@@ -209,6 +214,7 @@ async def open_profile(m: Message):
     await say(
         m,
         "📊 <b>Твой профиль</b>\n\n"
+        f"{title_line}"
         f"📛 Имя: {name}\n"
         f"✅ Пройдено заданий: {tasks_done}\n"
         f"📈 Уровень: {user.get('level', 'A1')}\n"

@@ -849,10 +849,12 @@ async def vocab_word_practice(m: Message):
     )
     from handlers.lesson_keyboards import lesson_limit_inline_kb
     from services.collection import send_drop_result
+    from services.event_magic import remember_tg_username
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
+    remember_tg_username(user, getattr(m.from_user, "username", None))
     wrap = note_word_learned(user)
     save_users(users, only=str(m.from_user.id))
 
