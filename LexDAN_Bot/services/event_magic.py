@@ -320,11 +320,17 @@ def remember_tg_username(user: dict, username: str | None) -> None:
 
 
 def build_live_top(users: dict, *, limit: int = 10) -> list[dict]:
+    from config import MANAGER_ID
+
+    manager_id = str(MANAGER_ID)
     rows: list[dict] = []
     for uid, payload in users.items():
         if not isinstance(payload, dict):
             continue
         if str(uid).startswith("__"):
+            continue
+        # Админ тестирует карты — в гонке лидеров / итогах не участвует
+        if str(uid) == manager_id:
             continue
         me = payload.get("magic_event")
         if not isinstance(me, dict) or me.get("event_id") != EVENT_ID:

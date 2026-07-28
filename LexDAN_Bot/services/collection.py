@@ -21,6 +21,8 @@ log = logging.getLogger(__name__)
 BTN_COLLECTION = "🎴 Магические элементы"
 DUP_PITY_NEED = 5
 VOCAB_DROP_EVERY = 3
+# Шанс дубликата при любом дропе (остальное — новая карта, если есть)
+DUP_DROP_CHANCE = 0.20
 
 
 def collection_allowed(user_id: str | int | None) -> bool:
@@ -153,9 +155,17 @@ def apply_drop(user: dict) -> dict[str, Any]:
             "finale": False,
         }
 
-    el_id = roll_element_id(missing_only=False, user=user)
     have = owned_ids(user)
+    miss = missing_ids(user)
     finale = False
+
+    # ~20% дубликат (если уже есть карты), иначе новая из недостающих
+    if have and miss and random.random() < DUP_DROP_CHANCE:
+        el_id = random.choice(list(have))
+    elif miss:
+        el_id = roll_element_id(missing_only=True, user=user)
+    else:
+        el_id = roll_element_id(missing_only=False, user=user)
 
     if el_id not in have:
         c["owned"][str(el_id)] = True
