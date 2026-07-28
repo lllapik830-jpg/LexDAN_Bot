@@ -35,13 +35,6 @@ _LISTENING_VOICES: list[dict] = [
         "tags": {"friend", "service", "sales", "waiter", "consultant"},
     },
     {
-        "key": "kristen",
-        "name": "Kristen",
-        "gender": "female",
-        "voice_id": "OIadkU6YLviNhuekXGly",
-        "tags": {"friend", "service", "sales", "waiter", "consultant"},
-    },
-    {
         "key": "ad",
         "name": "Ad",
         "gender": "male",
@@ -193,7 +186,7 @@ def _score_voice(v: dict, gender: str, sit_tags: set[str], level: str) -> float:
         score += 15.0
     if sit_tags & {"radio", "ads", "broadcast", "announcer"} and key == "ad":
         score += 15.0
-    if sit_tags & {"service", "sales", "waiter", "consultant"} and key in {"alex", "kristen"}:
+    if sit_tags & {"service", "sales", "waiter", "consultant"} and key in {"alex", "emmaline"}:
         score += 6.0
     if sit_tags & {"friend", "casual", "chat"} and key in {"jessa", "adam_friendly"}:
         score += 4.0
