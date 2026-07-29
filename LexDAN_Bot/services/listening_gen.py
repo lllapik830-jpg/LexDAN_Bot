@@ -443,7 +443,6 @@ def _clip(text: str, n: int = 70) -> str:
 
 def _shuffle_mcq(correct: str, wrong: list[str], explain_ru: str, options_ru: list[str] | None = None) -> dict:
     opts = [correct] + [w for w in wrong if w and w.lower() != correct.lower()][:3]
-    # уникальные
     seen = set()
     uniq = []
     for o in opts:
@@ -452,8 +451,23 @@ def _shuffle_mcq(correct: str, wrong: list[str], explain_ru: str, options_ru: li
             seen.add(k)
             uniq.append(o)
     opts = uniq
+    # добиваем правдоподобными вариантами того же «вида», без «not said»
+    fillers = list(_PRICE_POOL) + list(_NUM_POOL) + list(_COLOR_POOL) + list(_TIME_POOL)
+    random.shuffle(fillers)
+    for f in fillers:
+        if len(opts) >= 4:
+            break
+        if f.lower() == correct.lower() or f.lower() in seen:
+            continue
+        # только похожая длина/тип: если correct про pounds — filler тоже pounds
+        if "pound" in correct.lower() and "pound" not in f.lower():
+            continue
+        if correct.lower().startswith("at ") and not f.lower().startswith("at "):
+            continue
+        opts.append(f)
+        seen.add(f.lower())
     while len(opts) < 4:
-        opts.append(f"not said ({len(opts)})")
+        opts.append(["twelve", "fifteen", "eighteen", "twenty"][len(opts) % 4])
     opts = opts[:4]
     order = list(range(4))
     random.shuffle(order)
