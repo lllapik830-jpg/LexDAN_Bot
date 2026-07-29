@@ -486,245 +486,464 @@ def _alt_from_pool(correct: str, pool: list[str], n: int = 3) -> list[str]:
     return out[:n]
 
 
+def _close_price_alts(correct: str, n: int = 3) -> list[str]:
+    """Близкие суммы — все выглядят правдоподобно."""
+    c = (correct or "").strip().lower()
+    if c in [p.lower() for p in _PRICE_POOL]:
+        idx = next(i for i, p in enumerate(_PRICE_POOL) if p.lower() == c)
+        near = []
+        for d in (1, -1, 2, -2, 3, -3):
+            j = idx + d
+            if 0 <= j < len(_PRICE_POOL):
+                near.append(_PRICE_POOL[j])
+        return _alt_from_pool(correct, near + _PRICE_POOL, n)
+    return _alt_from_pool(correct, _PRICE_POOL, n)
+
+
+def _noun_near(text: str, pos: int, window: int = 40) -> str | None:
+    """Существительное рядом с ценой для вопроса How much is the X?"""
+    import re
+
+    chunk = text[max(0, pos - window) : pos + window].lower()
+    nouns = (
+        "ticket|latte|cappuccino|croissant|muffin|sandwich|apple|tea|coffee|bag|"
+        "wallet|umbrella|room|book|salad|lager|cheesecake|brownie|cone|stamp|"
+        "membership|fine|trip|journey|bill|total|order|drink|meal|fare"
+    )
+    m = re.search(rf"\b(the|a|an|your|my)?\s*({nouns})\b", chunk)
+    if m:
+        return m.group(2)
+    m2 = re.search(rf"\b({nouns})\b", chunk)
+    return m2.group(1) if m2 else None
+
+
 def _extract_detail_facts(lines: list[dict], n0: str, n1: str) -> list[dict]:
     """
-    Конкретные факты из реплик: цена, цвет, время, номер, количество, место.
-    Каждый факт → MCQ и/или true/false без «зеркальных» говорящих.
+    Факты с простыми вопросами БЕЗ цитаты реплики и БЕЗ ответа в формулировке.
+    Пример: How much is the ticket? / Which platform? / What colour is the wallet?
     """
     import re
 
     facts: list[dict] = []
-    used_keys: set[str] = set()
+    used_q: set[str] = set()
 
     def add(fact: dict) -> None:
-        key = f"{fact.get('kind')}|{str(fact.get('correct') or '').lower()}"
-        if key in used_keys:
+        q = (fact.get("question") or "").strip()
+        ans = str(fact.get("correct") or "").strip().lower()
+        if not q or not ans:
             return
-        used_keys.add(key)
+        if ans and ans in q.lower():
+            return
+        key = q.lower()
+        if key in used_q:
+            return
+        used_q.add(key)
         facts.append(fact)
 
-    price_re = re.compile(
-        r"\b((?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    price_val = (
+        r"(?:twenty-\w+|thirty(?:-\w+)?|forty(?:-\w+)?|fifty(?:-\w+)?|sixty|eighty|"
+        r"one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
         r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|"
-        r"twenty-\w+|thirty|forty|fifty|sixty|eighty|\d+)"
-        r"(?:\s+point\s+\w+)?(?:\s+pounds?(?:\s+\w+)?)?(?:\s+fifty|\s+twenty)?|"
-        r"\d+\s*pounds?(?:\s+\d+)?|£\s*\d+(?:\.\d+)?)\b",
+        r"\d+(?:\.\d+)?)"
+        r"(?:\s+hundred(?:\s+\w+)?)?"
+        r"(?:\s+pounds?(?:\s+(?:fifty|twenty|eighty))?|\s+pound|\s+euros?|\s+dollars?)?"
+    )
+    price_with_item = re.compile(
+        rf"\b(?:the|a|an)?\s*(ticket|latte|cappuccino|croissant|muffin|sandwich|apple|"
+        rf"bag|wallet|umbrella|cheesecake|brownie|salad|lager|coffee|tea|fare|bill|stamp|"
+        rf"membership|room|fine)\s+(?:is|are|costs?)\s+({price_val})\b",
         re.I,
     )
-    color_re = re.compile(
-        r"\b(red|blue|green|black|white|yellow|brown|grey|gray|pink|orange|silver|teal)\b",
+    price_thats = re.compile(
+        rf"\b(?:that's|its|it's|total(?:\s+is)?)\s+({price_val})\b",
         re.I,
     )
-    time_re = re.compile(
-        r"\b(?:at|until|by|from|after|before)\s+"
-        r"((?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
-        r"\d{1,2})(?:\s*(?:thirty|fifteen|forty|o'clock|\d{2}))?"
-        r"(?:\s*(?:a\.?m\.?|p\.?m\.?))?)",
+    price_altogether = re.compile(rf"\b({price_val})\s+altogether\b", re.I)
+    price_about = re.compile(rf"\b(?:about|around|roughly)\s+({price_val})\b", re.I)
+
+    labeled_num = re.compile(
+        r"\b(platform|gate|desk|room|floor|row|seat|bed|table|carriage|order(?:\s+number)?|"
+        r"bus(?:\s+number)?|extension)\s+"
+        r"(\d{2,3}|[A-Z]\s*\d+[A-Z]?|"
+        r"two hundred(?:\s+\w+)?|one hundred(?:\s+\w+)?|"
+        r"one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+        r"fourteen|fifteen|seventeen|twenty|twenty-\w+|B\s*\d+)\b",
         re.I,
     )
-    room_re = re.compile(
-        r"\b(?:room|gate|desk|platform|floor|row|seat|bed|table|order(?:\s+number)?|bus(?:\s+number)?|"
-        r"extension|carriage)\s+"
-        r"([A-Z]?\s*\d+[A-Z]?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
-        r"fourteen|fifteen|seventeen|twenty|twenty-\w+)\b",
+    color_noun = re.compile(
+        r"\b(red|blue|green|black|white|yellow|brown|grey|gray|pink|orange|silver)\s+"
+        r"(wallet|bag|umbrella|door|T-shirt|t-shirt|ball|chairs?|sign|vest|lamp|cone)\b",
+        re.I,
+    )
+    noun_color = re.compile(
+        r"\b(wallet|bag|umbrella|door|T-shirt|t-shirt|ball|chairs?|sign|vest|lamp)\s+"
+        r"(?:is|are|'s)\s+(red|blue|green|black|white|yellow|brown|grey|gray|pink|orange)\b",
+        re.I,
+    )
+    time_leave = re.compile(
+        r"\b(?:leave[s]?|depart(?:s|ure)?|start(?:s)?|meet(?:s)?|arrive[s]?|open(?:s)?|"
+        r"close[s]?|finish(?:es)?|film starts?|class|lesson|appointment|boarding)\b"
+        r".{0,40}?\b(?:at|until|by|from|after|before)\s+"
+        r"((?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d{1,2})"
+        r"(?:\s*(?:thirty|fifteen|forty|o'clock|\d{2}))?(?:\s*(?:a\.?m\.?|p\.?m\.?))?)",
+        re.I,
+    )
+    time_simple = re.compile(
+        r"\b(?:at|until|by)\s+"
+        r"((?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d{1,2})"
+        r"(?:\s*(?:thirty|fifteen|forty|o'clock|\d{2}))?(?:\s*(?:a\.?m\.?|p\.?m\.?))?)",
+        re.I,
+    )
+    stops_re = re.compile(
+        r"\b(two|three|four|five|six|seven|eight|nine|ten|\d+)\s+stops?\b",
+        re.I,
+    )
+    nights_re = re.compile(
+        r"\b(two|three|four|five|six|seven|\d+)\s+nights?\b",
         re.I,
     )
     age_re = re.compile(
-        r"\b(?:I am|I'm|she is|he is|is)\s+"
+        r"\b(?:sister|brother|dad|mum|mom|she|he|I)\s+(?:is|am|'m)\s+"
         r"(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|"
-        r"twenty|twenty-\w+|thirty|forty|forty-\w+|\d+)\s*(?:years?\s*old)?\b",
+        r"twenty|twenty-\w+|thirty|forty|forty-\w+|\d+)(?:\s+years?\s+old)?\b",
         re.I,
     )
-    qty_re = re.compile(
-        r"\b((?:two|three|four|five|six|seven|eight|nine|ten|twelve|fourteen|fifteen|"
-        r"seventeen|twenty|thirty|forty|fifty|\d+)\s+"
-        r"(?:stops?|nights?|days?|weeks?|minutes?|hours?|words?|pounds?|people|visitors|"
-        r"tablets?|films?|kilometres?|rows?|units?|pages?|sources?))\b",
+    age_re2 = re.compile(
+        r"\b(?:I am|I'm|she is|he is)\s+"
+        r"(ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|"
+        r"twenty|twenty-\w+|thirty|forty|forty-\w+|\d+)(?:\s+years?\s+old)?\b",
         re.I,
     )
     place_re = re.compile(
-        r"\b((?:Green|King|Hill|Park|Oak|Market|Station|River|Hill)\s+"
-        r"(?:Street|Road|Avenue|Stop|Lane|Square|Park)|"
-        r"second floor|third floor|by the window|near the fountain)\b",
+        r"\b(?:get off at|meet (?:at|on|near)|live(?:s)? (?:at|on)|café on|cafe on|on)\s+"
+        r"((?:Green|King|Hill|Park|Oak|Market|Station|River)\s+(?:Street|Road|Avenue|Stop|Lane|Square)|"
+        r"Park Stop|the (?:library|cinema|station|café|cafe|window))\b",
+        re.I,
+    )
+    item_order = re.compile(
+        r"\b(?:want|like|get|have|order(?:ed)?|I'll have|A )\b.{0,24}\b"
+        r"(a|an|the|one|large|small)?\s*"
+        r"(latte|cappuccino|croissant|muffin|sandwich|apple|salad|lager|coffee|tea|brownie)\b",
         re.I,
     )
 
+    label_q = {
+        "platform": "Which platform?",
+        "gate": "Which gate?",
+        "desk": "Which desk?",
+        "room": "What is the room number?",
+        "floor": "Which floor?",
+        "row": "Which row?",
+        "seat": "Which seat?",
+        "bed": "Which bed?",
+        "table": "Which table?",
+        "carriage": "Which carriage?",
+        "order": "What is the order number?",
+        "order number": "What is the order number?",
+        "bus": "What is the bus number?",
+        "bus number": "What is the bus number?",
+        "extension": "What is the extension number?",
+    }
+
+    def _money_ok(val: str, text: str) -> bool:
+        v = val.lower()
+        if "pound" in v or "euro" in v or "dollar" in v or "£" in v:
+            return True
+        return bool(re.search(r"pound|euro|dollar|£|\$", text, re.I))
+
     for i, t in enumerate(lines):
         text = t["text"]
+        prev = lines[i - 1]["text"] if i > 0 else ""
+        ctx = f"{prev} {text}"
         sp = t["speaker"]
 
-        for m in price_re.finditer(text):
-            val = " ".join(m.group(1).split())
-            if len(val) < 3:
+        for m in price_with_item.finditer(text):
+            item, val = m.group(1).lower(), " ".join(m.group(2).split())
+            if not _money_ok(val, text):
                 continue
             add(
                 {
                     "kind": "price",
                     "correct": val,
-                    "wrongs": _alt_from_pool(val, _PRICE_POOL),
-                    "question": f"How much is mentioned here: «{_clip(text, 48)}»?",
-                    "explain_ru": f"В диалоге звучит: {val}.",
-                    "true_stmt": f"Someone mentions the amount: {val}.",
-                    "false_stmt": f"Someone mentions the amount: {_alt_from_pool(val, _PRICE_POOL, 1)[0]}.",
+                    "wrongs": _close_price_alts(val),
+                    "question": f"How much is the {item}?",
+                    "explain_ru": f"В диалоге {item} стоит {val}.",
+                    "true_stmt": f"The {item} costs {val}.",
+                    "false_stmt": f"The {item} costs {_close_price_alts(val, 1)[0]}.",
                     "line_i": i,
                     "speaker": sp,
                 }
             )
 
-        for m in color_re.finditer(text):
-            val = m.group(1).lower()
-            after = text[m.end() : m.end() + 14].lower()
-            # «Green Street» — это место, не цвет предмета
-            if any(
-                after.lstrip().startswith(x)
-                for x in ("street", "road", "avenue", "lane", "park", "square", "stop")
-            ):
-                continue
-            add(
-                {
-                    "kind": "color",
-                    "correct": val,
-                    "wrongs": _alt_from_pool(val, _COLOR_POOL),
-                    "question": f"What colour is mentioned in: «{_clip(text, 52)}»?",
-                    "explain_ru": f"В этой реплике цвет — {val}.",
-                    "true_stmt": f"The colour {val} is mentioned in the dialogue.",
-                    "false_stmt": f"The colour {_alt_from_pool(val, _COLOR_POOL, 1)[0]} is mentioned instead of {val}.",
-                    "line_i": i,
-                    "speaker": sp,
-                }
-            )
+        for pat in (price_thats, price_altogether, price_about):
+            for m in pat.finditer(text):
+                val = " ".join(m.group(1).split())
+                if not _money_ok(val, text):
+                    continue
+                noun = _noun_near(ctx, len(prev) + 1 + m.start()) or _noun_near(text, m.start())
+                if noun:
+                    q = f"How much is the {noun}?"
+                    true_s = f"The {noun} costs {val}."
+                    false_s = f"The {noun} costs {_close_price_alts(val, 1)[0]}."
+                else:
+                    q = "How much do they pay?"
+                    true_s = f"They pay {val}."
+                    false_s = f"They pay {_close_price_alts(val, 1)[0]}."
+                add(
+                    {
+                        "kind": "price",
+                        "correct": val,
+                        "wrongs": _close_price_alts(val),
+                        "question": q,
+                        "explain_ru": f"Сумма в диалоге — {val}.",
+                        "true_stmt": true_s,
+                        "false_stmt": false_s,
+                        "line_i": i,
+                        "speaker": sp,
+                    }
+                )
 
-        for m in time_re.finditer(text):
-            val = "at " + " ".join(m.group(1).split()).lower()
-            val = val.replace("at at ", "at ")
-            add(
-                {
-                    "kind": "time",
-                    "correct": val,
-                    "wrongs": _alt_from_pool(val, _TIME_POOL),
-                    "question": f"What time is mentioned in: «{_clip(text, 52)}»?",
-                    "explain_ru": f"В диалоге время — {val}.",
-                    "true_stmt": f"A time mentioned in the dialogue is {val}.",
-                    "false_stmt": f"A time mentioned in the dialogue is {_alt_from_pool(val, _TIME_POOL, 1)[0]}.",
-                    "line_i": i,
-                    "speaker": sp,
-                }
-            )
-
-        for m in room_re.finditer(text):
-            label = m.group(0)
-            num = " ".join(m.group(1).split())
+        for m in labeled_num.finditer(text):
+            label = " ".join(m.group(1).lower().split())
+            num = " ".join(m.group(2).split())
+            q = label_q.get(label) or f"What is the {label}?"
+            wrongs = _alt_from_pool(num, _NUM_POOL + ["B twelve", "C", "A seventeen", "twenty-one"])
             add(
                 {
                     "kind": "number",
                     "correct": num,
-                    "wrongs": _alt_from_pool(num, _NUM_POOL),
-                    "question": f"Which number is in: «{_clip(label, 40)}»?",
-                    "explain_ru": f"В диалоге: {label}.",
-                    "true_stmt": f"The dialogue mentions: {label}.",
-                    "false_stmt": f"The dialogue mentions: {label.split()[0]} {_alt_from_pool(num, _NUM_POOL, 1)[0]}.",
+                    "wrongs": wrongs,
+                    "question": q,
+                    "explain_ru": f"В диалоге: {label} {num}.",
+                    "true_stmt": f"The {label} is {num}.",
+                    "false_stmt": f"The {label} is {_alt_from_pool(num, _NUM_POOL, 1)[0]}.",
                     "line_i": i,
                     "speaker": sp,
                 }
             )
 
-        for m in age_re.finditer(text):
+        for m in color_noun.finditer(text):
+            color, noun = m.group(1).lower(), m.group(2).lower().rstrip("s")
+            add(
+                {
+                    "kind": "color",
+                    "correct": color,
+                    "wrongs": _alt_from_pool(color, _COLOR_POOL),
+                    "question": f"What colour is the {noun}?",
+                    "explain_ru": f"{noun.capitalize()} — {color}.",
+                    "true_stmt": f"The {noun} is {color}.",
+                    "false_stmt": f"The {noun} is {_alt_from_pool(color, _COLOR_POOL, 1)[0]}.",
+                    "line_i": i,
+                    "speaker": sp,
+                }
+            )
+        for m in noun_color.finditer(text):
+            noun, color = m.group(1).lower().rstrip("s"), m.group(2).lower()
+            add(
+                {
+                    "kind": "color",
+                    "correct": color,
+                    "wrongs": _alt_from_pool(color, _COLOR_POOL),
+                    "question": f"What colour is the {noun}?",
+                    "explain_ru": f"{noun.capitalize()} — {color}.",
+                    "true_stmt": f"The {noun} is {color}.",
+                    "false_stmt": f"The {noun} is {_alt_from_pool(color, _COLOR_POOL, 1)[0]}.",
+                    "line_i": i,
+                    "speaker": sp,
+                }
+            )
+
+        tmatch = time_leave.search(text)
+        if tmatch:
+            raw_t = " ".join(tmatch.group(1).split()).lower()
+            val = raw_t if raw_t.startswith("at") else f"at {raw_t}"
+            low = text.lower()
+            if "until" in low:
+                q = "Until what time?"
+                val = val.replace("at ", "until ", 1) if not val.startswith("until") else val
+            elif any(k in low for k in ("leave", "depart", "train", "bus", "flight")):
+                q = "What time does it leave?"
+            elif any(k in low for k in ("meet", "see you", "appointment")):
+                q = "What time do they meet?"
+            elif any(k in low for k in ("start", "film", "class", "lesson", "boarding")):
+                q = "What time does it start?"
+            elif "open" in low and "until" not in low:
+                q = "What time does it open?"
+            elif "close" in low:
+                q = "What time does it close?"
+            elif "breakfast" in ctx.lower():
+                q = "When is breakfast?"
+            else:
+                q = "What time do they agree on?"
+            # нормализуем wrongs под until/at
+            time_pool = _TIME_POOL
+            if val.startswith("until"):
+                time_pool = [x.replace("at ", "until ") for x in _TIME_POOL]
+            add(
+                {
+                    "kind": "time",
+                    "correct": val,
+                    "wrongs": _alt_from_pool(val, time_pool),
+                    "question": q,
+                    "explain_ru": f"В диалоге время — {val}.",
+                    "true_stmt": f"The time is {val}.",
+                    "false_stmt": f"The time is {_alt_from_pool(val, time_pool, 1)[0]}.",
+                    "line_i": i,
+                    "speaker": sp,
+                }
+            )
+        else:
+            m = time_simple.search(text)
+            if m:
+                raw_t = " ".join(m.group(1).split()).lower()
+                val = f"at {raw_t}"
+                add(
+                    {
+                        "kind": "time",
+                        "correct": val,
+                        "wrongs": _alt_from_pool(val, _TIME_POOL),
+                        "question": "What time do they agree on?",
+                        "explain_ru": f"В диалоге время — {val}.",
+                        "true_stmt": f"They agree on {val}.",
+                        "false_stmt": f"They agree on {_alt_from_pool(val, _TIME_POOL, 1)[0]}.",
+                        "line_i": i,
+                        "speaker": sp,
+                    }
+                )
+
+        m = stops_re.search(text)
+        if m:
+            n = m.group(1).lower()
+            wrongs = [f"{x} stops" for x in _alt_from_pool(n, _NUM_POOL, 3)]
+            add(
+                {
+                    "kind": "qty",
+                    "correct": f"{n} stops",
+                    "wrongs": wrongs,
+                    "question": "How many stops is it?",
+                    "explain_ru": f"Нужно {n} остановок.",
+                    "true_stmt": f"It is {n} stops.",
+                    "false_stmt": f"It is {wrongs[0]}.",
+                    "line_i": i,
+                    "speaker": sp,
+                }
+            )
+        m = nights_re.search(text)
+        if m:
+            n = m.group(1).lower()
+            wrongs = [f"{x} nights" for x in _alt_from_pool(n, _NUM_POOL, 3)]
+            add(
+                {
+                    "kind": "qty",
+                    "correct": f"{n} nights",
+                    "wrongs": wrongs,
+                    "question": "How many nights is the stay?",
+                    "explain_ru": f"Бронь на {n} nights.",
+                    "true_stmt": f"The stay is {n} nights.",
+                    "false_stmt": f"The stay is {wrongs[0]}.",
+                    "line_i": i,
+                    "speaker": sp,
+                }
+            )
+
+        for are in (age_re, age_re2):
+            m = are.search(text)
+            if not m:
+                continue
             val = m.group(1).lower()
+            low = f"{prev} {text}".lower()
+            if "sister" in low:
+                q = "How old is the sister?"
+            elif "brother" in low:
+                q = "How old is the brother?"
+            elif "dad" in low or "father" in low:
+                q = "How old is the dad?"
+            elif "mum" in low or "mom" in low:
+                q = "How old is the mum?"
+            elif "i am" in text.lower() or "i'm" in text.lower():
+                q = f"How old is {sp}?"
+            else:
+                q = "How old are they talking about?"
             add(
                 {
                     "kind": "age",
                     "correct": val,
                     "wrongs": _alt_from_pool(val, _NUM_POOL),
-                    "question": f"What age/number is in: «{_clip(text, 52)}»?",
-                    "explain_ru": f"Звучит число/возраст: {val}.",
-                    "true_stmt": f"The age or number {val} is said in the dialogue.",
-                    "false_stmt": f"The age or number {_alt_from_pool(val, _NUM_POOL, 1)[0]} is said instead.",
+                    "question": q,
+                    "explain_ru": f"Возраст — {val}.",
+                    "true_stmt": f"The age is {val}.",
+                    "false_stmt": f"The age is {_alt_from_pool(val, _NUM_POOL, 1)[0]}.",
                     "line_i": i,
                     "speaker": sp,
                 }
             )
+            break
 
-        for m in qty_re.finditer(text):
-            val = " ".join(m.group(1).split()).lower()
-            wrongs = []
-            for alt_n in _alt_from_pool(val.split()[0], _NUM_POOL, 3):
-                rest = " ".join(val.split()[1:])
-                wrongs.append(f"{alt_n} {rest}".strip())
-            add(
-                {
-                    "kind": "qty",
-                    "correct": val,
-                    "wrongs": wrongs,
-                    "question": f"What quantity is mentioned: «{_clip(text, 52)}»?",
-                    "explain_ru": f"В диалоге количество — {val}.",
-                    "true_stmt": f"The dialogue mentions {val}.",
-                    "false_stmt": f"The dialogue mentions {wrongs[0]}.",
-                    "line_i": i,
-                    "speaker": sp,
-                }
-            )
-
-        for m in place_re.finditer(text):
+        m = place_re.search(text)
+        if m:
             val = " ".join(m.group(1).split())
-            other_places = [
+            places = [
                 "Green Street",
                 "King Street",
                 "Hill Street",
                 "Park Road",
                 "Oak Avenue",
+                "Park Stop",
                 "Market Square",
-                "by the window",
-                "second floor",
+                "the library",
+                "the cinema",
+                "the station",
             ]
+            low = text.lower()
+            if "get off" in low:
+                q = "Where do they get off?"
+            elif "meet" in low:
+                q = "Where do they meet?"
+            elif "live" in low:
+                q = "Where do they live?"
+            else:
+                q = "Which place do they talk about?"
             add(
                 {
                     "kind": "place",
                     "correct": val,
-                    "wrongs": _alt_from_pool(val, other_places),
-                    "question": f"Which place is mentioned in: «{_clip(text, 52)}»?",
-                    "explain_ru": f"Место в диалоге — {val}.",
-                    "true_stmt": f"They mention {val}.",
-                    "false_stmt": f"They mention {_alt_from_pool(val, other_places, 1)[0]}.",
+                    "wrongs": _alt_from_pool(val, places),
+                    "question": q,
+                    "explain_ru": f"Место — {val}.",
+                    "true_stmt": f"They talk about {val}.",
+                    "false_stmt": f"They talk about {_alt_from_pool(val, places, 1)[0]}.",
                     "line_i": i,
                     "speaker": sp,
                 }
             )
 
-    # факт «кто что заказал / сказал предмет» — короткие именные реплики
-    item_re = re.compile(
-        r"\b(a|an|the|one|large|small)?\s*"
-        r"(latte|cappuccino|croissant|muffin|sandwich|apple|tea|water|bag|ticket|"
-        r"wallet|umbrella|room|book|coffee|pizza|salad|lager)\b",
-        re.I,
-    )
-    for i, t in enumerate(lines):
-        m = item_re.search(t["text"])
-        if not m:
-            continue
-        item = m.group(2).lower()
-        others = [x for x in ("latte", "croissant", "sandwich", "tea", "ticket", "wallet", "umbrella", "salad") if x != item]
-        random.shuffle(others)
-        add(
-            {
-                "kind": "item",
-                "correct": item,
-                "wrongs": others[:3],
-                "question": f"What item is mentioned by {t['speaker']} in: «{_clip(t['text'], 48)}»?",
-                "explain_ru": f"{t['speaker']} говорит про {item}.",
-                "true_stmt": f"{t['speaker']} mentions a {item}.",
-                "false_stmt": f"{t['speaker']} mentions a {others[0]}.",
-                "line_i": i,
-                "speaker": t["speaker"],
-            }
-        )
+        m = item_order.search(text)
+        if m:
+            item = m.group(2).lower()
+            others = [
+                x
+                for x in ("latte", "croissant", "sandwich", "tea", "coffee", "salad", "muffin", "brownie")
+                if x != item
+            ]
+            random.shuffle(others)
+            add(
+                {
+                    "kind": "item",
+                    "correct": item,
+                    "wrongs": others[:3],
+                    "question": "What does the customer order?",
+                    "explain_ru": f"Заказ — {item}.",
+                    "true_stmt": f"The customer orders a {item}.",
+                    "false_stmt": f"The customer orders a {others[0]}.",
+                    "line_i": i,
+                    "speaker": sp,
+                }
+            )
 
-    # разнообразие типов
-    facts.sort(key=lambda f: (f.get("kind") or "", f.get("line_i") or 0))
-    # перемешать внутри, сохранив покрытие kinds
     by_kind: dict[str, list] = {}
     for f in facts:
         by_kind.setdefault(f["kind"], []).append(f)
-    ordered = []
+    ordered: list[dict] = []
     kinds = list(by_kind.keys())
     random.shuffle(kinds)
     while any(by_kind.values()):
@@ -736,10 +955,12 @@ def _extract_detail_facts(lines: list[dict], n0: str, n1: str) -> list[dict]:
 
 def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -> tuple[list, list, list]:
     """
-    Task1: 1× кто сказал + 2× точечных MCQ по деталям диалога.
-    Task2: 3× True/False по разным фактам (не зеркало «A сказал / B сказал то же»).
-    Task3: 4 события по ходу 12 реплик.
+    Task1: 3 простых MCQ по деталям (цена / платформа / цвет…) — без «кто сказал».
+    Task2: 3× True/False по другим фактам.
+    Task3: 4 события из 12 реплик.
     """
+    import re
+
     title = topic.get("title_en") or topic.get("title_ru") or "the topic"
     lines = [
         {"speaker": str(t.get("speaker") or n0), "text": str(t.get("text") or "").strip()}
@@ -752,102 +973,97 @@ def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -
     while len(lines) < 4:
         lines.append({"speaker": n0 if len(lines) % 2 == 0 else n1, "text": f"Let's continue with {title}."})
 
-    meat = [t for t in lines if len(t["text"].split()) >= 4] or lines
-    early = meat[0]
-    late = meat[-1] if meat[-1] is not early else meat[min(1, len(meat) - 1)]
-
-    who_distract = [x for x in (n0, n1, "Alex", "Sam", "Teacher", "Driver") if x != early["speaker"]]
-    # только имена из диалога + 1–2 лишних, без угадывания по теме
-    who_wrong = []
-    for x in who_distract:
-        if x not in who_wrong:
-            who_wrong.append(x)
-        if len(who_wrong) >= 3:
-            break
-
-    q1 = _shuffle_mcq(
-        early["speaker"],
-        who_wrong,
-        f"Эту фразу говорит {early['speaker']}.",
-        None,
-    )
-    q1["question"] = f'Who says: "{_clip(early["text"], 64)}"?'
-    q1["options_ru"] = list(q1["options"])
-
     facts = _extract_detail_facts(lines, n0, n1)
-    # не строить detail-вопрос на той же реплике, что q1 who-says (по возможности)
-    detail_facts = [f for f in facts if f.get("line_i") != 0] or facts
 
     def mcq_from_fact(f: dict) -> dict:
         q = _shuffle_mcq(
             str(f["correct"]),
             list(f.get("wrongs") or []),
-            str(f.get("explain_ru") or "Слушай внимательнее эту деталь."),
+            str(f.get("explain_ru") or "Слушай эту деталь ещё раз."),
             None,
         )
         q["question"] = str(f["question"])
         q["options_ru"] = list(q["options"])
         return q
 
-    if len(detail_facts) >= 2:
-        q2 = mcq_from_fact(detail_facts[0])
-        q3 = mcq_from_fact(detail_facts[1])
-    elif len(detail_facts) == 1:
-        q2 = mcq_from_fact(detail_facts[0])
-        q3 = _shuffle_mcq(
-            late["speaker"],
-            [x for x in (n0, n1, "Alex", "Sam") if x != late["speaker"]][:3],
-            f"Ближе к концу говорит {late['speaker']}.",
-            None,
-        )
-        q3["question"] = f'Near the end, who says: "{_clip(late["text"], 64)}"?'
-        q3["options_ru"] = list(q3["options"])
-    else:
-        # запас: две разные цитаты «что прозвучало» с правдоподобными искажениями из других реплик
-        mid = meat[len(meat) // 2]
-        real = _clip(mid["text"], 56)
-        other_bits = [_clip(x["text"], 56) for x in meat if x is not mid][:3]
-        while len(other_bits) < 3:
-            other_bits.append(_clip(early["text"], 56) + " (later)")
-        # лёгкие правки чисел в wrong — не уводим в другую тему
-        q2 = _shuffle_mcq(real, other_bits, f"В диалоге звучит: «{real}».", None)
-        q2["question"] = f"Which line did you hear in the dialogue?"
-        q2["options_ru"] = list(q2["options"])
-        q3 = _shuffle_mcq(
-            late["speaker"],
-            [x for x in (n0, n1, "Alex", "Sam") if x != late["speaker"]][:3],
-            f"Ближе к концу говорит {late['speaker']}.",
-            None,
-        )
-        q3["question"] = f'Near the end, who says: "{_clip(late["text"], 64)}"?'
-        q3["options_ru"] = list(q3["options"])
-
-    task1 = [q1, q2, q3]
-
-    # Task2: три независимых утверждения
-    tf_facts = [f for f in detail_facts[2:]] or list(detail_facts)
-    if len(tf_facts) < 3:
-        # добрать из оставшихся / синтетика по репликам
-        for t in meat[1:]:
-            if len(tf_facts) >= 6:
+    if len(facts) < 3:
+        for t in lines:
+            if len(facts) >= 6:
                 break
-            tf_facts.append(
-                {
-                    "true_stmt": f'{t["speaker"]} talks about this: "{_clip(t["text"], 42)}"',
-                    "false_stmt": f'{t["speaker"]} says they need a passport at desk three.',
-                    "explain_ru": f"Сверь с репликой {t['speaker']}.",
-                    "kind": "line",
-                }
+            m = re.search(
+                r"\b((?:two|three|four|five|six|seven|eight|nine|ten|twelve|fourteen|fifteen|"
+                r"seventeen|twenty|twenty-\w+|thirty|forty|fifty|\d+)\s+pounds?(?:\s+\w+)?)\b",
+                t["text"],
+                re.I,
             )
+            if not m:
+                continue
+            val = " ".join(m.group(1).split())
+            noun = _noun_near(t["text"], m.start()) or "ticket"
+            cand = {
+                "kind": "price",
+                "correct": val,
+                "wrongs": _close_price_alts(val),
+                "question": f"How much is the {noun}?",
+                "explain_ru": f"Сумма — {val}.",
+                "true_stmt": f"The {noun} costs {val}.",
+                "false_stmt": f"The {noun} costs {_close_price_alts(val, 1)[0]}.",
+                "line_i": 0,
+                "speaker": t["speaker"],
+            }
+            if cand["question"].lower() not in {f["question"].lower() for f in facts}:
+                if val.lower() not in cand["question"].lower():
+                    facts.append(cand)
 
-    task2 = []
-    # паттерн: True, False, True/False — разные факты, без speaker-mirror
+    picked: list[dict] = []
+    seen_kinds: set[str] = set()
+    for f in facts:
+        k = f.get("kind") or ""
+        if k in seen_kinds and len([p for p in picked if (p.get("kind") == k)]) >= 1 and len(picked) < 2:
+            continue
+        if any(p["question"] == f["question"] for p in picked):
+            continue
+        picked.append(f)
+        seen_kinds.add(k)
+        if len(picked) >= 3:
+            break
+    for f in facts:
+        if len(picked) >= 3:
+            break
+        if not any(p["question"] == f["question"] for p in picked):
+            picked.append(f)
+
+    while len(picked) < 3:
+        picked.append(
+            {
+                "kind": "time",
+                "correct": "at ten",
+                "wrongs": ["at nine", "at eleven", "at twelve"],
+                "question": "What time do they agree on?",
+                "explain_ru": "Слушай время в диалоге.",
+                "true_stmt": "They agree on at ten.",
+                "false_stmt": "They agree on at midnight.",
+            }
+        )
+
+    task1 = [mcq_from_fact(f) for f in picked[:3]]
+
+    used_q = {f["question"] for f in picked[:3]}
+    tf_facts = [f for f in facts if f.get("question") not in used_q] or list(facts)
+    while len(tf_facts) < 3:
+        tf_facts.append(
+            {
+                "true_stmt": f"The dialogue is about «{title}».",
+                "false_stmt": "They only discuss a football match.",
+                "explain_ru": f"Тема — «{title}».",
+            }
+        )
+
     plan = [
         (tf_facts[0], True),
         (tf_facts[1 % len(tf_facts)], False),
-        (tf_facts[2 % len(tf_facts)], True if len(tf_facts) > 2 else False),
+        (tf_facts[2 % len(tf_facts)], True),
     ]
-    # если 2-й и 0-й один и тот же объект — сдвинуть
     if plan[1][0] is plan[0][0] and len(tf_facts) > 1:
         plan[1] = (tf_facts[1], False)
     if plan[2][0] is plan[0][0] or plan[2][0] is plan[1][0]:
@@ -856,33 +1072,20 @@ def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -
                 plan[2] = (f, False)
                 break
 
+    task2 = []
     for fact, want_true in plan:
         if want_true:
-            stmt = fact.get("true_stmt") or fact.get("false_stmt")
+            stmt = fact.get("true_stmt") or "This detail is in the dialogue."
             is_true = True
             explain = fact.get("explain_ru") or "Это правда по диалогу."
         else:
-            stmt = fact.get("false_stmt") or (
-                "They only discuss a football match at midnight."
-            )
-            # не использовать football если это правда в тексте
-            blob = " ".join(x["text"].lower() for x in lines)
-            if "football" in (stmt or "").lower() and "football" in blob:
-                stmt = f"They say the price is {_PRICE_POOL[0]} (wrong amount)."
+            stmt = fact.get("false_stmt") or "They only discuss a football match."
             is_true = False
             explain = fact.get("explain_ru") or "Этого в диалоге не было / цифра другая."
-        task2.append(
-            {
-                "statement": stmt,
-                "is_true": is_true,
-                "explain_ru": explain,
-            }
-        )
+        task2.append({"statement": stmt, "is_true": is_true, "explain_ru": explain})
 
-    # Task3: события из разных частей 12-репликового диалога
-    idxs = [0, 3, 6, 9]
     events = []
-    for j in idxs:
+    for j in (0, 3, 6, 9):
         t = lines[j] if j < len(lines) else lines[j % len(lines)]
         events.append(f"{t['speaker']}: {_clip(t['text'], 42)}")
 

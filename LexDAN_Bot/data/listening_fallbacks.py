@@ -349,7 +349,7 @@ _SCRIPTS: dict[str, list[tuple[int, str]]] = {
         (1, "Is the Wi-Fi free?"),
         (0, "Yes. Password is hotel two zero two four."),
         (1, "What is my room number?"),
-        (0, "Room two hundred fourteen. Lift on the left."),
+        (0, "Room 214. Lift on the left."),
         (1, "Is there a gym?"),
         (0, "Yes, open until nine p.m. Second floor."),
         (1, "Checkout by eleven tomorrow of the second day?"),
