@@ -1000,9 +1000,34 @@ def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -
         q["options_ru"] = list(q["options"])
         return q
 
-    if len(facts) < 3:
+    def _overlap_key(f: dict) -> tuple:
+        """Один смысловой факт = один ключ (чтобы Task1 и Task2 не дублировали)."""
+        q = str(f.get("question") or "").strip().lower()
+        ans = str(f.get("correct") or "").strip().lower()
+        kind = str(f.get("kind") or "").strip().lower()
+        for pat, prefix in (
+            (r"how much is the (\w+)", "price"),
+            (r"what colour is the (\w+)", "color"),
+            (r"how old is (?:the )?(\w+)", "age"),
+            (r"how many (\w+)", "qty"),
+            (r"which (\w+)\??", "which"),
+            (r"what is the ([\w\s]+)\??", "what"),
+            (r"where do they (\w+)", "where"),
+            (r"what time[^\?]*/?\??", "time"),
+            (r"until what time", "time"),
+            (r"when is (\w+)", "when"),
+            (r"what does the customer order", "order"),
+        ):
+            m = re.search(pat, q)
+            if m:
+                if prefix in {"time", "order"}:
+                    return (prefix, ans)
+                return (prefix, m.group(1).strip())
+        return (kind or "x", ans)
+
+    if len(facts) < 6:
         for t in lines:
-            if len(facts) >= 6:
+            if len(facts) >= 8:
                 break
             m = re.search(
                 r"\b((?:two|three|four|five|six|seven|eight|nine|ten|twelve|fourteen|fifteen|"
@@ -1025,69 +1050,175 @@ def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -
                 "line_i": 0,
                 "speaker": t["speaker"],
             }
-            if cand["question"].lower() not in {f["question"].lower() for f in facts}:
-                if val.lower() not in cand["question"].lower():
-                    facts.append(cand)
+            if val.lower() in cand["question"].lower():
+                continue
+            if _overlap_key(cand) in {_overlap_key(f) for f in facts}:
+                continue
+            facts.append(cand)
 
-    picked: list[dict] = []
-    seen_kinds: set[str] = set()
+    # уникальные факты по смыслу
+    uniq: list[dict] = []
+    seen_keys: set[tuple] = set()
     for f in facts:
-        k = f.get("kind") or ""
-        if k in seen_kinds and len([p for p in picked if (p.get("kind") == k)]) >= 1 and len(picked) < 2:
+        k = _overlap_key(f)
+        if k in seen_keys:
             continue
-        if any(p["question"] == f["question"] for p in picked):
-            continue
-        picked.append(f)
-        seen_kinds.add(k)
-        if len(picked) >= 3:
-            break
-    for f in facts:
-        if len(picked) >= 3:
-            break
-        if not any(p["question"] == f["question"] for p in picked):
-            picked.append(f)
+        seen_keys.add(k)
+        uniq.append(f)
 
-    while len(picked) < 3:
-        picked.append(
+    # Простые TF из реплик (to go / card / large…) — отдельные от MCQ
+    blob = " ".join(x["text"].lower() for x in lines)
+
+    def _add_tf(key: tuple, true_s: str, false_s: str, explain: str) -> None:
+        if key in seen_keys:
+            return
+        seen_keys.add(key)
+        uniq.append(
+            {
+                "kind": key[0],
+                "correct": str(key[1]),
+                "question": f"tf:{key[0]}:{key[1]}",
+                "true_stmt": true_s,
+                "false_stmt": false_s,
+                "explain_ru": explain,
+            }
+        )
+
+    if "to go" in blob:
+        _add_tf(("takeaway", "togo"), "The order is to go.", "The order is for here.", "Заказ — с собой.")
+    if "for here" in blob:
+        _add_tf(("takeaway", "here"), "They eat for here.", "The order is only to go.", "Едят на месте.")
+    if re.search(r"\bcard\b", blob) and "cash" in blob:
+        _add_tf(("pay", "card"), "They pay by card.", "They pay only in cash.", "Оплата картой.")
+    elif re.search(r"\bcard\b", blob):
+        _add_tf(("pay", "card"), "They can pay by card.", "Card is not accepted.", "Карта принимается.")
+    if re.search(r"\blarge\b", blob):
+        _add_tf(("size", "large"), "They want a large size.", "They want a small size.", "Размер — large.")
+    if re.search(r"\bsmall\b", blob) and "large" not in blob:
+        _add_tf(("size", "small"), "They want a small size.", "They want a large size.", "Размер — small.")
+    if "wifi" in blob or "wi-fi" in blob:
+        _add_tf(("wifi", "free"), "The Wi-Fi is free.", "The Wi-Fi costs ten pounds.", "Wi-Fi бесплатный." if "free" in blob else "Про Wi-Fi говорят в диалоге.")
+    if "window" in blob:
+        _add_tf(("seat", "window"), "They sit or wait by the window.", "They sit in the basement.", "У окна.")
+    if "muffin" in blob and ("no muffin" in blob or "no muffins" in blob):
+        _add_tf(("extra", "nomuffin"), "They do not take muffins.", "They order muffins.", "Маффины не берут.")
+    if re.search(r"\bremote\b", blob):
+        _add_tf(("remote", "yes"), "Remote work is mentioned.", "Nobody talks about remote work.", "Говорят про remote.")
+
+    # Task1 = MCQ из половины фактов; Task2 = TF из других + реплик (to go / card…)
+    mcq_pool = [f for f in uniq if not str(f.get("question") or "").startswith("tf:")]
+    tf_pool = [f for f in uniq if str(f.get("question") or "").startswith("tf:")]
+
+    task1_facts: list[dict] = []
+    task2_facts: list[dict] = list(tf_pool[:3])
+    for i, f in enumerate(mcq_pool):
+        if i % 2 == 0 and len(task1_facts) < 3:
+            task1_facts.append(f)
+        elif len(task2_facts) < 3:
+            task2_facts.append(f)
+        elif len(task1_facts) < 3:
+            task1_facts.append(f)
+    for f in mcq_pool:
+        if len(task1_facts) >= 3:
+            break
+        if f not in task1_facts and f not in task2_facts:
+            task1_facts.append(f)
+    for f in mcq_pool:
+        if len(task1_facts) >= 3:
+            break
+        if f not in task1_facts:
+            task1_facts.append(f)
+
+    while len(task1_facts) < 3:
+        task1_facts.append(
             {
                 "kind": "time",
                 "correct": "at ten",
                 "wrongs": ["at nine", "at eleven", "at twelve"],
                 "question": "What time do they agree on?",
                 "explain_ru": "Слушай время в диалоге.",
-                "true_stmt": "They agree on at ten.",
-                "false_stmt": "They agree on at midnight.",
+                "true_stmt": "They meet at ten.",
+                "false_stmt": "They meet at midnight.",
             }
         )
 
-    task1 = [mcq_from_fact(f) for f in picked[:3]]
+    t1_keys = {_overlap_key(f) for f in task1_facts[:3]}
+    task2_facts = [f for f in task2_facts if _overlap_key(f) not in t1_keys]
+    overlap_used = 0
 
-    used_q = {f["question"] for f in picked[:3]}
-    tf_facts = [f for f in facts if f.get("question") not in used_q] or list(facts)
-    while len(tf_facts) < 3:
-        tf_facts.append(
+    for f in mcq_pool:
+        if len(task2_facts) >= 3:
+            break
+        if _overlap_key(f) in t1_keys or f in task1_facts[:3]:
+            continue
+        task2_facts.append(f)
+
+    if len(task2_facts) < 3:
+        for e in (
             {
-                "true_stmt": f"The dialogue is about «{title}».",
-                "false_stmt": "They only discuss a football match.",
+                "kind": "topic",
+                "correct": title,
+                "question": f"tf:topic:{title}",
+                "true_stmt": f"They talk about «{title}».",
+                "false_stmt": "They only talk about a football match.",
+                "explain_ru": f"Тема — «{title}».",
+            },
+            {
+                "kind": "speakers",
+                "correct": f"{n0}+{n1}",
+                "question": f"tf:speakers:{n0}",
+                "true_stmt": f"{n0} and {n1} both speak.",
+                "false_stmt": "Only one person speaks.",
+                "explain_ru": "Говорят двое.",
+            },
+        ):
+            if len(task2_facts) >= 3:
+                break
+            if _overlap_key(e) in t1_keys:
+                continue
+            task2_facts.append(e)
+
+    if len(task2_facts) < 3 and task1_facts:
+        task2_facts.append(task1_facts[-1])
+        overlap_used = 1
+    while len(task2_facts) < 3:
+        task2_facts.append(
+            {
+                "true_stmt": f"They talk about «{title}».",
+                "false_stmt": "They only talk about space travel.",
                 "explain_ru": f"Тема — «{title}».",
             }
         )
 
+    task1 = [mcq_from_fact(f) for f in task1_facts[:3]]
+
     plan = [
-        (tf_facts[0], True),
-        (tf_facts[1 % len(tf_facts)], False),
-        (tf_facts[2 % len(tf_facts)], True),
+        (task2_facts[0], True),
+        (task2_facts[1], False),
+        (task2_facts[2], False if overlap_used else True),
     ]
-    if plan[1][0] is plan[0][0] and len(tf_facts) > 1:
-        plan[1] = (tf_facts[1], False)
-    if plan[2][0] is plan[0][0] or plan[2][0] is plan[1][0]:
-        for f in tf_facts:
-            if f is not plan[0][0] and f is not plan[1][0]:
-                plan[2] = (f, False)
-                break
+    used_tf: set[tuple] = set()
+    cleaned_plan = []
+    for fact, want_true in plan:
+        k = _overlap_key(fact)
+        if k in used_tf:
+            continue
+        used_tf.add(k)
+        cleaned_plan.append((fact, want_true))
+    while len(cleaned_plan) < 3:
+        cleaned_plan.append(
+            (
+                {
+                    "true_stmt": f"They talk about «{title}».",
+                    "false_stmt": "They only talk about a football match.",
+                    "explain_ru": f"Тема — «{title}».",
+                },
+                len(cleaned_plan) % 2 == 0,
+            )
+        )
 
     task2 = []
-    for fact, want_true in plan:
+    for fact, want_true in cleaned_plan[:3]:
         if want_true:
             stmt = fact.get("true_stmt") or "This detail is in the dialogue."
             is_true = True
