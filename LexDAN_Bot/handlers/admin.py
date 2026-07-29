@@ -54,6 +54,7 @@ HELP = (
     "/grant_chat <code>id</code> [дней]\n"
     "/grant_full <code>id</code> [дней]\n"
     "/grant_secret <code>id</code> [week|voice|both]\n"
+    "/broadcast_fix — рассылка: фикс-апдейт + картинка\n"
     "/revoke <code>id</code>\n"
     "/unlock_levels — открыть себе все уровни A0–C2\n"
     "/event — статус ивента + баллы по Grammar/Vocab/Listening\n"
@@ -656,6 +657,29 @@ async def admin_event_force(m: Message, command: CommandObject):
     set_force_active(on)
     await m.answer(
         f"{'✅ force_active включён' if on else '⏹ force_active выключен'}\n\n{status_text()}",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("broadcast_fix"))
+async def admin_broadcast_fix(m: Message):
+    if not _is_admin(m):
+        return
+    from services.broadcast import broadcast_fix_update, fix_update_image_path
+
+    if not fix_update_image_path():
+        await m.answer("❌ Картинка lexdan_fix_update.png не найдена на сервере.")
+        return
+    await m.answer("📣 Рассылаю обновление с картинкой…")
+    result = await broadcast_fix_update(m.bot)
+    if not result.get("ok"):
+        await m.answer(f"❌ Не вышло: {result.get('error')}")
+        return
+    await m.answer(
+        f"✅ Готово.\n"
+        f"Отправлено: <b>{result.get('sent', 0)}</b>\n"
+        f"Ошибок: <b>{result.get('fail', 0)}</b>\n"
+        f"Помечено blocked: <b>{result.get('blocked', 0)}</b>",
         parse_mode="HTML",
     )
 
