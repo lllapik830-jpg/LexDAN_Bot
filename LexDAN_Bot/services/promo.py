@@ -1,7 +1,8 @@
 """
 Промокоды LexDAN.
 ENGRICO77 — 7 дней полного доступа (= тариф 799) включая Listening.
-Прогресс (задания, слова, стрик) не сбрасывается после окончания.
+Срок действия ENGRICO77 истёк — новые активации закрыты.
+Прогресс (задания, слова, стрик) не сбрасывается после окончания триала.
 """
 
 from __future__ import annotations
@@ -9,12 +10,14 @@ from __future__ import annotations
 from services.growth import ensure_growth, is_premium, start_trial
 
 # code → meta
+# active=False — код известен, но больше не активируется («действие закончилось»).
 PROMO_CODES: dict[str, dict] = {
     "ENGRICO77": {
         "days": 7,
         "kind": "full_trial",
         "title": "7 дней полного доступа (как тариф 799₽), включая Listening",
         "listening": True,
+        "active": False,
     },
 }
 
@@ -51,6 +54,12 @@ def apply_promo(user: dict, code: str) -> tuple[bool, str]:
     meta = PROMO_CODES.get(key)
     if not meta:
         return False, "🤔 Такой промокод не найден. Проверь написание или нажми «Пропустить»."
+
+    if meta.get("active") is False:
+        return False, (
+            f"⌛ Промокод <b>{key}</b> больше не действует — срок акции закончился.\n"
+            "Следи за новыми промо в канале: https://t.me/LexDan_Rico"
+        )
 
     used = [normalize_promo(x) for x in list(user.get("used_promos") or []) if x]
     already = key in used or normalize_promo(str(user.get("promo_trial_code") or "")) == key
