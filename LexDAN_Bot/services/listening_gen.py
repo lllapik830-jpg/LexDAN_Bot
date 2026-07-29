@@ -1084,10 +1084,10 @@ def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -
             }
         )
 
-    if "to go" in blob:
+    if re.search(r"\bto go[,.]?\s*(please)?\b", blob) and "for here, please" not in blob:
         _add_tf(("takeaway", "togo"), "The order is to go.", "The order is for here.", "Заказ — с собой.")
-    if "for here" in blob:
-        _add_tf(("takeaway", "here"), "They eat for here.", "The order is only to go.", "Едят на месте.")
+    elif re.search(r"\bfor here[,.]?\s*(please)?\b", blob):
+        _add_tf(("takeaway", "here"), "The order is for here.", "The order is to go.", "Едят на месте.")
     if re.search(r"\bcard\b", blob) and "cash" in blob:
         _add_tf(("pay", "card"), "They pay by card.", "They pay only in cash.", "Оплата картой.")
     elif re.search(r"\bcard\b", blob):
