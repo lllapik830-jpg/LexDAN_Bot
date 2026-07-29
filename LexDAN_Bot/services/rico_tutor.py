@@ -141,9 +141,13 @@ def generate_grammar_exercise(
 
     topic_fb = get_topic_fallback(topic_id, exercise_num)
     bank = FALLBACKS.get(topic_id or "", [])
+    if topic_fb and _is_placeholder_exercise(topic_fb):
+        topic_fb = None
 
     # Предпочитаем curated bank — качество важнее «рандома» GPT
-    if topic_fb and bank and len(bank) >= 8:
+    if topic_fb and bank and len(bank) >= 8 and not any(
+        _is_placeholder_exercise(x) for x in bank[:8]
+    ):
         return _finalize_exercise(dict(topic_fb), subtype, kind, topic_fb)
 
     mcq_labels = {
@@ -447,8 +451,18 @@ def translate_exercise_sentence(
 
 
 def get_exercise_sentence_translation(exercise: dict) -> str | None:
+    """
+    Текст для кнопки «Перевести».
+    Для EN→RU (translate_ru) НЕ отдаём sentence_ru — это и есть ответ.
+    """
+    subtype = (exercise.get("subtype") or "").strip()
+    if subtype == "translate_ru":
+        return None
     ru = (exercise.get("sentence_ru") or "").strip()
     if ru:
+        # translate_en: sentence_ru — условие задания (уже на экране) — ок как «перевод»
+        if subtype == "translate_en":
+            return None
         return ru
     return translate_exercise_sentence(
         exercise.get("sentence_en") or "",
@@ -605,6 +619,30 @@ def check_write_answer(
     return data
 
 
+def _is_placeholder_exercise(item: dict) -> bool:
+    """Заглушки C1/C2 expansion (wrong1/banana) не пускаем в практику и тест."""
+    opts = " ".join(str(x) for x in (item.get("options") or []))
+    blob = " ".join(
+        [
+            str(item.get("answer") or ""),
+            str(item.get("sentence_en") or ""),
+            str(item.get("sentence_ru") or ""),
+            str(item.get("instruction_ru") or ""),
+            opts,
+        ]
+    ).lower()
+    markers = (
+        "wrong1",
+        "wrong2",
+        "wrong3",
+        "banana",
+        "this practices",
+        "i goed",
+        "pattern:",
+    )
+    return any(m in blob for m in markers)
+
+
 def generate_grammar_test(level: str, topic_titles: list[str], topic_ids: list[str] | None = None) -> list[dict]:
     """
     10 вопросов из curated-банков тем уровня (без GPT).
@@ -630,6 +668,8 @@ def generate_grammar_test(level: str, topic_titles: list[str], topic_ids: list[s
         title = t.get("title") or tid
         bank = FALLBACKS.get(tid) or []
         for raw in bank:
+            if _is_placeholder_exercise(raw):
+                continue
             item = dict(raw)
             subtype = (item.get("subtype") or ("mcq" if item.get("kind") == "mcq" else "word_form")).strip()
             kind = "mcq" if subtype == "mcq" else "write"

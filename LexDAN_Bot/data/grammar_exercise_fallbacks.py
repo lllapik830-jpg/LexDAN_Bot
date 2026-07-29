@@ -685,12 +685,13 @@ FALLBACKS: dict[str, list[dict]] = {
         {
             "kind": "write",
             "subtype": "word_form",
-            "instruction_ru": "Поставь don't/doesn't.",
-            "sentence_en": "She ____ (not play) football.",
+            "instruction_ru": "Отрицание Present Simple (doesn't + V1).",
+            "sentence_en": "She ____ (play) football.",
             "sentence_ru": "Она не играет в футбол.",
-            "base_form": "not play",
-            "answer": "doesn't",
-            "tip": "she → doesn't.",
+            "base_form": "play",
+            "answer": "doesn't play",
+            "tip": "she → doesn't + play.",
+            "accept": ["doesn't play", "does not play"],
         },
         {
             "kind": "write",

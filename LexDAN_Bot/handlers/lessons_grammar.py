@@ -66,6 +66,7 @@ from services.lesson_state import (
     clear_speak_practice,
     advance_speak_phrase,
     EXERCISE_TYPES,
+    ALL_EXERCISE_NUMS,
 )
 from services.rico_tutor import (
     rico_topic_chat_text,
@@ -269,12 +270,14 @@ async def _finish_exercise_ok(
     ensure_growth(user)
     done_before = get_done_exercises(user, level, topic_id)
     newly_done = num not in done_before
+    was_exercises_complete = set(done_before) >= ALL_EXERCISE_NUMS
 
     mark_exercise_done(user_id, level, topic_id, num)
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
-    note_grammar_exercise_done(user)
+    if newly_done:
+        note_grammar_exercise_done(user)
 
     from services.collection import collection_allowed
     from services.event_magic import add_grammar_points, remember_tg_username
@@ -301,7 +304,7 @@ async def _finish_exercise_ok(
     topic_title = (user.get("lesson") or {}).get("topic_title") or "тема"
     extra = ""
     topic_just_done = False
-    if is_topic_exercises_done(user, level, topic_id):
+    if is_topic_exercises_done(user, level, topic_id) and not was_exercises_complete:
         mark_topic_done(user_id, level, topic_id)
         users = load_users()
         user = get_user(users, user_id)
@@ -1015,6 +1018,24 @@ def _exercise_kb(ex: dict) -> ReplyKeyboardMarkup:
 
 async def _show_exercise_translation(m: Message, user: dict):
     ex = dict((user.get("lesson") or {}).get("exercise") or {})
+    subtype = (ex.get("subtype") or "").strip()
+    if subtype == "translate_ru":
+        await m.answer(
+            "🦜 Здесь задание — <b>перевести на русский самому</b>.\n"
+            "Не подскажу готовый ответ. Не понял слово — спроси "
+            "«как переводится …» или жми помощь Рико.",
+            reply_markup=_exercise_kb(ex),
+            parse_mode="HTML",
+        )
+        return
+    if subtype == "translate_en":
+        await m.answer(
+            "🦜 Здесь задание — <b>перевести на английский</b>.\n"
+            "Русский текст уже в задании. Нужна подсказка — жми помощь Рико.",
+            reply_markup=_exercise_kb(ex),
+            parse_mode="HTML",
+        )
+        return
     ru = get_exercise_sentence_translation(ex)
     if not ru:
         await m.answer(

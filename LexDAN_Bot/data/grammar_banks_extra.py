@@ -362,12 +362,13 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Поставь don't или doesn't.",
-      "sentence_en": "She ____ (not play) football.",
+      "instruction_ru": "Отрицание Present Simple (doesn't + V1).",
+      "sentence_en": "She ____ (play) football.",
       "sentence_ru": "Она не играет в футбол.",
-      "base_form": "not play",
-      "answer": "doesn't",
-      "tip": "she → doesn't.",
+      "base_form": "play",
+      "answer": "doesn't play",
+      "tip": "she → doesn't + play.",
+      "accept": ["doesn't play", "does not play"],
       "options": None
     },
     {
@@ -562,12 +563,13 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Поставь didn't.",
-      "sentence_en": "He ____ (not come) to the party.",
+      "instruction_ru": "Отрицание Past Simple (didn't + V1).",
+      "sentence_en": "He ____ (come) to the party.",
       "sentence_ru": "Он не пришёл на вечеринку.",
-      "base_form": "not come",
-      "answer": "didn't",
+      "base_form": "come",
+      "answer": "didn't come",
       "tip": "didn't + V1.",
+      "accept": ["didn't come", "did not come"],
       "options": None
     },
     {
@@ -1373,12 +1375,13 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши don't/doesn't.",
-      "sentence_en": "If it ____ (not rain), we will go out.",
+      "instruction_ru": "First Conditional: doesn't + V1.",
+      "sentence_en": "If it ____ (rain), we will go out.",
       "sentence_ru": "Если не будет дождя…",
-      "base_form": "not rain",
-      "answer": "doesn't",
-      "tip": "it → doesn't.",
+      "base_form": "rain",
+      "answer": "doesn't rain",
+      "tip": "it → doesn't rain.",
+      "accept": ["doesn't rain", "does not rain"],
       "options": None
     },
     {

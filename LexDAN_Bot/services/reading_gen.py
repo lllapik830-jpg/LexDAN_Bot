@@ -311,7 +311,12 @@ def check_comprehension_answer(user_text: str, accept: list[str]) -> bool:
         ea = normalize_gap_token(a)
         if not ea:
             continue
-        if u == ea or ea in u or u in ea:
+        if u == ea:
+            return True
+        # Подстрока только если короткая сторона ≥4 символов
+        # (иначе «1»∈«15», «a»∈«park», «no»∈«nobody»).
+        shorter, longer = (u, ea) if len(u) <= len(ea) else (ea, u)
+        if len(shorter) >= 4 and shorter in longer:
             return True
     return False
 

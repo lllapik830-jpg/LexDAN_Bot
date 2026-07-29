@@ -650,18 +650,42 @@ async def vocab_choose_topic(m: Message):
 
     wt = words_total(level, topic["id"])
     wl, _, wd = topic_words_progress(user, level, topic["id"], wt)
-    if wd:
+    pt = phrases_total(level, topic["id"])
+    pl, _, pd = topic_phrases_progress(user, level, topic["id"], pt)
+
+    if wd and (pt == 0 or pd):
         await m.answer(
-            f"✅ Тема «{topic['title']}» по словам пройдена ({wl}/{wt}).\n"
-            "Повтори в <b>📋 Задания по всем уровням</b>.",
+            f"✅ Тема «{topic['title']}» полностью пройдена "
+            f"(слова {wl}/{wt}"
+            + (f", фразы {pl}/{pt}" if pt else "")
+            + ").\nПовтори в <b>📋 Задания по всем уровням</b>.",
             reply_markup=vocab_topics_kb(level, user),
             parse_mode="HTML",
         )
         return
 
+    if wd and pt > 0 and not pd:
+        # Слова закрыты — сразу к фразам (раньше тема блокировалась)
+        set_vocab_hub(
+            str(m.from_user.id),
+            "vocab_phrases",
+            level=level,
+            vocab_topic_id=topic["id"],
+            vocab_topic_title=topic["title"],
+        )
+        users = load_users()
+        user = get_user(users, str(m.from_user.id))
+        await m.answer(
+            f"✅ Слова «{topic['title']}» уже выучены ({wl}/{wt}).\n"
+            f"Теперь фразы ({pl}/{pt}) 👇",
+            parse_mode="HTML",
+        )
+        await _send_phrase_story(m, user)
+        return
+
     ok, tip = can_start_vocab_text(user)
     if not ok:
-        save_users(users)
+        save_users(users, only=str(m.from_user.id))
         await m.answer(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
         return
 
