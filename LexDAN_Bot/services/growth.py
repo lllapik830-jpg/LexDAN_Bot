@@ -393,6 +393,7 @@ def touch_activity(user: dict) -> None:
     """Отметить, что пользователь сейчас активен (для напоминаний)."""
     ensure_growth(user)
     user["last_active_at"] = datetime.now(MSK).isoformat()
+    user.pop("tg_blocked", None)
 
 
 def note_chat_message(user: dict, *, kind: str = "text") -> tuple[bool, str | None]:

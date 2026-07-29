@@ -1,6 +1,7 @@
 .env
 users.json
 magic_event_state.json
+.bot_poll.lock
 __pycache__/
 *.pyc
 .venv/

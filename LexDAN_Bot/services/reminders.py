@@ -50,6 +50,8 @@ def users_due_for_reminder() -> list[tuple[str, dict]]:
             continue
         user = get_user(users, str(uid))
         ensure_growth(user)
+        if user.get("tg_blocked"):
+            continue
         if not user.get("name") or user.get("step") != "ready":
             continue
         if user.get("reminder_sent_date") == today:
@@ -74,6 +76,7 @@ async def send_due_reminders(bot) -> int:
     users = load_users()
     due = users_due_for_reminder()
     sent = 0
+    dirty = False
     today = _today()
     for uid, _ in due:
         user = get_user(users, uid)
@@ -99,9 +102,15 @@ async def send_due_reminders(bot) -> int:
                 parse_mode="HTML",
             )
             user["reminder_sent_date"] = today
+            user.pop("tg_blocked", None)
             sent += 1
+            dirty = True
         except Exception as e:
+            err = str(e).lower()
             logging.warning(f"Reminder fail {uid}: {e}")
-    if sent:
+            if "blocked" in err or "deactivated" in err or "forbidden" in err:
+                user["tg_blocked"] = True
+                dirty = True
+    if dirty:
         save_users(users)
     return sent

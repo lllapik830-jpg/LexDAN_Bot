@@ -104,20 +104,34 @@ async def main():
     global _loop
     _loop = asyncio.get_running_loop()
 
-    # Сбрасываем старые апдейты и webhook — меньше двойных ответов
-    await bot.delete_webhook(drop_pending_updates=True)
-    db = "Postgres" if os.getenv("DATABASE_URL") else "users.json (file)"
-    print(f"🤖 LexDAN is running! Storage: {db}")
-    logging.info(f"User storage backend: {db}")
-    if PUBLIC_BASE_URL:
-        logging.info(f"YooKassa webhook URL: {PUBLIC_BASE_URL}/yookassa/webhook")
-    else:
-        logging.info("PUBLIC_BASE_URL пуст — укажи его в env для уведомлений ЮKassa")
-    asyncio.create_task(_reminder_loop())
-    asyncio.create_task(_autorenew_loop())
-    asyncio.create_task(_event_finalize_loop())
-    asyncio.create_task(_event_announce_once())
-    await dp.start_polling(bot)
+    from services.bot_lock import release_bot_lock, wait_for_bot_lock
+
+    # Только один процесс имеет право на getUpdates
+    got = await wait_for_bot_lock(max_wait_sec=90)
+    if not got:
+        logging.error(
+            "Another LexDAN instance already polls Telegram. "
+            "Exit to avoid TelegramConflictError."
+        )
+        return
+
+    try:
+        # Сбрасываем старые апдейты и webhook — меньше двойных ответов
+        await bot.delete_webhook(drop_pending_updates=True)
+        db = "Postgres" if os.getenv("DATABASE_URL") else "users.json (file)"
+        print(f"🤖 LexDAN is running! Storage: {db}")
+        logging.info(f"User storage backend: {db}")
+        if PUBLIC_BASE_URL:
+            logging.info(f"YooKassa webhook URL: {PUBLIC_BASE_URL}/yookassa/webhook")
+        else:
+            logging.info("PUBLIC_BASE_URL пуст — укажи его в env для уведомлений ЮKassa")
+        asyncio.create_task(_reminder_loop())
+        asyncio.create_task(_autorenew_loop())
+        asyncio.create_task(_event_finalize_loop())
+        asyncio.create_task(_event_announce_once())
+        await dp.start_polling(bot)
+    finally:
+        release_bot_lock()
 
 
 async def _event_announce_once():
