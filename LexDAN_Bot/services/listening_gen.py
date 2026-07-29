@@ -411,6 +411,7 @@ def _shuffle_mcq(correct: str, wrong: list[str], explain_ru: str, options_ru: li
 def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -> tuple[list, list, list]:
     """
     Вопросы строго из ЭТОГО диалога и с ЭТИМИ именами.
+    Task1 / Task2 / Task3 не дублируют одни и те же факты.
     Не зависят от имени ElevenLabs-голоса.
     """
     title = topic.get("title_en") or topic.get("title_ru") or "the topic"
@@ -420,13 +421,22 @@ def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -
         for t in turns
         if isinstance(t, dict) and str(t.get("text") or "").strip()
     ]
+    # имена только из диалога (n0/n1) — не голоса TTS
+    for i, t in enumerate(lines):
+        if t["speaker"] not in {n0, n1}:
+            t["speaker"] = n0 if i % 2 == 0 else n1
     while len(lines) < 4:
         lines.append({"speaker": n0 if len(lines) % 2 == 0 else n1, "text": f"Let's continue with {title}."})
 
-    meat = [t for t in lines if len(t["text"].split()) >= 5] or lines
+    meat = [t for t in lines if len(t["text"].split()) >= 4] or lines
+    # три разные реплики для task1
     early = meat[0]
-    mid = meat[len(meat) // 2]
+    mid = meat[max(1, len(meat) // 2)]
+    if mid is early and len(meat) > 1:
+        mid = meat[1]
     late = meat[-1]
+    if late is early or late is mid:
+        late = meat[-1] if meat[-1] is not early else (meat[-2] if len(meat) > 1 else late)
 
     fake_lines = [
         "I need a new passport at desk three.",
@@ -434,19 +444,28 @@ def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -
         "The football match starts at midnight.",
         "Please book a flight to the Moon.",
         "My password is one two three four.",
+        "We should paint the kitchen green tomorrow.",
     ]
     dialogue_blob = " ".join(t["text"].lower() for t in lines)
 
-    def _fake() -> str:
+    def _fakes(n: int) -> list[str]:
+        out = []
         for f in fake_lines:
-            if f.lower() not in dialogue_blob:
-                return f
-        return "They only talk about space travel."
+            if f.lower() not in dialogue_blob and f not in out:
+                out.append(f)
+            if len(out) >= n:
+                break
+        while len(out) < n:
+            out.append(f"They only talk about space travel #{len(out)}.")
+        return out
 
-    # --- task1 MCQ ---
+    # сторонние имена — только если не совпадают с героями диалога
+    who_distract = [x for x in ("Alex", "Sam", "Teacher", "Driver", "Officer", "Pilot", "Chef") if x not in {n0, n1}]
+
+    # --- task1 MCQ: кто сказал / какая реплика / кто ближе к концу ---
     q1 = _shuffle_mcq(
         early["speaker"],
-        [x for x in (n0, n1, "Alex", "Sam", "Teacher", "Driver") if x != early["speaker"]],
+        [x for x in (n0, n1, *who_distract) if x != early["speaker"]][:3],
         f"Эту фразу говорит {early['speaker']}.",
         None,
     )
@@ -454,9 +473,10 @@ def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -
     q1["options_ru"] = list(q1["options"])
 
     real_mid = _clip(mid["text"], 56)
+    distract = [_clip(f, 56) for f in _fakes(3)]
     q2 = _shuffle_mcq(
         real_mid,
-        [_clip(_fake(), 56), _clip(fake_lines[1], 56), _clip(fake_lines[2], 56)],
+        distract,
         f"В диалоге звучит: «{real_mid}».",
         None,
     )
@@ -465,7 +485,7 @@ def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -
 
     q3 = _shuffle_mcq(
         late["speaker"],
-        [x for x in (n0, n1, "Officer", "Pilot", "Chef") if x != late["speaker"]],
+        [x for x in (n0, n1, *who_distract) if x != late["speaker"]][:3],
         f"Ближе к концу говорит {late['speaker']}.",
         None,
     )
@@ -474,41 +494,48 @@ def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -
 
     task1 = [q1, q2, q3]
 
-    # --- task2 True/False ---
+    # --- task2 True/False: другие факты, не копия early из task1 ---
+    tf_line = None
+    for t in meat:
+        if t is not early and t is not late and t["text"] != early["text"]:
+            tf_line = t
+            break
+    if tf_line is None:
+        tf_line = mid if mid is not early else (late if late is not early else meat[min(1, len(meat) - 1)])
+
     is_passport = any(k in _topic_blob(topic) for k in ("passport", "immigration", "миграц"))
+    wrong_topic = (
+        f"{n0} and {n1} only discuss football scores."
+        if is_passport
+        else f"{n0} and {n1} only discuss a passport desk."
+    )
+    # ложное утверждение про чужую реплику
+    other = n1 if tf_line["speaker"] == n0 else n0
     task2 = [
         {
-            "statement": f'{early["speaker"]} says: "{_clip(early["text"], 50)}"',
+            "statement": f'{tf_line["speaker"]} says: "{_clip(tf_line["text"], 50)}"',
             "is_true": True,
-            "explain_ru": f"Да, {early['speaker']} произносит эту реплику.",
+            "explain_ru": f"Да, именно {tf_line['speaker']} говорит это в диалоге.",
         },
         {
-            "statement": f"The dialogue is about «{title}».",
-            "is_true": True,
-            "explain_ru": f"Тема диалога — «{title_ru}».",
-        },
-        {
-            "statement": (
-                f"{n0} and {n1} only discuss a passport desk."
-                if not is_passport
-                else f"{n0} and {n1} only discuss football scores."
-            ),
+            "statement": f'{other} says: "{_clip(tf_line["text"], 50)}"',
             "is_true": False,
-            "explain_ru": f"Нет, разговор про «{title_ru}», не про это.",
+            "explain_ru": f"Нет, эту реплику говорит {tf_line['speaker']}, не {other}.",
+        },
+        {
+            "statement": wrong_topic,
+            "is_true": False,
+            "explain_ru": f"Нет, разговор про «{title_ru}».",
         },
     ]
 
-    # --- task3 chronology ---
-    chunks = []
-    for i in range(0, min(8, len(lines)), 2):
-        a = lines[i]
-        chunks.append(f"{a['speaker']}: {_clip(a['text'], 40)}")
-    while len(chunks) < 4:
-        t = lines[len(chunks) % len(lines)]
-        chunks.append(f"{t['speaker']}: {_clip(t['text'], 40)}")
-    events = chunks[:4]
+    # --- task3 chronology: подряд идущие реплики обоих говорящих ---
+    events = [f"{t['speaker']}: {_clip(t['text'], 40)}" for t in lines[:4]]
+    while len(events) < 4:
+        t = lines[len(events) % len(lines)]
+        events.append(f"{t['speaker']}: {_clip(t['text'], 40)}")
 
-    return task1, task2, events
+    return task1, task2, events[:4]
 
 
 def _fallback_dialogue_turns(topic: dict, n0: str, n1: str) -> list[tuple[str, str]]:

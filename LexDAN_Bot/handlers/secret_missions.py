@@ -1,5 +1,7 @@
 """Секретные задания Рико — вход из главного меню."""
 
+import asyncio
+
 from aiogram import Router, F, Bot
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
@@ -8,10 +10,9 @@ from handlers.keyboards import main_menu
 from services.database import (
     MODE_SECRET,
     MODE_MENU,
-    load_users,
+    users_for,
     get_user,
     save_users,
-    set_mode,
 )
 from services.growth import ensure_growth
 from services.secret_missions import (
@@ -28,7 +29,6 @@ from services.secret_missions import (
     inbox_missions,
     start_mission,
     get_active,
-    clear_active,
     complete_mission,
     format_card,
     evaluate_voice_attempt,
@@ -40,6 +40,10 @@ from services.stt import recognize_english
 
 router = Router()
 
+BTN_BACK_MENU = "🔙 Вернуться в меню"
+BTN_EXIT_SECRET = "🚪 Выйти из секрета"
+BTN_NEXT = "➡️ Далее"
+
 
 def _hub_kb(user: dict) -> ReplyKeyboardMarkup:
     rows = []
@@ -47,16 +51,16 @@ def _hub_kb(user: dict) -> ReplyKeyboardMarkup:
     active = get_active(user)
     if active:
         if active.get("type") == MISSION_WEEK:
-            rows.append([KeyboardButton(text="➡️ Далее")])
+            rows.append([KeyboardButton(text=BTN_NEXT)])
         else:
             rows.append([KeyboardButton(text=BTN_SECRET_SKIP)])
-        rows.append([KeyboardButton(text="🚪 Выйти из секрета")])
+        rows.append([KeyboardButton(text=BTN_EXIT_SECRET)])
     else:
         if MISSION_WEEK in inbox:
             rows.append([KeyboardButton(text=BTN_SECRET_WEEK)])
         if MISSION_VOICE in inbox:
             rows.append([KeyboardButton(text=BTN_SECRET_VOICE)])
-        rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+        rows.append([KeyboardButton(text=BTN_BACK_MENU)])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
@@ -64,16 +68,38 @@ def _menu_for(user: dict) -> ReplyKeyboardMarkup:
     return main_menu(user)
 
 
+def _uid(m: Message) -> str:
+    return str(m.from_user.id)
+
+
+def _load_user(uid: str):
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ensure_growth(user)
+    ensure_missions(user)
+    return users, user
+
+
+def _enter_secret_mode(users: dict, user: dict, uid: str) -> None:
+    """Выставить MODE_SECRET и сохранить один раз (без гонки set_mode + stale save)."""
+    user["mode"] = MODE_SECRET
+    save_users(users, only=uid)
+
+
+def _leave_to_menu(users: dict, user: dict, uid: str) -> None:
+    user["mode"] = MODE_MENU
+    save_users(users, only=uid)
+
+
 @router.message(F.text == BTN_SECRET)
 async def open_secret_hub(m: Message):
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
-    ensure_growth(user)
+    uid = _uid(m)
+    users, user = _load_user(uid)
     # если застряли на вводе промокода — сбросить, иначе секреты «ломаются»
     if (user.get("step") or "") in {"awaiting_promo_profile", "awaiting_promo"}:
         user["step"] = "ready"
-        save_users(users, only=str(m.from_user.id))
-    ensure_missions(user)
+        save_users(users, only=uid)
+
     if not has_secret_entry(user):
         await m.answer(
             "🔐 Пока секретов нет.\n"
@@ -83,8 +109,7 @@ async def open_secret_hub(m: Message):
         )
         return
 
-    set_mode(str(m.from_user.id), MODE_SECRET)
-    save_users(users, only=str(m.from_user.id))
+    _enter_secret_mode(users, user, uid)
     active = get_active(user)
     if active:
         await _resume_active(m, user)
@@ -114,13 +139,13 @@ async def _resume_active(m: Message, user: dict):
 
 @router.message(ModeFilter(MODE_SECRET), F.text == BTN_SECRET_WEEK)
 async def start_week(m: Message):
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+    uid = _uid(m)
+    users, user = _load_user(uid)
     from services.tg_out import status
 
     async with status(m, "🦜 Рико готовит разбор…"):
-        active = start_mission(user, MISSION_WEEK)
-        save_users(users)
+        active = await asyncio.to_thread(start_mission, user, MISSION_WEEK)
+        save_users(users, only=uid)
     if not active:
         await m.answer("Это задание уже недоступно.", reply_markup=_hub_kb(user))
         return
@@ -132,13 +157,13 @@ async def start_week(m: Message):
 
 @router.message(ModeFilter(MODE_SECRET), F.text == BTN_SECRET_VOICE)
 async def start_voice(m: Message):
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+    uid = _uid(m)
+    users, user = _load_user(uid)
     from services.tg_out import status
 
     async with status(m, "🦜 Рико готовит фразы…"):
-        active = start_mission(user, MISSION_VOICE)
-        save_users(users)
+        active = await asyncio.to_thread(start_mission, user, MISSION_VOICE)
+        save_users(users, only=uid)
     if not active:
         await m.answer("Это задание уже недоступно.", reply_markup=_hub_kb(user))
         return
@@ -148,17 +173,20 @@ async def start_voice(m: Message):
     await _send_voice_prompt(m, user)
 
 
+async def _finish_and_menu(m: Message, uid: str) -> None:
+    users, user = _load_user(uid)
+    msg = complete_mission(user)
+    _leave_to_menu(users, user, uid)
+    await m.answer(msg, reply_markup=_menu_for(user), parse_mode="HTML")
+
+
 async def _send_week_card(m: Message, user: dict):
+    uid = _uid(m)
     active = get_active(user) or {}
     cards = active.get("cards") or []
     step = int(active.get("step") or 0)
     if step >= len(cards):
-        users = load_users()
-        user = get_user(users, str(m.from_user.id))
-        msg = complete_mission(user)
-        save_users(users)
-        set_mode(str(m.from_user.id), MODE_MENU)
-        await m.answer(msg, reply_markup=_menu_for(user), parse_mode="HTML")
+        await _finish_and_menu(m, uid)
         return
     card = cards[step]
     await m.answer(
@@ -168,31 +196,27 @@ async def _send_week_card(m: Message, user: dict):
     )
 
 
-@router.message(ModeFilter(MODE_SECRET), F.text == "➡️ Далее")
+@router.message(ModeFilter(MODE_SECRET), F.text == BTN_NEXT)
 async def week_next(m: Message):
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+    uid = _uid(m)
+    users, user = _load_user(uid)
     active = get_active(user)
     if not active or active.get("type") != MISSION_WEEK:
         await m.answer("Выбери задание ниже.", reply_markup=_hub_kb(user))
         return
     active["step"] = int(active.get("step") or 0) + 1
     ensure_missions(user)["active"] = active
-    save_users(users)
+    save_users(users, only=uid)
     await _send_week_card(m, user)
 
 
 async def _send_voice_prompt(m: Message, user: dict):
+    uid = _uid(m)
     active = get_active(user) or {}
     phrases = active.get("phrases") or []
     step = int(active.get("step") or 0)
     if step >= len(phrases):
-        users = load_users()
-        user = get_user(users, str(m.from_user.id))
-        msg = complete_mission(user)
-        save_users(users)
-        set_mode(str(m.from_user.id), MODE_MENU)
-        await m.answer(msg, reply_markup=_menu_for(user), parse_mode="HTML")
+        await _finish_and_menu(m, uid)
         return
     item = phrases[step]
     phrase = phrase_text(item)
@@ -218,24 +242,23 @@ async def _send_voice_prompt(m: Message, user: dict):
 
 @router.message(ModeFilter(MODE_SECRET), F.text == BTN_SECRET_SKIP)
 async def voice_skip(m: Message):
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+    uid = _uid(m)
+    users, user = _load_user(uid)
     active = get_active(user)
     if not active or active.get("type") != MISSION_VOICE:
         return
     active["step"] = int(active.get("step") or 0) + 1
     ensure_missions(user)["active"] = active
-    save_users(users)
+    save_users(users, only=uid)
     await _send_voice_prompt(m, user)
 
 
-@router.message(ModeFilter(MODE_SECRET), F.text == "🚪 Выйти из секрета")
+@router.message(ModeFilter(MODE_SECRET), F.text.in_({BTN_EXIT_SECRET, BTN_BACK_MENU}))
 async def exit_secret(m: Message):
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+    uid = _uid(m)
+    users, user = _load_user(uid)
     # не сбрасываем inbox — можно продолжить; active сохраняем
-    set_mode(str(m.from_user.id), MODE_MENU)
-    save_users(users)
+    _leave_to_menu(users, user, uid)
     await m.answer(
         "Ок! Секрет ждёт в меню — кнопка <b>🔐 Секрет Рико</b>.",
         reply_markup=_menu_for(user),
@@ -245,8 +268,8 @@ async def exit_secret(m: Message):
 
 @router.message(ModeFilter(MODE_SECRET), F.voice)
 async def voice_secret(m: Message, bot: Bot):
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+    uid = _uid(m)
+    users, user = _load_user(uid)
     active = get_active(user)
     if not active or active.get("type") != MISSION_VOICE:
         await m.answer("Сейчас голосовое здесь не нужно.", reply_markup=_hub_kb(user))
@@ -279,7 +302,7 @@ async def voice_secret(m: Message, bot: Bot):
     active["notes"] = notes
     active["step"] = step + 1
     ensure_missions(user)["active"] = active
-    save_users(users)
+    save_users(users, only=uid)
 
     tip = result.get("tip_ru") or ""
     better = result.get("better") or target
@@ -303,14 +326,14 @@ async def secret_text(m: Message):
         BTN_SECRET_VOICE,
         BTN_SECRET_SKIP,
         BTN_SECRET_DONE,
-        "➡️ Далее",
-        "🚪 Выйти из секрета",
-        "🔙 Вернуться в меню",
+        BTN_NEXT,
+        BTN_EXIT_SECRET,
+        BTN_BACK_MENU,
     }:
         return
 
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+    uid = _uid(m)
+    users, user = _load_user(uid)
     active = get_active(user)
     if not active:
         await m.answer("Выбери задание кнопкой.", reply_markup=_hub_kb(user))
@@ -328,7 +351,7 @@ async def secret_text(m: Message):
         active["notes"] = notes
         active["step"] = step + 1
         ensure_missions(user)["active"] = active
-        save_users(users)
+        save_users(users, only=uid)
         tip = result.get("tip_ru") or ""
         better = result.get("better") or target
         await m.answer(

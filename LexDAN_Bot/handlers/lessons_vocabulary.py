@@ -91,7 +91,7 @@ from data.vocabulary_words import iter_level_words
 router = Router()
 VOCAB_INTRO = (
     "📗 <b>Vocabulary</b>\n\n"
-    "🦜 Учим слова по темам: текст → карточки → 2 предложения.\n"
+    "🦜 Учим слова по темам: текст → карточки → одно предложение со словом.\n"
     "Есть устойчивые фразы отдельной кнопкой.\n"
     "Когда все слова уровня изучены — появится <b>🎯 Тест Vocabulary</b>."
 )
@@ -817,7 +817,7 @@ def _remember_sentence(user_id: str, text: str, *, done: int | None = None) -> N
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("vocab_word_practice"), F.text)
 async def vocab_word_practice(m: Message):
-    """2 правильных предложения → слово засчитывается, кнопка убирается."""
+    """1 правильное предложение → слово засчитывается, кнопка убирается."""
     text = (m.text or "").strip()
     if text in {"⬅️ К словам", "🔙 Вернуться в меню", BTN_LEARN_PHRASES, "⬅️ К темам", "⬅️ К теме (слова)"}:
         raise SkipHandler
@@ -854,15 +854,6 @@ async def vocab_word_practice(m: Message):
 
     done += 1
     _remember_sentence(str(m.from_user.id), text, done=done)
-    if done < 2:
-        await m.answer(
-            f"✅ Молодец! ({done}/2)\n"
-            "Теперь напиши <b>ещё одно новое</b> предложение с этим словом "
-            "(не повторяй предыдущее).",
-            reply_markup=vocab_practice_kb(),
-            parse_mode="HTML",
-        )
-        return
 
     _user, drop_result = finish_word_practice(str(m.from_user.id), level, topic_id, word["en"])
     from services.growth import (
@@ -1015,14 +1006,6 @@ async def vocab_phrase_flow(m: Message):
 
     done += 1
     _remember_sentence(str(m.from_user.id), raw, done=done)
-    if done < 2:
-        await m.answer(
-            f"✅ Молодец! ({done}/2)\n"
-            "Теперь напиши <b>ещё одно новое</b> предложение с этой фразой.",
-            reply_markup=vocab_practice_kb(),
-            parse_mode="HTML",
-        )
-        return
 
     finish_phrase_practice(str(m.from_user.id), level, topic_id, phrase["en"])
     from services.growth import (

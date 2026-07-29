@@ -229,24 +229,21 @@ def _filled_sentence(ex: dict | None) -> str:
 
 
 def _speak_items_for_exercise(ex: dict | None) -> list[str]:
-    """Очередь произношения: ответ → полное предложение (для fill-in)."""
+    """Один раз: полное предложение (не отдельно короткий ответ вроде in/on)."""
     if not ex:
         return []
     subtype = (ex.get("subtype") or "").strip()
     answer = (ex.get("answer") or "").strip()
+    filled = _filled_sentence(ex)
+    if filled:
+        return [filled]
     if subtype == "translate_ru":
         full = (ex.get("sentence_en") or answer).strip()
         return [full] if full else []
-    if subtype == "mcq" and " " in answer and len(answer) > 12:
-        return [answer]
-
-    items: list[str] = []
-    if answer:
-        items.append(answer)
-    filled = _filled_sentence(ex)
-    if filled and filled.lower() != answer.lower():
-        items.append(filled)
-    return items
+    if subtype == "translate_en":
+        return [answer] if answer else []
+    # mcq без пропуска в тексте — произносим сам ответ (часто уже фраза)
+    return [answer] if answer else []
 
 
 def _speak_phrase_for_exercise(ex: dict | None) -> str:

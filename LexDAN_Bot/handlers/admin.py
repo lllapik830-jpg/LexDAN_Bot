@@ -53,6 +53,7 @@ HELP = (
     "/paid — у кого активный тариф\n"
     "/grant_chat <code>id</code> [дней]\n"
     "/grant_full <code>id</code> [дней]\n"
+    "/grant_secret <code>id</code> [week|voice|both]\n"
     "/revoke <code>id</code>\n"
     "/unlock_levels — открыть себе все уровни A0–C2\n"
     "/event — статус ивента + баллы по Grammar/Vocab/Listening\n"
@@ -286,6 +287,50 @@ async def admin_grant_full(m: Message, command: CommandObject):
         await m.bot.send_message(
             int(uid),
             f"🦜 Рико: полный доступ на <b>{days}</b> дн. активирован! Уроки и чат без лимитов 🚀",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+
+@router.message(Command("grant_secret"))
+async def admin_grant_secret(m: Message, command: CommandObject):
+    if not _is_admin(m):
+        return
+    parts = (command.args or "").strip().split()
+    if not parts:
+        await m.answer("Формат: /grant_secret <user_id> [week|voice|both]")
+        return
+    uid = parts[0].lstrip("@")
+    kind = (parts[1] if len(parts) > 1 else "both").lower()
+    from services.secret_missions import unlock_mission, MISSION_WEEK, MISSION_VOICE, has_secret_entry
+
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_growth(user)
+    opened = []
+    if kind in {"week", "both", "all"}:
+        unlock_mission(user, MISSION_WEEK)
+        opened.append("Разбор недели")
+    if kind in {"voice", "both", "all"}:
+        unlock_mission(user, MISSION_VOICE)
+        opened.append("Голос дня")
+    if not opened:
+        await m.answer("kind: week | voice | both")
+        return
+    save_users(users, only=uid)
+    await m.answer(
+        f"✅ Секрет → <code>{uid}</code>: {', '.join(opened)} "
+        f"(inbox={has_secret_entry(user)})",
+        parse_mode="HTML",
+    )
+    try:
+        from handlers.keyboards import main_menu
+
+        await m.bot.send_message(
+            int(uid),
+            "🔐 Рико открыл секретное задание! Жми <b>🔐 Секрет Рико</b> в меню.",
+            reply_markup=main_menu(user),
             parse_mode="HTML",
         )
     except Exception:

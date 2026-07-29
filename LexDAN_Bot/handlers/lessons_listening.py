@@ -226,19 +226,27 @@ async def listening_pick_topic(m: Message):
         await m.answer("Выбери тему кнопкой ниже.", reply_markup=listening_topics_kb(level, user))
         return
 
-    ok, limit_msg = can_start_listening(user)
-    if not ok:
-        await m.answer(limit_msg, reply_markup=listening_topics_kb(level, user), parse_mode="HTML")
-        return
+    already_done = is_topic_done(user, level, topic["id"])
+    if not already_done:
+        ok, limit_msg = can_start_listening(user)
+        if not ok:
+            await m.answer(limit_msg, reply_markup=listening_topics_kb(level, user), parse_mode="HTML")
+            return
 
     roles = _roles_phrase(topic)
+    redo_note = (
+        "\n\n♻️ Тема уже пройдена — это повтор без дневного лимита."
+        if already_done
+        else ""
+    )
     await m.answer(
         f"🦜 <b>Рико:</b> Сейчас ты услышишь короткий диалог "
         f"(<i>{roles}</i>) на тему «{topic['title_ru']}».\n\n"
         "Нажми <b>Готов</b>, когда будешь готов(а).\n"
         "Прослушай голосовые по порядку и выполни 3 задания.\n"
         "Цифры под диалогом — повтор нужной реплики + перевод.\n\n"
-        "⚠️ Если выйдешь — прогресс темы сбросится, при следующем входе будет новый диалог.",
+        "⚠️ Если выйдешь — прогресс темы сбросится, при следующем входе будет новый диалог."
+        f"{redo_note}",
         reply_markup=intro_kb(),
         parse_mode="HTML",
     )
@@ -287,7 +295,8 @@ async def listening_ready(m: Message):
         return
 
     ok, limit_msg = can_start_listening(user)
-    if not ok:
+    already_done = is_topic_done(user, sess.get("level") or "A1", sess.get("topic_id") or "")
+    if not ok and not already_done:
         level = sess.get("level") or "A1"
         clear_session(uid)
         set_listening_list(uid, level)
@@ -310,7 +319,7 @@ async def listening_ready(m: Message):
     async with status(m, "🦜 Рико готовит диалог…"):
         pack = generate_listening_pack(level, topic)
 
-    if not sess.get("slot_consumed"):
+    if not sess.get("slot_consumed") and not already_done:
         consume_listening_slot(uid)
 
     events = list(pack["task3_events"])
