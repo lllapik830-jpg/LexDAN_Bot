@@ -303,6 +303,52 @@ def save_users(data: dict, only: str | list[str] | None = None) -> None:
         _invalidate_caches([uid for uid, _ in targets])
 
 
+def delete_users(user_ids: list[str] | set[str]) -> int:
+    """Удалить пользователей из Postgres / файла. Возвращает число удалённых."""
+    ids = sorted({str(uid).strip() for uid in user_ids if str(uid).strip()})
+    if not ids:
+        return 0
+
+    if not _use_postgres():
+        file_data = _load_users_file()
+        n = 0
+        for uid in ids:
+            if uid in file_data:
+                del file_data[uid]
+                n += 1
+        if n:
+            _save_users_file(file_data)
+            _invalidate_caches(ids)
+        return n
+
+    try:
+        _ensure_pg()
+        conn = _get_conn()
+        with _conn_lock:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM users WHERE user_id = ANY(%s)",
+                    (ids,),
+                )
+                n = cur.rowcount or 0
+            conn.commit()
+        _invalidate_caches(ids)
+        return int(n)
+    except Exception as e:
+        logging.error(f"Postgres delete_users failed, fallback to file: {e}")
+        _reset_conn()
+        file_data = _load_users_file()
+        n = 0
+        for uid in ids:
+            if uid in file_data:
+                del file_data[uid]
+                n += 1
+        if n:
+            _save_users_file(file_data)
+            _invalidate_caches(ids)
+        return n
+
+
 def _load_users_file() -> dict:
     if not os.path.exists(USER_DATA_FILE):
         return {}

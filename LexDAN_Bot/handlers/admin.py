@@ -44,6 +44,8 @@ HELP = (
     "🛠 <b>Админ LexDAN</b>\n"
     f"<i>Только id <code>{MANAGER_ID}</code></i>\n\n"
     "/admin — список пользователей + сводка общения\n"
+    "/users — живые (зарегистрированы, не блокировали бота)\n"
+    "/purge_blocked — проверить Telegram и удалить блоки из БД\n"
     "/user <code>id</code> — полная карточка\n"
     "/top — топ по использованию (чат/grammar/vocab/listening)\n"
     "/others — без активности в разделах\n"
@@ -87,6 +89,54 @@ async def admin_help(m: Message):
     text = report_admin_home()
     for part in chunk_html(text):
         await m.answer(part, parse_mode="HTML")
+
+
+@router.message(Command("users"))
+async def admin_users_alive(m: Message):
+    """Список зарегистрированных, кто не блокировал бота."""
+    if not _is_admin(m):
+        return
+    from services.admin_stats import chunk_html
+    from services.blocked_users import format_alive_list
+
+    for part in chunk_html(format_alive_list()):
+        await m.answer(part, parse_mode="HTML")
+
+
+@router.message(Command("purge_blocked"))
+async def admin_purge_blocked(m: Message):
+    """Проверить Telegram и удалить из БД тех, кто заблокировал бота."""
+    if not _is_admin(m):
+        return
+    from services.blocked_users import list_flagged_blocked, list_alive_registered, scan_and_purge_blocked
+
+    flagged = len(list_flagged_blocked())
+    to_check = len(list_alive_registered())
+    status = await m.answer(
+        f"🧹 Чищу базу…\n"
+        f"Уже помечены блок: <b>{flagged}</b>\n"
+        f"Проверяю в Telegram: <b>{to_check}</b> (это может занять минуту)",
+        parse_mode="HTML",
+    )
+    result = await scan_and_purge_blocked(m.bot)
+    removed = len(result["removed_flagged"]) + len(result["removed_scanned"])
+    text = (
+        "✅ Готово.\n\n"
+        f"Удалено по старому флагу: <b>{len(result['removed_flagged'])}</b>\n"
+        f"Удалено после проверки Telegram: <b>{len(result['removed_scanned'])}</b>\n"
+        f"Всего удалено: <b>{removed}</b>\n"
+        f"Живых зарегистрированных осталось: <b>{result['alive_left']}</b>\n\n"
+        "Список: /users"
+    )
+    if result["removed_scanned"]:
+        ids = ", ".join(f"<code>{x}</code>" for x in result["removed_scanned"][:30])
+        text += f"\n\nНовые блоки: {ids}"
+        if len(result["removed_scanned"]) > 30:
+            text += f" …+{len(result['removed_scanned']) - 30}"
+    try:
+        await status.edit_text(text, parse_mode="HTML")
+    except Exception:
+        await m.answer(text, parse_mode="HTML")
 
 
 @router.message(Command("unlock_levels"))

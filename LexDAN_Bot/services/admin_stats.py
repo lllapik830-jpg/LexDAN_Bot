@@ -597,8 +597,8 @@ def report_admin_home() -> str:
         f"• текстовых: <b>{text_all}</b>",
         f"• голосовых: <b>{voice_all}</b>",
         f"• всего сообщ.: <b>{text_all + voice_all}</b>\n",
-        "Команды: /top · /others · /user <code>id</code> · /grant_chat · "
-        "/grant_full · /revoke · /unlock_levels · /paid\n",
+        "Команды: /users · /purge_blocked · /top · /others · /user <code>id</code> · "
+        "/grant_chat · /grant_full · /revoke · /unlock_levels · /paid\n",
         "<b>Пользователи</b>",
     ]
     # свежие сверху
