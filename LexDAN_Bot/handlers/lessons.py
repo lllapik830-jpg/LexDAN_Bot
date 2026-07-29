@@ -411,8 +411,11 @@ async def replace_write(m: Message):
 
 @router.message(ModeFilter(MODE_LESSONS), F.text.regexp(r"^(A0|A1|A2|B1|B2|C1|C2)(?:\s*🔒)?$"))
 async def choose_level(m: Message):
-    users = load_users()
-    user = get_user(users, str(m.from_user.id))
+    from services.database import users_for
+
+    uid = str(m.from_user.id)
+    users = users_for(uid)
+    user = get_user(users, uid)
     ensure_user_fields(user)
 
     if user["assessment"].get("phase"):

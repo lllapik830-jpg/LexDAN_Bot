@@ -21,6 +21,10 @@ logging.basicConfig(
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+from services.timing_middleware import TimingMiddleware
+
+dp.update.middleware(TimingMiddleware())
+
 dp.include_routers(
     start.router,
     admin.router,  # админ-команды до catch-all
@@ -129,7 +133,7 @@ async def main():
         asyncio.create_task(_autorenew_loop())
         asyncio.create_task(_event_finalize_loop())
         asyncio.create_task(_event_announce_once())
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, handle_as_tasks=True)
     finally:
         release_bot_lock()
 

@@ -2,6 +2,8 @@
 Раздел Grammar внутри уровня.
 """
 
+import asyncio
+
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, CallbackQuery
 from aiogram.dispatcher.event.bases import SkipHandler
@@ -619,7 +621,8 @@ async def _rico_chat_reply(m: Message, user: dict, user_text: str, *, show_heard
     turns = list((user.get("lesson") or {}).get("rico_chat_turns") or [])
 
     async with status(m, "🦜 Рико думает…"):
-        reply_en = ask_rico_grammar(
+        reply_en = await asyncio.to_thread(
+            ask_rico_grammar,
             level,
             user_text,
             user_name=name,
@@ -640,7 +643,10 @@ async def _rico_chat_reply(m: Message, user: dict, user_text: str, *, show_heard
     if show_heard:
         text_out = f"🎧 <i>Услышал:</i> {user_text}\n\n" + text_out
     await m.answer(text_out, reply_markup=grammar_rico_chat_kb(), parse_mode="HTML")
-    await send_voice_reply(m, reply_en, title="Rico grammar", voice_id=RICO_VOICE_ID)
+    asyncio.create_task(
+        send_voice_reply(m, reply_en, title="Rico grammar", voice_id=RICO_VOICE_ID),
+        name=f"rico-grammar-voice-{uid}",
+    )
 
 
 async def _rico_chat_from_voice(m: Message, user: dict):

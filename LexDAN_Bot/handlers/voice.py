@@ -46,6 +46,8 @@ async def voice_in_chat(m: Message, bot: Bot):
         await m.answer("👇", reply_markup=chat_limit_inline_kb())
         return
 
+    import asyncio
+
     from services.tg_out import status
 
     try:
@@ -53,7 +55,7 @@ async def voice_in_chat(m: Message, bot: Bot):
             file = await bot.get_file(m.voice.file_id)
             voice_buffer = await bot.download_file(file.file_path)
             audio_bytes = voice_buffer.read()
-            text = recognize_english(audio_bytes)
+            text = await asyncio.to_thread(recognize_english, audio_bytes)
 
         if not text:
             # Слот уже учтён — сохраняем счётчики даже при неудачном STT

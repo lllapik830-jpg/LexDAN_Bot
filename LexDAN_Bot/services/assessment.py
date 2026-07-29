@@ -5,7 +5,7 @@
 import uuid
 
 from data.assessment_data import LEVELS, lower_level, raise_level, level_index
-from services.database import load_users, save_users, get_user
+from services.database import users_for, save_users, get_user
 from services.assessment_gen import (
     generate_translation,
     generate_vocab,
@@ -52,11 +52,11 @@ def ensure_user_fields(user: dict) -> dict:
 
 
 def update_user(user_id: str, mutator) -> dict:
-    users = load_users()
+    users = users_for(user_id)
     user = get_user(users, user_id)
     ensure_user_fields(user)
     mutator(user)
-    save_users(users)
+    save_users(users, only=str(user_id))
     return user
 
 
@@ -117,7 +117,7 @@ def begin_vocab(user_id: str, level: str) -> dict:
 
 
 def next_vocab(user_id: str, level: str) -> dict:
-    users = load_users()
+    users = users_for(user_id)
     user = get_user(users, user_id)
     ensure_user_fields(user)
     used = list(user["assessment"].get("vocab_used") or [])
@@ -153,7 +153,7 @@ def begin_listen(user_id: str, level: str) -> dict:
 
 
 def next_listen(user_id: str, level: str) -> dict:
-    users = load_users()
+    users = users_for(user_id)
     user = get_user(users, user_id)
     ensure_user_fields(user)
     used = list(user["assessment"].get("listen_used") or [])
@@ -195,7 +195,7 @@ def replace_write_topic(user_id: str) -> tuple[dict | None, str]:
       - "ended" — использована последняя замена, задание провалено
       - "none" — замен уже не было
     """
-    users = load_users()
+    users = users_for(user_id)
     user = get_user(users, user_id)
     ensure_user_fields(user)
     a = user["assessment"]

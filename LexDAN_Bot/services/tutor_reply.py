@@ -1,12 +1,16 @@
 """
 Общий конвейер ответа:
-текст ученика → ИИ → сообщение → голосовое (OGG).
+текст ученика → ИИ → сообщение → голосовое (OGG) в фоне.
+TTS стартует сразу после reply_en, параллельно с сохранением/отправкой текста.
 """
+
+import asyncio
+import logging
 
 from aiogram.types import Message
 
 from services.database import load_users, get_user, save_users, set_last_bot_reply
-from services.elevenlabs import send_voice_reply
+from services.elevenlabs import send_voice_from_mp3, synthesize_speech
 from services.gpt import ask_tutor, format_tutor_message
 from services.chat_topics import (
     build_dive_topic_reply,
@@ -64,7 +68,6 @@ async def reply_as_tutor(
 
     active = ensure_active_topic(user)
     mode = resolve_chat_reply_mode(user_text, user, hist, recent)
-    topic_block = library_prompt_block(user)
 
     if mode == "suggest":
         reply_en = build_suggest_topic_reply(name, active, user_text)
@@ -91,7 +94,9 @@ async def reply_as_tutor(
         user["chat_topic_dived"] = True
     else:
         topic_engaged = True  # уже в диалоге — держим тему
-        result = ask_tutor(
+        topic_block = library_prompt_block(user, engaged=True)
+        result = await asyncio.to_thread(
+            ask_tutor,
             user_text,
             name,
             recent_replies=recent,
@@ -102,17 +107,23 @@ async def reply_as_tutor(
         )
         user["chat_topic_offered"] = True
         user["chat_topic_dived"] = True
-    text_out, reply_en = format_tutor_message(result, heard_text=heard_text)
+
+    reply_en = (result.get("reply_en") or "").strip()
     if not reply_en:
         active = ensure_active_topic(user)
-        reply_en = (
-            result.get("reply_en")
-            or f"Sure! Let's talk about {active.get('title_en')}. {active.get('seed')}"
-        )
-
-    # Синхронизация: в текст и в голос уходит ОДИН и тот же reply_en
+        reply_en = f"Sure! Let's talk about {active.get('title_en')}. {active.get('seed')}"
     result["reply_en"] = reply_en
     text_out, reply_en = format_tutor_message(result, heard_text=heard_text)
+
+    from services.voices import resolve_chat_voice_id
+
+    voice_id = resolve_chat_voice_id(user)
+    # TTS параллельно с записью в БД и отправкой текста
+    synth_task = asyncio.create_task(
+        asyncio.to_thread(synthesize_speech, reply_en, voice_id),
+        name=f"tts-synth-{user_id}",
+    )
+
     recent = (recent + [reply_en])[-8:]
     turns = (turns + [{"role": "bot", "text": reply_en}])[-10:]
     user["chat_recent_replies"] = recent
@@ -122,7 +133,15 @@ async def reply_as_tutor(
     set_last_bot_reply(user_id, reply_en)
 
     await message.answer(text_out, parse_mode="HTML")
-    from services.voices import resolve_chat_voice_id
+    asyncio.create_task(
+        _finish_voice(message, synth_task),
+        name=f"chat-voice-{user_id}",
+    )
 
-    voice_id = resolve_chat_voice_id(user)
-    await send_voice_reply(message, reply_en, title="LexDAN reply", voice_id=voice_id)
+
+async def _finish_voice(message: Message, synth_task: asyncio.Task) -> None:
+    try:
+        mp3_bytes, source = await synth_task
+        await send_voice_from_mp3(message, mp3_bytes, source=source)
+    except Exception as e:
+        logging.error(f"Background voice reply failed: {e}")

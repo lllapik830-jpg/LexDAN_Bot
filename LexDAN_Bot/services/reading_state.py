@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from services.database import load_users, get_user, save_users
+from services.database import get_user, save_users
 
 
 def ensure_reading(user: dict) -> dict:
@@ -24,7 +24,9 @@ def is_topic_done(user: dict, level: str, topic_id: str) -> bool:
 
 
 def _save(user_id: str, mutator) -> dict:
-    users = load_users()
+    from services.database import users_for, get_user, save_users
+
+    users = users_for(user_id)
     user = get_user(users, user_id)
     ensure_reading(user)
     mutator(user)

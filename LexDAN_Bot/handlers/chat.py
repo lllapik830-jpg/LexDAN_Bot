@@ -132,8 +132,10 @@ async def translate_last(m: Message):
 
     from services.tg_out import status
 
+    import asyncio
+
     async with status(m, "🌐 Перевожу…"):
-        translation = translate_to_russian(last)
+        translation = await asyncio.to_thread(translate_to_russian, last)
     if translation:
         await m.answer(
             f"🌐 <b>Перевод:</b>\n{_esc_html(translation)}",
@@ -219,8 +221,10 @@ async def chat_text(m: Message):
         from services.voices import resolve_chat_voice_id
         from services.database import set_last_bot_reply
 
+        import asyncio
+
         async with status(m, "✨ …"):
-            en = translate_to_english(ru_payload)
+            en = await asyncio.to_thread(translate_to_english, ru_payload)
             if not en:
                 save_users(users, only=str(m.from_user.id))
                 await m.answer(
@@ -244,9 +248,12 @@ async def chat_text(m: Message):
                 reply_markup=chat_menu(),
                 parse_mode="HTML",
             )
-            await send_voice_reply(
+        # голос после статуса — не держим «✨ …» на время TTS
+        asyncio.create_task(
+            send_voice_reply(
                 m, en, title="LexDAN phrase", voice_id=resolve_chat_voice_id(user)
             )
+        )
         return
 
     ok, tip = note_chat_message(user, kind="text")

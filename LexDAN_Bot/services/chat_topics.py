@@ -84,9 +84,19 @@ def sample_for_prompt(user: dict, *, n: int = 12) -> list[dict]:
     return out
 
 
-def library_prompt_block(user: dict) -> str:
-    samples = sample_for_prompt(user, n=12)
+def library_prompt_block(user: dict, *, engaged: bool = False) -> str:
+    """
+    engaged=True — только активная тема (обычный ход диалога, меньше токенов).
+    engaged=False — активная + короткая выборка библиотеки (старт / смена темы).
+    """
     active = ensure_active_topic(user)
+    if engaged:
+        return (
+            f"\n\nACTIVE topic: {active['title_en']} ({active.get('title_ru', '')}). "
+            f"Seed: {active['seed']}. Stay on this topic until the student changes it."
+        )
+
+    samples = sample_for_prompt(user, n=5)
     lines = [
         f"- {t['title_en']} ({t['title_ru']}): {t['seed']}"
         for t in samples

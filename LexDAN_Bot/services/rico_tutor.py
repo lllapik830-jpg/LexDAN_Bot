@@ -6,9 +6,8 @@ import logging
 import random
 import re
 
-import requests
-from config import OPENROUTER_API_KEY
 from services.gpt import _ask_json
+from services.openrouter import chat_completion
 
 WORD_LOOKUP_PATTERNS = (
     r"как\s+перевод",
@@ -43,41 +42,31 @@ def rico_word_lookup(level: str, topic_title: str, question: str, exercise: dict
     """Подсказка по слову во время переводного задания — задание не завершается."""
     fallback = "🦜 Напиши слово, которое непонятно — переведу!"
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-3.5-turbo",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Ты Рико 🦜. Ученик в переводном задании спрашивает про слово. "
-                            "Дай короткий перевод/объяснение слова на русском. "
-                            "Если спрашивают EN→RU или RU→EN — покажи оба варианта. "
-                            "В конце одной строкой: «Задание продолжается — напиши перевод предложения». "
-                            "HTML: <b> для слова. Без JSON."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Уровень {level}, тема {topic_title}.\n"
-                            f"Задание: {exercise.get('prompt') or ''}\n"
-                            f"Вопрос ученика: {question}"
-                        ),
-                    },
-                ],
-                "max_tokens": 220,
-                "temperature": 0.3,
-            },
-            timeout=25,
+        text = chat_completion(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты Рико 🦜. Ученик в переводном задании спрашивает про слово. "
+                        "Дай короткий перевод/объяснение слова на русском. "
+                        "Если спрашивают EN→RU или RU→EN — покажи оба варианта. "
+                        "В конце одной строкой: «Задание продолжается — напиши перевод предложения». "
+                        "HTML: <b> для слова. Без JSON."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Уровень {level}, тема {topic_title}.\n"
+                        f"Задание: {exercise.get('prompt') or ''}\n"
+                        f"Вопрос ученика: {question}"
+                    ),
+                },
+            ],
+            max_tokens=180,
+            temperature=0.3,
+            timeout=12,
         )
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
         if not text.startswith("🦜"):
             text = f"🦜 {text}"
         return text
@@ -92,41 +81,31 @@ def rico_topic_chat_text(level: str, topic_title: str, question: str, user_name:
         "Я на связи."
     )
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-3.5-turbo",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Ты попугай Рико 🦜 — дружелюбный репетитор. "
-                            "Отвечай по-русски, с английскими примерами. "
-                            "После КАЖДОГО английского примера сразу ниже дай перевод "
-                            "курсивом в HTML: <i>…</i>. "
-                            "Формат ответа — HTML для Telegram (можно <b> и <i>). "
-                            "Коротко, ясно, по-человечески. Не используй JSON."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Уровень: {level}. Тема грамматики: {topic_title}. "
-                            f"Ученика зовут {user_name}.\nВопрос: {question}"
-                        ),
-                    },
-                ],
-                "max_tokens": 450,
-                "temperature": 0.55,
-            },
-            timeout=30,
+        text = chat_completion(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты попугай Рико 🦜 — дружелюбный репетитор. "
+                        "Отвечай по-русски, с английскими примерами. "
+                        "После КАЖДОГО английского примера сразу ниже дай перевод "
+                        "курсивом в HTML: <i>…</i>. "
+                        "Формат ответа — HTML для Telegram (можно <b> и <i>). "
+                        "Коротко, ясно, по-человечески. Не используй JSON."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Уровень: {level}. Тема грамматики: {topic_title}. "
+                        f"Ученика зовут {user_name}.\nВопрос: {question}"
+                    ),
+                },
+            ],
+            max_tokens=280,
+            temperature=0.55,
+            timeout=15,
         )
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
         if not text.startswith("🦜"):
             text = f"🦜 {text}"
         return text
@@ -777,31 +756,21 @@ def rico_help_for_exercise(
                 "НЕ называй правильный вариант и НЕ цитируй ответ дословно. "
                 "Наведи на правило через мини-пример из жизни. Коротко. HTML: можно <i>."
             )
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-3.5-turbo",
-                "messages": [
-                    {"role": "system", "content": system},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Уровень {level}, тема {topic_title}.\n"
-                            f"Задание: {prompt}\nВарианты: {opt_txt}"
-                        ),
-                    },
-                ],
-                "max_tokens": 280,
-                "temperature": 0.4,
-            },
-            timeout=25,
+        text = chat_completion(
+            [
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Уровень {level}, тема {topic_title}.\n"
+                        f"Задание: {prompt}\nВарианты: {opt_txt}"
+                    ),
+                },
+            ],
+            max_tokens=220,
+            temperature=0.4,
+            timeout=12,
         )
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
         if not text.startswith("🦜"):
             text = f"🦜 {text}"
         return text
@@ -821,38 +790,28 @@ def rico_explain_wrong_final(
         "Разбери пример и иди дальше 💪"
     )
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-3.5-turbo",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "Ты Рико 🦜. Ученик ошибся в последний раз. "
-                            "Скажи, что неправильно, назови правильный ответ и коротко объясни "
-                            "на русском + английский пример с <i>переводом</i>. HTML ok."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Уровень {level}, тема {topic_title}.\n"
-                            f"Задание: {prompt}\nПравильный ответ: {answer}"
-                        ),
-                    },
-                ],
-                "max_tokens": 280,
-                "temperature": 0.4,
-            },
-            timeout=25,
+        text = chat_completion(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты Рико 🦜. Ученик ошибся в последний раз. "
+                        "Скажи, что неправильно, назови правильный ответ и коротко объясни "
+                        "на русском + английский пример с <i>переводом</i>. HTML ok."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Уровень {level}, тема {topic_title}.\n"
+                        f"Задание: {prompt}\nПравильный ответ: {answer}"
+                    ),
+                },
+            ],
+            max_tokens=220,
+            temperature=0.4,
+            timeout=12,
         )
-        response.raise_for_status()
-        text = response.json()["choices"][0]["message"]["content"].strip()
         if not text.startswith("🦜"):
             text = f"🦜 {text}"
         return text

@@ -9,7 +9,7 @@ from handlers.filters import ModeFilter, StepFilter
 from handlers.keyboards import main_menu, chat_menu, profile_menu, assess_translate_kb, assess_simple_kb
 from handlers.lessons import send_lessons_home
 from services.database import (
-    load_users,
+    users_for,
     get_user,
     save_users,
     set_mode,
@@ -35,7 +35,7 @@ router = Router()
 @router.message(F.text == "🗣️ Общаться")
 async def open_chat(m: Message):
     set_mode(str(m.from_user.id), MODE_CHAT)
-    users = load_users()
+    users = users_for(str(m.from_user.id))
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     note_lesson_activity(user)
@@ -113,9 +113,14 @@ async def open_chat(m: Message):
             "🔙 <b>В меню</b> — выход"
         )
     await say(m, intro, replace=True, delete_tap=True, reply_markup=chat_menu(), parse_mode="HTML")
-    # Голос = тот же английский вопрос, что в сообщении (полная синхронизация)
+    # Голос в фоне — иначе апдейт висит 10–23с на ElevenLabs и тормозит всё (A2 и т.д.)
+    import asyncio
+
     voice_id = resolve_chat_voice_id(user)
-    await send_voice_reply(m, opener_en, title="LexDAN topic", voice_id=voice_id)
+    asyncio.create_task(
+        send_voice_reply(m, opener_en, title="LexDAN topic", voice_id=voice_id),
+        name=f"open-chat-voice-{m.from_user.id}",
+    )
 
 
 def _esc(text: str) -> str:
@@ -132,12 +137,12 @@ async def open_lessons(m: Message):
     user_id = str(m.from_user.id)
     set_mode(user_id, MODE_LESSONS)
 
-    users = load_users()
+    users = users_for(user_id)
     user = get_user(users, user_id)
     ensure_user_fields(user)
     ensure_growth(user)
     note_lesson_activity(user)
-    save_users(users)
+    save_users(users, only=user_id)
     phase = user["assessment"].get("phase")
 
     from services.tg_out import purge, try_delete_user_tap
@@ -176,7 +181,7 @@ async def open_lessons(m: Message):
 async def open_profile(m: Message):
     set_mode(str(m.from_user.id), MODE_PROFILE)
     user_id = str(m.from_user.id)
-    users = load_users()
+    users = users_for(str(m.from_user.id))
     user = get_user(users, user_id)
     from services.vocabulary_state import sync_vocab_counters
     from handlers.lesson_keyboards import paywall_inline_kb, upgrade_inline_kb
@@ -244,7 +249,7 @@ async def open_support(m: Message):
     from config import SUPPORT_USERNAME
 
     set_mode(str(m.from_user.id), MODE_MENU)
-    users = load_users()
+    users = users_for(str(m.from_user.id))
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     if SUPPORT_USERNAME:
@@ -265,7 +270,7 @@ async def menu_foolproof(m: Message):
 
     if (m.text or "") == BTN_START_TODAY:
         raise SkipHandler
-    users = load_users()
+    users = users_for(str(m.from_user.id))
     user = get_user(users, str(m.from_user.id))
     await say(
         m,

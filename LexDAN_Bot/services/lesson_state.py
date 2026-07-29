@@ -3,7 +3,7 @@
 Прогресс (галочки) живёт отдельно от навигации — не сбрасывается в меню.
 """
 
-from services.database import load_users, save_users, get_user
+from services.database import save_users, get_user
 
 SECTIONS = [
     ("Grammar", "📘 Grammar"),
@@ -177,7 +177,9 @@ def ensure_lesson(user: dict) -> dict:
 
 
 def update_lesson(user_id: str, mutator) -> dict:
-    users = load_users()
+    from services.database import users_for, get_user, save_users
+
+    users = users_for(user_id)
     user = get_user(users, user_id)
     ensure_lesson(user)
     mutator(user)
@@ -343,9 +345,7 @@ def advance_speak_phrase(user_id: str) -> str | None:
         speak["attempts"] = 0
         u["lesson"]["speak"] = speak
 
-    update_lesson(user_id, mut)
-    users = load_users()
-    u = get_user(users, str(user_id))
+    u = update_lesson(user_id, mut)
     speak = (u.get("lesson") or {}).get("speak") or {}
     nxt = (speak.get("phrase") or "").strip()
     return nxt or None

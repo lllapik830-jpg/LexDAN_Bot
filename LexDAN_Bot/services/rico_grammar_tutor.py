@@ -7,10 +7,8 @@ from __future__ import annotations
 import logging
 import re
 
-import requests
-
-from config import OPENROUTER_API_KEY
 from data.grammar_curriculum import get_topics
+from services.openrouter import chat_completion
 
 
 def _topics_block(level: str) -> str:
@@ -33,7 +31,7 @@ def ask_rico_grammar(
     """
     topics_block = _topics_block(level)
     hist = ""
-    turns = [t for t in (recent_turns or []) if t.get("text")][-8:]
+    turns = [t for t in (recent_turns or []) if t.get("text")][-6:]
     if turns:
         lines = []
         for t in turns:
@@ -61,25 +59,15 @@ def ask_rico_grammar(
         "Which topic from the list do you want me to explain first?"
     )
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-3.5-turbo",
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user_text},
-                ],
-                "max_tokens": 420,
-                "temperature": 0.55,
-            },
-            timeout=35,
+        text = chat_completion(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_text},
+            ],
+            max_tokens=280,
+            temperature=0.55,
+            timeout=18,
         )
-        response.raise_for_status()
-        text = (response.json()["choices"][0]["message"]["content"] or "").strip()
         text = re.sub(r"^```(?:\w+)?\s*|\s*```$", "", text).strip()
         return text or fallback
     except Exception as e:

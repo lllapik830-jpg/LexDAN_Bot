@@ -6,8 +6,8 @@ import json
 import logging
 import random
 import re
-import requests
-from config import OPENROUTER_API_KEY
+
+from services.openrouter import CHAT_MODEL, chat_completion
 
 SYSTEM_PROMPT = """
 You are LexDAN / Rico — a warm English tutor in Telegram for Russian-speaking students.
@@ -123,8 +123,9 @@ def ask_tutor(
         ),
     }
 
-    recent = [r for r in (recent_replies or []) if r][-8:]
-    turns = [t for t in (recent_turns or []) if t.get("text")][-10:]
+    # Короткая история — меньше токенов, те же правила обучения
+    recent = [r for r in (recent_replies or []) if r][-4:]
+    turns = [t for t in (recent_turns or []) if t.get("text")][-6:]
 
     recent_block = ""
     if recent:
@@ -168,44 +169,35 @@ def ask_tutor(
         )
 
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-3.5-turbo",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            SYSTEM_PROMPT
-                            + f"\nStudent's name: {user_name}. Use the name lightly sometimes."
-                            + recent_block
-                            + dialogue_block
-                            + (topic_library_block or "")
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            "1) Check grammar/structure/words. Ignore punctuation and capitalization.\n"
-                            "2) If real issues: rewrite as a native (same meaning).\n"
-                            "3) errors_ru/tips_ru in Russian: ONLY real changes "
-                            "(do not claim a word is missing if the student already used it).\n"
-                            f"4) reply_en: {topic_hint}\n\n"
-                            f"Student message: {user_text}"
-                        ),
-                    },
-                ],
-                "max_tokens": 520,
-                "temperature": 0.4,
-            },
-            timeout=30,
+        raw = chat_completion(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        SYSTEM_PROMPT
+                        + f"\nStudent's name: {user_name}. Use the name lightly sometimes."
+                        + recent_block
+                        + dialogue_block
+                        + (topic_library_block or "")
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "1) Check grammar/structure/words. Ignore punctuation and capitalization.\n"
+                        "2) If real issues: rewrite as a native (same meaning).\n"
+                        "3) errors_ru/tips_ru in Russian: ONLY real changes "
+                        "(do not claim a word is missing if the student already used it).\n"
+                        f"4) reply_en: {topic_hint}\n\n"
+                        f"Student message: {user_text}"
+                    ),
+                },
+            ],
+            model=CHAT_MODEL,
+            max_tokens=280,
+            temperature=0.4,
+            timeout=12,
         )
-        response.raise_for_status()
-        raw = response.json()["choices"][0]["message"]["content"].strip()
         parsed = _parse_tutor_json(raw) or dict(fallback)
         parsed = _sanitize_correction(user_text, parsed)
         parsed = _ensure_diverse_reply(
@@ -738,22 +730,12 @@ def _ask_json(
     max_tokens: int = 350,
 ) -> dict:
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "gpt-3.5-turbo",
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            },
-            timeout=35,
+        raw = chat_completion(
+            messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout=25,
         )
-        response.raise_for_status()
-        raw = response.json()["choices"][0]["message"]["content"].strip()
         data = _extract_json(raw)
         if not data:
             return fallback

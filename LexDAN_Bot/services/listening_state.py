@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from services.database import load_users, get_user, save_users
+from services.database import get_user, save_users
 
 
 def ensure_listening(user: dict) -> dict:
@@ -79,7 +79,9 @@ def consume_listening_slot(user_id: str) -> dict:
 
 
 def _save(user_id: str, mutator) -> dict:
-    users = load_users()
+    from services.database import users_for, get_user, save_users
+
+    users = users_for(user_id)
     user = get_user(users, user_id)
     ensure_listening(user)
     mutator(user)

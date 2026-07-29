@@ -17,13 +17,29 @@ from config import ELEVENLABS_API_KEY
 
 # Adam — стандартный голос; можно переопределить в env
 VOICE_ID = (os.getenv("ELEVENLABS_VOICE_ID") or "pNInz6obpgDQGcFmaJgB").strip()
-# Несколько моделей: если одна недоступна на тарифе — пробуем другую
+# Сначала быстрые модели (качество для коротких реплик чата ок), потом fallback
 _MODELS = [
     (os.getenv("ELEVENLABS_MODEL") or "").strip() or None,
+    "eleven_flash_v2_5",
     "eleven_turbo_v2_5",
     "eleven_multilingual_v2",
-    "eleven_monolingual_v1",
 ]
+
+_el_session: requests.Session | None = None
+
+
+def _el_http() -> requests.Session:
+    global _el_session
+    if _el_session is None:
+        _el_session = requests.Session()
+        _el_session.headers.update(
+            {
+                "xi-api-key": ELEVENLABS_API_KEY or "",
+                "Content-Type": "application/json",
+                "Accept": "audio/mpeg",
+            }
+        )
+    return _el_session
 
 
 def _clean_models() -> list[str]:
@@ -69,22 +85,23 @@ def elevenlabs_tts_detail(
         voice_settings["speed"] = 0.82
 
     last_err = "unknown"
-    for model_id in _clean_models():
+    sess = _el_http()
+    # Короткий timeout: на Render EL часто тупит → лучше быстро уйти в gTTS,
+    # чем держать апдейт 20+ секунд (из логов: Duration 23163 ms).
+    for model_id in _clean_models()[:2]:
         try:
-            url = f"https://api.elevenlabs.io/v1/text-to-speech/{vid}"
-            response = requests.post(
+            url = (
+                f"https://api.elevenlabs.io/v1/text-to-speech/{vid}"
+                f"?optimize_streaming_latency=4&output_format=mp3_22050_32"
+            )
+            response = sess.post(
                 url,
-                headers={
-                    "xi-api-key": ELEVENLABS_API_KEY,
-                    "Content-Type": "application/json",
-                    "Accept": "audio/mpeg",
-                },
                 json={
                     "text": text,
                     "model_id": model_id,
                     "voice_settings": voice_settings,
                 },
-                timeout=35,
+                timeout=6,
             )
             if response.status_code == 200 and response.content:
                 return response.content, ""
@@ -93,7 +110,6 @@ def elevenlabs_tts_detail(
             last_err = f"HTTP {response.status_code} model={model_id} voice={vid}: {body}"
             logging.error(f"ElevenLabs TTS: {last_err}")
 
-            # Бесплатный тариф часто режет облачные IP (Render) — нет смысла крутить модели
             if response.status_code in (401, 402, 403) and (
                 "unusual_activity" in body
                 or "Free Tier" in body
@@ -101,9 +117,16 @@ def elevenlabs_tts_detail(
                 or "quota" in body.lower()
             ):
                 break
+            if response.status_code in (400, 422):
+                continue
+        except requests.Timeout as e:
+            last_err = f"timeout model={model_id}: {e}"
+            logging.warning(f"ElevenLabs TTS timeout, fallback soon: {last_err}")
+            break  # не крутим следующую модель ещё 6с — сразу gTTS
         except Exception as e:
             last_err = str(e)
             logging.error(f"ElevenLabs TTS exception: {e}")
+            break
     return None, last_err
 
 
@@ -151,63 +174,60 @@ def mp3_to_ogg_opus(mp3_bytes: bytes) -> bytes | None:
         logging.error("ffmpeg not found — cannot convert TTS to ogg")
         return None
 
-    mp3_path = None
-    ogg_path = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-            f.write(mp3_bytes)
-            mp3_path = f.name
-        ogg_path = mp3_path + ".ogg"
-
+        # Через pipe — без временных файлов на диске
         result = subprocess.run(
             [
                 "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
                 "-y",
                 "-i",
-                mp3_path,
+                "pipe:0",
                 "-c:a",
                 "libopus",
                 "-b:a",
-                "48k",
-                ogg_path,
+                "32k",
+                "-f",
+                "ogg",
+                "pipe:1",
             ],
+            input=mp3_bytes,
             capture_output=True,
-            text=True,
-            timeout=30,
+            timeout=20,
         )
-        if result.returncode != 0:
-            logging.error(f"ffmpeg TTS convert error: {result.stderr}")
+        if result.returncode != 0 or not result.stdout:
+            err = (result.stderr or b"")[:400]
+            logging.error(f"ffmpeg TTS convert error: {err}")
             return None
-
-        with open(ogg_path, "rb") as f:
-            return f.read()
+        return result.stdout
     except Exception as e:
         logging.error(f"mp3_to_ogg error: {e}")
         return None
-    finally:
-        for path in (mp3_path, ogg_path):
-            if path and os.path.exists(path):
-                os.unlink(path)
 
 
-async def send_voice_reply(
+
+async def send_voice_from_mp3(
     message,
-    text: str,
+    mp3_bytes: bytes | None,
     *,
+    source: str = "",
     title: str = "LexDAN",
-    voice_id: str | None = None,
-    slow: bool = False,
 ) -> bool:
-    """Сгенерировать и отправить голосовое. True если ушло."""
+    """Отправить уже сгенерированный MP3 как voice/audio."""
+    import asyncio
+
     from aiogram.types import FSInputFile
 
-    mp3_bytes, source = synthesize_speech(text, voice_id=voice_id, slow=slow)
     if not mp3_bytes:
         logging.error("All TTS backends failed")
-        await message.answer("⚠️ Текст готов, но голос сейчас не отправился. Попробуй ещё раз чуть позже.")
+        await message.answer(
+            "⚠️ Текст готов, но голос сейчас не отправился. Попробуй ещё раз чуть позже."
+        )
         return False
 
-    ogg_bytes = mp3_to_ogg_opus(mp3_bytes)
+    ogg_bytes = await asyncio.to_thread(mp3_to_ogg_opus, mp3_bytes)
     path = None
     try:
         if ogg_bytes:
@@ -220,7 +240,7 @@ async def send_voice_reply(
                 f.write(mp3_bytes)
                 path = f.name
             await message.answer_audio(FSInputFile(path), title=title)
-        logging.info(f"Voice sent via {source} voice_id={voice_id or 'default'}")
+        logging.info(f"Voice sent via {source or 'unknown'}")
         return True
     except Exception as e:
         logging.error(f"Send voice error: {e}")
@@ -229,3 +249,23 @@ async def send_voice_reply(
     finally:
         if path and os.path.exists(path):
             os.unlink(path)
+
+
+async def send_voice_reply(
+    message,
+    text: str,
+    *,
+    title: str = "LexDAN",
+    voice_id: str | None = None,
+    slow: bool = False,
+) -> bool:
+    """Сгенерировать и отправить голосовое. True если ушло."""
+    import asyncio
+
+    mp3_bytes, source = await asyncio.to_thread(
+        synthesize_speech, text, voice_id, slow=slow
+    )
+    return await send_voice_from_mp3(
+        message, mp3_bytes, source=source, title=title
+    )
+
