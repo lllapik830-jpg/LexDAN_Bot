@@ -573,7 +573,13 @@ def _extract_detail_facts(lines: list[dict], n0: str, n1: str) -> list[dict]:
 
         for m in color_re.finditer(text):
             val = m.group(1).lower()
-            # контекст предмета рядом
+            after = text[m.end() : m.end() + 14].lower()
+            # «Green Street» — это место, не цвет предмета
+            if any(
+                after.lstrip().startswith(x)
+                for x in ("street", "road", "avenue", "lane", "park", "square", "stop")
+            ):
+                continue
             add(
                 {
                     "kind": "color",
