@@ -33,7 +33,7 @@ from services.listening_state import (
     can_start_listening,
     consume_listening_slot,
 )
-from services.listening_gen import generate_listening_pack, build_order_summary
+from services.listening_gen import generate_listening_pack, build_order_summary, TURN_COUNT
 from services.elevenlabs import send_voice_reply
 
 router = Router()
@@ -365,7 +365,7 @@ async def listening_ready(m: Message):
     await m.answer(
         "Когда прослушаешь всё — жми <b>Прослушал(а)</b>.\n"
         "Или нажми цифру, чтобы увидеть текст этой реплики.",
-        reply_markup=listened_kb(len(turns_n) or 8),
+        reply_markup=listened_kb(len(turns_n) or TURN_COUNT),
         parse_mode="HTML",
     )
     update_session(uid, phase="await_listened")
@@ -753,7 +753,7 @@ async def listening_task3_pick(m: Message):
             "😕 Последовательность неверная.\n\n"
             "🦜 Рико: Прослушай ещё раз — нажми цифры реплик, "
             "потом «Прослушал(а)» и собери порядок заново.",
-            reply_markup=listened_kb(len((sess.get("content") or {}).get("turns_numbered") or []) or 8),
+            reply_markup=listened_kb(len((sess.get("content") or {}).get("turns_numbered") or []) or TURN_COUNT),
         )
         update_session(uid, phase="await_listened_retry")
         set_listening_hub(uid, "listening_play")
