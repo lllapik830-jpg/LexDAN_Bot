@@ -355,112 +355,315 @@ def _pack_matches_topic(pack: dict, topic: dict) -> bool:
     return False
 
 
-def _fallback_pack(level: str, topic: dict) -> dict:
-    """Запасной диалог строго по теме (не универсальный «паспорт»)."""
-    roles = topic.get("roles") or "two people"
-    title = topic.get("title_en") or topic.get("title_ru") or "Topic"
-    setting = topic.get("setting") or title
-    blob = _topic_blob(topic)
-    role_a = roles.split(" and ")[0].strip() if " and " in roles else "Alex"
-    role_b = roles.split(" and ")[-1].strip() if " and " in roles else "Sam"
+_MALE_NAMES = ("Ben", "Tom", "Jake", "Omar", "Leo", "Chris", "Noah", "Ryan")
+_FEMALE_NAMES = ("Mia", "Emma", "Sara", "Lily", "Nora", "Anna", "Zoe", "Helen")
 
-    # шаблоны по категориям
-    if any(k in blob for k in ("food", "еда", "cafe", "coffee", "restaurant", "snack", "apple", "bread")):
-        turns = [
-            ("Alex", "Hi! What would you like to eat today?"),
-            ("Sam", "I'd like an apple and a sandwich, please."),
-            ("Alex", "Sure. Do you want tea or water with that?"),
-            ("Sam", "Water, please. How much is it?"),
-            ("Alex", "It's five pounds altogether."),
-            ("Sam", "Okay. Can I also get a small cake?"),
-            ("Alex", "Of course. Here you are."),
-            ("Sam", "Thank you! This looks delicious."),
-        ]
-        t1 = [
-            {"question": "What does Sam order first?", "options": ["Soup", "An apple and a sandwich", "Only tea", "Pizza"], "correct": 1, "explain_wrong_ru": "Сэм заказал яблоко и сэндвич.", "options_ru": ["Суп", "Яблоко и сэндвич", "Только чай", "Пиццу"]},
-            {"question": "What drink does Sam choose?", "options": ["Tea", "Coffee", "Water", "Juice"], "correct": 2, "explain_wrong_ru": "Сэм попросил воду.", "options_ru": ["Чай", "Кофе", "Воду", "Сок"]},
-            {"question": "How much is the food?", "options": ["Two pounds", "Five pounds", "Ten pounds", "Free"], "correct": 1, "explain_wrong_ru": "Алекс сказал: пять фунтов.", "options_ru": ["2 фунта", "5 фунтов", "10 фунтов", "Бесплатно"]},
-        ]
-        t2 = [
-            {"statement": "Sam orders pizza.", "is_true": False, "explain_ru": "Сэм заказал яблоко, сэндвич и потом торт — не пиццу."},
-            {"statement": "Alex offers tea or water.", "is_true": True, "explain_ru": "Алекс спросил: чай или вода."},
-            {"statement": "Sam also asks for a small cake.", "is_true": True, "explain_ru": "В конце Сэм попросил ещё маленький торт."},
-        ]
-        events = ["Alex greets the guest", "Sam orders apple and sandwich", "Sam chooses water", "Sam asks for a cake"]
-    elif any(k in blob for k in ("cafe", "barista", "кофе")):
-        turns = [
-            ("Alex", "Good morning! What can I get you?"),
-            ("Sam", "A latte and a croissant, please."),
-            ("Alex", "Sure. For here or to go?"),
-            ("Sam", "To go, please."),
-            ("Alex", "Anything else? We have muffins too."),
-            ("Sam", "No, that's all. How much is it?"),
-            ("Alex", "Four pounds fifty."),
-            ("Sam", "Here you are. Thanks!"),
-        ]
-        t1 = [
-            {"question": "What drink does Sam order?", "options": ["Tea", "Latte", "Water", "Juice"], "correct": 1, "explain_wrong_ru": "Сэм заказал латте.", "options_ru": ["Чай", "Латте", "Воду", "Сок"]},
-            {"question": "Is the order for here or to go?", "options": ["For here", "To go", "Both", "Not said"], "correct": 1, "explain_wrong_ru": "Сэм сказал «to go».", "options_ru": ["Здесь", "С собой", "И то и то", "Не сказано"]},
-            {"question": "How much does it cost?", "options": ["£2", "£4.50", "£10", "Free"], "correct": 1, "explain_wrong_ru": "Цена — four pounds fifty.", "options_ru": ["2£", "4.50£", "10£", "Бесплатно"]},
-        ]
-        t2 = [
-            {"statement": "Sam wants a muffin.", "is_true": False, "explain_ru": "Сэм отказался от маффинов."},
-            {"statement": "Alex offers muffins.", "is_true": True, "explain_ru": "Бариста предложил маффины."},
-            {"statement": "Sam orders a croissant.", "is_true": True, "explain_ru": "Да, латте и круассан."},
-        ]
-        events = ["Alex greets customer", "Sam orders latte and croissant", "Sam chooses to go", "Sam pays"]
-    elif any(k in blob for k in ("police", "полиц", "wallet")):
-        turns = [
-            ("Alex", "Good afternoon. How can I help you?"),
-            ("Sam", "I lost my wallet this morning."),
-            ("Alex", "Where did you lose it?"),
-            ("Sam", "Near the bus stop on Green Street."),
-            ("Alex", "What colour is the wallet?"),
-            ("Sam", "It's black, with my ID card inside."),
-            ("Alex", "Alright. Please fill in this form."),
-            ("Sam", "Okay. Thank you, officer."),
-        ]
-        t1 = [
-            {"question": "What did Sam lose?", "options": ["Phone", "Keys", "Wallet", "Bag"], "correct": 2, "explain_wrong_ru": "Сэм потерял кошелёк.", "options_ru": ["Телефон", "Ключи", "Кошелёк", "Сумку"]},
-            {"question": "Where was it lost?", "options": ["In a shop", "Near a bus stop", "At home", "At school"], "correct": 1, "explain_wrong_ru": "Около автобусной остановки.", "options_ru": ["В магазине", "У остановки", "Дома", "В школе"]},
-            {"question": "What colour is the wallet?", "options": ["Red", "Blue", "Black", "Brown"], "correct": 2, "explain_wrong_ru": "Кошелёк чёрный.", "options_ru": ["Красный", "Синий", "Чёрный", "Коричневый"]},
-        ]
-        t2 = [
-            {"statement": "Sam lost a phone.", "is_true": False, "explain_ru": "Потерян кошелёк, не телефон."},
-            {"statement": "There is an ID card in the wallet.", "is_true": True, "explain_ru": "Сэм сказал, что внутри ID."},
-            {"statement": "The officer asks Sam to fill a form.", "is_true": True, "explain_ru": "Офицер попросил заполнить форму."},
-        ]
-        events = ["Officer offers help", "Sam reports lost wallet", "Sam describes colour", "Sam fills the form"]
+
+def _stable_pair_names(topic: dict) -> tuple[tuple[str, str], tuple[str, str]]:
+    """Стабильные имена героев по topic id (не имена ElevenLabs-голосов)."""
+    import hashlib
+
+    raw = str(topic.get("id") or topic.get("title_en") or "x").encode("utf-8")
+    seed = int(hashlib.md5(raw).hexdigest()[:8], 16)
+    n0 = _MALE_NAMES[seed % len(_MALE_NAMES)]
+    n1 = _FEMALE_NAMES[(seed // 7) % len(_FEMALE_NAMES)]
+    roles = str(topic.get("roles") or "")
+    role_a = roles.split(" and ")[0].strip() if " and " in roles else "speaker A"
+    blob = roles.lower()
+    if any(k in role_a.lower() for k in ("nurse", "mum", "mom", "sister", "waitress", "hostess")):
+        return (n1, "female"), (n0, "male")
+    if "mother" in blob or "woman" in role_a.lower():
+        return (n1, "female"), (n0, "male")
+    return (n0, "male"), (n1, "female")
+
+
+def _clip(text: str, n: int = 70) -> str:
+    t = " ".join(str(text or "").split())
+    if len(t) <= n:
+        return t
+    cut = t[: n - 1].rsplit(" ", 1)[0]
+    return (cut or t[: n - 1]).rstrip(".,;:") + "…"
+
+
+def _shuffle_mcq(correct: str, wrong: list[str], explain_ru: str, options_ru: list[str] | None = None) -> dict:
+    opts = [correct] + [w for w in wrong if w and w != correct][:3]
+    while len(opts) < 4:
+        opts.append(f"Not mentioned ({len(opts)})")
+    opts = opts[:4]
+    order = list(range(4))
+    random.shuffle(order)
+    shuffled = [opts[i] for i in order]
+    correct_i = shuffled.index(correct)
+    if options_ru and len(options_ru) >= 4:
+        ru_map = {opts[i]: options_ru[i] for i in range(4)}
+        shuffled_ru = [ru_map.get(x, x) for x in shuffled]
     else:
-        # универсальный шаблон из setting — без паспорта
-        turns = [
-            ("Alex", f"Hello! Let's talk about {title}."),
-            ("Sam", f"Sure. I'm here about {setting}."),
-            ("Alex", "Okay. What do you need today?"),
-            ("Sam", "I need a little help, please."),
-            ("Alex", "No problem. Can you tell me more?"),
-            ("Sam", "Yes. It is important for me."),
-            ("Alex", "Alright. We can do it step by step."),
-            ("Sam", "Great, thank you so much!"),
-        ]
-        t1 = [
-            {"question": f"What is the dialogue mainly about?", "options": [title, "Sports only", "A passport office", "Math homework"], "correct": 0, "explain_wrong_ru": f"Тема разговора — {title}.", "options_ru": [str(topic.get("title_ru") or title), "Только спорт", "Паспортный стол", "Домашка по математике"]},
-            {"question": "Does Sam ask for help?", "options": ["Yes", "No", "Maybe later", "Not clear"], "correct": 0, "explain_wrong_ru": "Сэм просит помощи.", "options_ru": ["Да", "Нет", "Позже", "Неясно"]},
-            {"question": "How does Alex want to proceed?", "options": ["Step by step", "Never", "Tomorrow only", "By email only"], "correct": 0, "explain_wrong_ru": "Алекс предлагает шаг за шагом.", "options_ru": ["Шаг за шагом", "Никогда", "Только завтра", "Только по почте"]},
-        ]
-        t2 = [
-            {"statement": "The speakers talk about a passport desk.", "is_true": False, "explain_ru": f"Диалог про «{title}», не про паспортный стол."},
-            {"statement": "Alex offers to help.", "is_true": True, "explain_ru": "Алекс готов помочь."},
-            {"statement": "Sam says thank you at the end.", "is_true": True, "explain_ru": "В конце Сэм благодарит."},
-        ]
-        events = ["Alex greets Sam", "Sam explains the need", "Alex offers step-by-step help", "Sam thanks Alex"]
+        shuffled_ru = list(shuffled)
+    return {
+        "question": "",  # заполняет вызывающий
+        "options": shuffled,
+        "options_ru": shuffled_ru,
+        "correct": correct_i,
+        "explain_wrong_ru": explain_ru,
+    }
 
+
+def _derive_tasks_from_turns(turns: list[dict], n0: str, n1: str, topic: dict) -> tuple[list, list, list]:
+    """
+    Вопросы строго из ЭТОГО диалога и с ЭТИМИ именами.
+    Не зависят от имени ElevenLabs-голоса.
+    """
+    title = topic.get("title_en") or topic.get("title_ru") or "the topic"
+    title_ru = topic.get("title_ru") or title
+    lines = [
+        {"speaker": str(t.get("speaker") or n0), "text": str(t.get("text") or "").strip()}
+        for t in turns
+        if isinstance(t, dict) and str(t.get("text") or "").strip()
+    ]
+    while len(lines) < 4:
+        lines.append({"speaker": n0 if len(lines) % 2 == 0 else n1, "text": f"Let's continue with {title}."})
+
+    meat = [t for t in lines if len(t["text"].split()) >= 5] or lines
+    early = meat[0]
+    mid = meat[len(meat) // 2]
+    late = meat[-1]
+
+    fake_lines = [
+        "I need a new passport at desk three.",
+        "Let's finish the math homework now.",
+        "The football match starts at midnight.",
+        "Please book a flight to the Moon.",
+        "My password is one two three four.",
+    ]
+    dialogue_blob = " ".join(t["text"].lower() for t in lines)
+
+    def _fake() -> str:
+        for f in fake_lines:
+            if f.lower() not in dialogue_blob:
+                return f
+        return "They only talk about space travel."
+
+    # --- task1 MCQ ---
+    q1 = _shuffle_mcq(
+        early["speaker"],
+        [x for x in (n0, n1, "Alex", "Sam", "Teacher", "Driver") if x != early["speaker"]],
+        f"Эту фразу говорит {early['speaker']}.",
+        None,
+    )
+    q1["question"] = f'Who says: "{_clip(early["text"], 64)}"?'
+    q1["options_ru"] = list(q1["options"])
+
+    real_mid = _clip(mid["text"], 56)
+    q2 = _shuffle_mcq(
+        real_mid,
+        [_clip(_fake(), 56), _clip(fake_lines[1], 56), _clip(fake_lines[2], 56)],
+        f"В диалоге звучит: «{real_mid}».",
+        None,
+    )
+    q2["question"] = f'Which line is from the dialogue about «{title}»?'
+    q2["options_ru"] = list(q2["options"])
+
+    q3 = _shuffle_mcq(
+        late["speaker"],
+        [x for x in (n0, n1, "Officer", "Pilot", "Chef") if x != late["speaker"]],
+        f"Ближе к концу говорит {late['speaker']}.",
+        None,
+    )
+    q3["question"] = f'Near the end, who says: "{_clip(late["text"], 64)}"?'
+    q3["options_ru"] = list(q3["options"])
+
+    task1 = [q1, q2, q3]
+
+    # --- task2 True/False ---
+    is_passport = any(k in _topic_blob(topic) for k in ("passport", "immigration", "миграц"))
+    task2 = [
+        {
+            "statement": f'{early["speaker"]} says: "{_clip(early["text"], 50)}"',
+            "is_true": True,
+            "explain_ru": f"Да, {early['speaker']} произносит эту реплику.",
+        },
+        {
+            "statement": f"The dialogue is about «{title}».",
+            "is_true": True,
+            "explain_ru": f"Тема диалога — «{title_ru}».",
+        },
+        {
+            "statement": (
+                f"{n0} and {n1} only discuss a passport desk."
+                if not is_passport
+                else f"{n0} and {n1} only discuss football scores."
+            ),
+            "is_true": False,
+            "explain_ru": f"Нет, разговор про «{title_ru}», не про это.",
+        },
+    ]
+
+    # --- task3 chronology ---
+    chunks = []
+    for i in range(0, min(8, len(lines)), 2):
+        a = lines[i]
+        chunks.append(f"{a['speaker']}: {_clip(a['text'], 40)}")
+    while len(chunks) < 4:
+        t = lines[len(chunks) % len(lines)]
+        chunks.append(f"{t['speaker']}: {_clip(t['text'], 40)}")
+    events = chunks[:4]
+
+    return task1, task2, events
+
+
+def _fallback_dialogue_turns(topic: dict, n0: str, n1: str) -> list[tuple[str, str]]:
+    """Уникальный запасной диалог под тему (имена = n0/n1)."""
+    title = topic.get("title_en") or topic.get("title_ru") or "this topic"
+    setting = topic.get("setting") or title
+    tid = str(topic.get("id") or "")
+
+    # явные id — самые частые жалобы
+    by_id = {
+        "hello": [
+            (n0, "Hi! What's your name?"),
+            (n1, f"Hello! My name is {n1}. Nice to meet you."),
+            (n0, f"Nice to meet you, {n1}. I'm {n0}."),
+            (n1, "Are you a new student here?"),
+            (n0, "Yes. This is my first day."),
+            (n1, "Welcome! Do you like the school?"),
+            (n0, "Yes, I like it. It's friendly."),
+            (n1, "Great. See you in class!"),
+        ],
+        "cafe_simple": [
+            (n0, "Good morning! What can I get you?"),
+            (n1, "A latte and a croissant, please."),
+            (n0, "For here or to go?"),
+            (n1, "To go, please."),
+            (n0, "Anything else? We have muffins."),
+            (n1, "No, that's all. How much is it?"),
+            (n0, "Four pounds fifty."),
+            (n1, "Here you are. Thanks!"),
+        ],
+        "food_words": [
+            (n0, "Hi! What would you like to eat?"),
+            (n1, "An apple and a sandwich, please."),
+            (n0, "Tea or water with that?"),
+            (n1, "Water, please. How much is it?"),
+            (n0, "Five pounds altogether."),
+            (n1, "Can I also get bread?"),
+            (n0, "Sure. Here you are."),
+            (n1, "Thank you! It looks good."),
+        ],
+        "police": [
+            (n0, "Good afternoon. How can I help you?"),
+            (n1, "I lost my wallet this morning."),
+            (n0, "Where did you lose it?"),
+            (n1, "Near the bus stop on Green Street."),
+            (n0, "What colour is the wallet?"),
+            (n1, "It's black, with my ID card inside."),
+            (n0, "Please fill in this form."),
+            (n1, "Okay. Thank you, officer."),
+        ],
+        "numbers": [
+            (n0, "Excuse me. What is your phone number?"),
+            (n1, "It's zero seven seven zero zero one two."),
+            (n0, "And how old are you?"),
+            (n1, "I am twenty years old."),
+            (n0, "Okay. I will write it down."),
+            (n1, "Do you need my name too?"),
+            (n0, f"Yes, please. Your name is {n1}, right?"),
+            (n1, "Yes, that's right. Thank you."),
+        ],
+        "family": [
+            (n0, "Who is in your family?"),
+            (n1, "My mum, my dad, and my sister."),
+            (n0, "How old is your sister?"),
+            (n1, "She is ten."),
+            (n0, "Does your dad work?"),
+            (n1, "Yes, he works in a shop."),
+            (n0, "And your mum?"),
+            (n1, "My mum is a teacher."),
+        ],
+        "school": [
+            (n0, "What class do you have now?"),
+            (n1, "English, then a break."),
+            (n0, "Do you have homework today?"),
+            (n1, "Yes, ten new words."),
+            (n0, "Want to study together after school?"),
+            (n1, "Good idea. At the library?"),
+            (n0, "Yes. See you at four."),
+            (n1, "Okay, see you!"),
+        ],
+        "bus": [
+            (n0, "One ticket to the centre, please."),
+            (n1, "That's two pounds. Next stop is Market Street."),
+            (n0, "Where do I get off for the museum?"),
+            (n1, "Get off at Park Stop."),
+            (n0, "How many stops is that?"),
+            (n1, "Three stops from here."),
+            (n0, "Thank you, driver."),
+            (n1, "You're welcome. Hold the rail."),
+        ],
+        "doctor": [
+            (n0, "What seems to be the problem?"),
+            (n1, "I have a sore throat and a fever."),
+            (n0, "How long have you felt like this?"),
+            (n1, "Since yesterday morning."),
+            (n0, "I'll give you medicine and rest advice."),
+            (n1, "Should I stay home from work?"),
+            (n0, "Yes, rest for two days."),
+            (n1, "Thank you, doctor."),
+        ],
+        "hotel": [
+            (n0, "Good evening. Do you have a reservation?"),
+            (n1, "Yes, a room for two nights."),
+            (n0, "Breakfast is from seven to ten."),
+            (n1, "Is the Wi-Fi free?"),
+            (n0, "Yes. Your room is 214."),
+            (n1, "Where is the lift?"),
+            (n0, "On the left, past reception."),
+            (n1, "Perfect, thank you."),
+        ],
+        "job_interview": [
+            (n0, "Tell me about your experience."),
+            (n1, "I worked in sales for three years."),
+            (n0, "Can you start next Monday?"),
+            (n1, "Yes, that works for me."),
+            (n0, "The hours are nine to five."),
+            (n1, "Do you offer remote days?"),
+            (n0, "One remote day per week."),
+            (n1, "Great. I'm interested in the role."),
+        ],
+    }
+    if tid in by_id:
+        return by_id[tid]
+
+    # Не шарим шаблоны между темами по ключевым словам (из‑за этого путались имена/сюжеты).
+    # Для остальных id — уникальный диалог из title/setting.
+    roles = str(topic.get("roles") or "two people")
+    detail = setting if setting != title else roles
+    return [
+        (n0, f"Hello! Let's focus on {title} today."),
+        (n1, f"Sure. I came because of {detail}."),
+        (n0, f"What do you need most regarding {title}?"),
+        (n1, f"Clear steps and a simple plan for {detail}."),
+        (n0, "Alright. I can explain it step by step."),
+        (n1, "Can we start with the first step now?"),
+        (n0, f"Yes. First we clarify {detail}."),
+        (n1, f"Great. Thanks for helping with {title}!"),
+    ]
+
+
+def _fallback_pack(level: str, topic: dict) -> dict:
+    """Запасной диалог строго по теме; задания строятся из реплик отдельно."""
+    roles = topic.get("roles") or "two people"
+    role_a = roles.split(" and ")[0].strip() if " and " in roles else "speaker A"
+    role_b = roles.split(" and ")[-1].strip() if " and " in roles else "speaker B"
+    (n0, g0), (n1, g1) = _stable_pair_names(topic)
+    pairs = _fallback_dialogue_turns(topic, n0, n1)
+    turns = [{"speaker": a, "text": b} for a, b in pairs]
+    t1, t2, events = _derive_tasks_from_turns(turns, n0, n1, topic)
     return {
         "speakers": [
-            {"name": "Alex", "gender": "male", "role": role_a},
-            {"name": "Sam", "gender": "female", "role": role_b},
+            {"name": n0, "gender": g0, "role": role_a},
+            {"name": n1, "gender": g1, "role": role_b},
         ],
-        "turns": [{"speaker": a, "text": b} for a, b in turns],
+        "turns": turns,
         "task1": t1,
         "task2": t2,
         "task3_events": events,
@@ -484,17 +687,16 @@ def generate_listening_pack(level: str, topic: dict) -> dict:
                 "content": (
                     "Create CEFR listening practice JSON for Russian learners. ONLY JSON.\n"
                     "Keys: speakers, turns, task1, task2, task3_events.\n"
-                    "speakers: exactly 2 {name, gender:male|female, role}. Names fit the roles.\n"
+                    "speakers: exactly 2 {name, gender:male|female, role}. "
+                    "Use short natural first names (NOT Alex/Sam every time). "
+                    "Names in turns MUST match speakers[].name exactly.\n"
                     f"CRITICAL TOPIC LOCK: The WHOLE dialogue MUST be about «{title_en}» / «{title_ru}».\n"
                     f"Setting: {setting}. Roles: {roles}.\n"
                     f"Use these topic words naturally: {must}.\n"
-                    "FORBIDDEN: invent a different situation (e.g. passport desk, documents, immigration) "
+                    "FORBIDDEN: invent a different situation (e.g. passport desk) "
                     "unless the topic itself is about that.\n"
-                    f"turns: exactly 8 {{speaker,text}}. {pace}\n"
-                    "task1: 3 MCQs {question, options[4], correct(0-3), explain_wrong_ru, options_ru[4]} "
-                    "ONLY about facts from THIS dialogue.\n"
-                    "task2: 3 TRUE/FALSE {statement, is_true, explain_ru} about DIFFERENT facts than task1.\n"
-                    "task3_events: 4 short English event phrases in correct chronology from THIS dialogue.\n"
+                    f"turns: exactly 8 {{speaker,text}}. speaker = one of the two names. {pace}\n"
+                    "task1/task2/task3_events: include them, but they will be rebuilt from the dialogue.\n"
                     f"CEFR level: {level}."
                 ),
             },
@@ -520,7 +722,15 @@ def generate_listening_pack(level: str, topic: dict) -> dict:
         )
         pack = _normalize_pack(fallback, fallback)
 
+    # Вопросы ВСЕГДА из финального диалога + имена героев (не голосов TTS)
     sp = pack["speakers"]
+    n0 = sp[0]["name"]
+    n1 = sp[1]["name"]
+    t1, t2, ev = _derive_tasks_from_turns(pack["turns"], n0, n1, topic)
+    pack["task1"] = t1
+    pack["task2"] = t2
+    pack["task3_events"] = ev
+
     g0 = (sp[0].get("gender") or "male").lower()
     g1 = (sp[1].get("gender") or "female").lower()
     if g0 not in {"male", "female"}:
@@ -528,7 +738,7 @@ def generate_listening_pack(level: str, topic: dict) -> dict:
     if g1 not in {"male", "female"}:
         g1 = "female"
     v0, v1 = _pick_voices(g0, g1, level=level, topic=topic, roles=roles, setting=setting)
-    voice_map = {sp[0]["name"]: v0, sp[1]["name"]: v1}
+    voice_map = {n0: v0, n1: v1}
     pack["voice_map"] = {
         name: {"key": v["key"], "voice_id": v["voice_id"], "voice_name": v["name"]}
         for name, v in voice_map.items()
@@ -536,13 +746,14 @@ def generate_listening_pack(level: str, topic: dict) -> dict:
     numbered = []
     for i, t in enumerate(pack["turns"], start=1):
         vinfo = pack["voice_map"].get(t["speaker"]) or {}
-        voice_name = vinfo.get("voice_name") or t["speaker"]
+        speaker = t["speaker"]
         numbered.append(
             {
                 "n": i,
-                "speaker": t["speaker"],
+                "speaker": speaker,
                 "text": t["text"],
-                "label": f"{voice_name} {i}",
+                # Подпись = имя героя диалога (как в вопросах), НЕ имя голоса ElevenLabs
+                "label": f"{speaker} {i}",
                 "voice_id": vinfo.get("voice_id"),
             }
         )
@@ -570,24 +781,28 @@ def _normalize_pack(data: dict, fallback: dict) -> dict:
         return fallback
     speakers = data.get("speakers")
     turns = data.get("turns")
-    task1 = data.get("task1")
-    task2 = data.get("task2")
-    events = data.get("task3_events")
     if not (isinstance(speakers, list) and len(speakers) >= 2):
         return fallback
     if not (isinstance(turns, list) and len(turns) >= 6):
         return fallback
-    sp0 = speakers[0] if isinstance(speakers[0], dict) else {"name": "David", "gender": "male"}
-    sp1 = speakers[1] if isinstance(speakers[1], dict) else {"name": "Emily", "gender": "female"}
-    n0 = str(sp0.get("name") or "David").strip() or "David"
-    n1 = str(sp1.get("name") or "Emily").strip() or "Emily"
+    sp0 = speakers[0] if isinstance(speakers[0], dict) else {"name": "Ben", "gender": "male"}
+    sp1 = speakers[1] if isinstance(speakers[1], dict) else {"name": "Mia", "gender": "female"}
+    n0 = str(sp0.get("name") or "Ben").strip() or "Ben"
+    n1 = str(sp1.get("name") or "Mia").strip() or "Mia"
+    if n0.lower() == n1.lower():
+        n1 = "Mia" if n0.lower() != "mia" else "Emma"
     clean_turns = []
     for t in turns[:8]:
         if not isinstance(t, dict):
             continue
         sp = str(t.get("speaker") or n0).strip()
         if sp not in {n0, n1}:
-            sp = n0 if len(clean_turns) % 2 == 0 else n1
+            # частый баг GPT: имя голоса / чужое имя
+            low = sp.lower()
+            if low in {n0.lower(), n1.lower()}:
+                sp = n0 if low == n0.lower() else n1
+            else:
+                sp = n0 if len(clean_turns) % 2 == 0 else n1
         text = str(t.get("text") or "").strip()
         if text:
             clean_turns.append({"speaker": sp, "text": text})
@@ -597,53 +812,11 @@ def _normalize_pack(data: dict, fallback: dict) -> dict:
         )
     clean_turns = clean_turns[:8]
 
-    def _mcq(items, fb):
-        out = []
-        src = items if isinstance(items, list) else []
-        for i in range(3):
-            raw = src[i] if i < len(src) and isinstance(src[i], dict) else fb[i]
-            opts = list(raw.get("options") or fb[i]["options"])[:4]
-            while len(opts) < 4:
-                opts.append(f"Option {len(opts)+1}")
-            opts_ru = list(raw.get("options_ru") or fb[i].get("options_ru") or opts)[:4]
-            while len(opts_ru) < 4:
-                opts_ru.append(opts[len(opts_ru)])
-            try:
-                correct = int(raw.get("correct", fb[i]["correct"]))
-            except (TypeError, ValueError):
-                correct = fb[i]["correct"]
-            correct = max(0, min(3, correct))
-            out.append(
-                {
-                    "question": str(raw.get("question") or fb[i]["question"]).strip(),
-                    "options": [str(o).strip() for o in opts],
-                    "options_ru": [str(o).strip() for o in opts_ru],
-                    "correct": correct,
-                    "explain_wrong_ru": str(
-                        raw.get("explain_wrong_ru") or fb[i].get("explain_wrong_ru") or ""
-                    ).strip(),
-                }
-            )
-        return out
-
-    def _tf(items, fb):
-        out = []
-        src = items if isinstance(items, list) else []
-        for i in range(3):
-            raw = src[i] if i < len(src) and isinstance(src[i], dict) else fb[i]
-            out.append(
-                {
-                    "statement": str(raw.get("statement") or fb[i]["statement"]).strip(),
-                    "is_true": bool(raw.get("is_true", fb[i]["is_true"])),
-                    "explain_ru": str(raw.get("explain_ru") or fb[i]["explain_ru"]).strip(),
-                }
-            )
-        return out
-
-    ev = [str(x).strip() for x in (events or []) if str(x).strip()]
-    if len(ev) < 4:
-        ev = list(fallback["task3_events"])
-    ev = ev[:4]
+    # Задания здесь временные — generate_listening_pack пересоберёт из turns
+    t1, t2, ev = _derive_tasks_from_turns(clean_turns, n0, n1, {"title_en": "Topic", "title_ru": "Тема"})
+    fb1 = fallback.get("task1") or t1
+    fb2 = fallback.get("task2") or t2
+    fbev = fallback.get("task3_events") or ev
 
     return {
         "speakers": [
@@ -651,7 +824,7 @@ def _normalize_pack(data: dict, fallback: dict) -> dict:
             {"name": n1, "gender": str(sp1.get("gender") or "female"), "role": str(sp1.get("role") or "")},
         ],
         "turns": clean_turns,
-        "task1": _mcq(task1, fallback["task1"]),
-        "task2": _tf(task2, fallback["task2"]),
-        "task3_events": ev,
+        "task1": fb1,
+        "task2": fb2,
+        "task3_events": list(fbev)[:4] if fbev else ev,
     }
