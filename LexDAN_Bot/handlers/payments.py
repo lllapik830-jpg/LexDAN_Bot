@@ -1,5 +1,7 @@
 """Оплата тарифов через ЮKassa + автопродление."""
 
+from __future__ import annotations
+
 import logging
 
 from aiogram import Router, F
@@ -92,7 +94,7 @@ async def _start_checkout(c: CallbackQuery, plan: str) -> None:
             f"{discount_blurb(user)}"
             "После оплаты подписка включится автоматически "
             "(обычно сразу, иногда до пары минут).\n"
-            "Карта сохранится для <b>автопродления</b> — отменить можно кнопкой "
+            "Карта сохранится для <b>автопродления</b> — отменить списания можно кнопкой "
             "в профиле / подписке.\n\n"
             "Нажми «Оплатить» 👇"
         )
@@ -175,9 +177,117 @@ async def tariff_upgrade(c: CallbackQuery):
 
 @router.callback_query(F.data == "tariff:cancel_auto")
 async def tariff_cancel_auto(c: CallbackQuery):
+    users = load_users()
+    user = get_user(users, str(c.from_user.id))
+    ensure_growth(user)
+    if not (user.get("sub_auto") and user.get("yookassa_payment_method_id")):
+        await c.answer("Автосписания уже выключены", show_alert=True)
+        return
+    await c.answer()
+    await c.message.answer(
+        "🦜 <b>Отмена автосписаний</b>\n\n"
+        "Если вы отмените списания, следующая подписка "
+        "<b>не будет активирована автоматически</b>.\n\n"
+        "После окончания текущей подписки вы автоматически перейдёте "
+        "на <b>бесплатный тариф</b> с дневными лимитами и "
+        "<b>ограниченными призами</b> за серию дней.\n\n"
+        "Текущий оплаченный период продолжит действовать до конца срока.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="⏹ Отменить подписку",
+                        callback_data="tariff:cancel_ask",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="⬅️ Оставить как есть",
+                        callback_data="tariff:cancel_abort",
+                    )
+                ],
+            ]
+        ),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "tariff:cancel_abort")
+async def tariff_cancel_abort(c: CallbackQuery):
+    await c.answer("Ок, подписка без изменений")
+    try:
+        await c.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+def _sad_rico_path() -> str | None:
+    from pathlib import Path
+
+    here = Path(__file__).resolve().parent.parent
+    for name in ("rico_sad_cancel.png", "stickers/sticker_06_sad.png"):
+        p = here / "assets" / name
+        if p.is_file():
+            return str(p)
+    return None
+
+
+@router.callback_query(F.data == "tariff:cancel_ask")
+async def tariff_cancel_ask(c: CallbackQuery):
+    from aiogram.types import FSInputFile
+
+    users = load_users()
+    user = get_user(users, str(c.from_user.id))
+    ensure_growth(user)
+    if not (user.get("sub_auto") and user.get("yookassa_payment_method_id")):
+        await c.answer("Автосписания уже выключены", show_alert=True)
+        return
+    await c.answer()
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Уверен",
+                    callback_data="tariff:cancel_confirm",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Не отменять",
+                    callback_data="tariff:cancel_abort",
+                )
+            ],
+        ]
+    )
+    photo = _sad_rico_path()
+    caption = (
+        "🦜 <b>Рико:</b> Вы уверены?\n\n"
+        "Отменить это действие потом <b>нельзя</b> будет — "
+        "автосписания выключатся.\n\n"
+        "Текущая подписка до конца оплаченного периода останется."
+    )
+    if photo:
+        await c.message.answer_photo(
+            photo=FSInputFile(photo),
+            caption=caption,
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
+    else:
+        await c.message.answer(caption, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "tariff:cancel_confirm")
+async def tariff_cancel_confirm(c: CallbackQuery):
     ok = disable_autorenew(str(c.from_user.id))
-    await c.answer("Автопродление выключено" if ok else "Уже выключено")
+    await c.answer("Автосписания выключены" if ok else "Уже выключено")
+    try:
+        await c.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
     if ok:
         await c.message.answer(
-            "Автопродление отключено. Текущая подписка действует до конца оплаченного периода."
+            "✅ Автосписания отключены.\n\n"
+            "Текущая подписка действует до конца оплаченного периода. "
+            "Дальше — бесплатный тариф с лимитами."
         )

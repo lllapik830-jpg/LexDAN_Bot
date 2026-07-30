@@ -100,7 +100,7 @@ async def subscription_info(m: Message):
                     inline_keyboard=[
                         [
                             InlineKeyboardButton(
-                                text="⏹ Отменить автопродление",
+                                text="⏹ Отменить списания",
                                 callback_data="tariff:cancel_auto",
                             )
                         ]
@@ -114,7 +114,7 @@ async def subscription_info(m: Message):
                 inline_keyboard=[
                     [
                         InlineKeyboardButton(
-                            text="⏹ Отменить автопродление",
+                            text="⏹ Отменить списания",
                             callback_data="tariff:cancel_auto",
                         )
                     ]

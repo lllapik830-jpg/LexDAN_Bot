@@ -244,7 +244,8 @@ def extend_premium(user: dict, days: int) -> None:
 
 
 STREAK_SAFE_MILESTONES = {
-    7: 1,  # один сейф на 7-й день; остальное — в rewards.py
+    30: 1,
+    70: 1,
 }
 
 BTN_RESTORE_STREAK = "🛡️ Восстановить серию"
@@ -286,7 +287,7 @@ def restore_streak(user: dict) -> tuple[bool, str]:
         if int(user.get("streak_safes") or 0) <= 0:
             return False, (
                 "🦜 Сейфов нет 😢\n"
-                "Их дают за серию: 7 / 14 / 30 / 50 / 100 дней подряд."
+                "Их дают за серию: <b>30</b> и <b>70</b> дней подряд."
             )
         return False, "🦜 Восстановить серию сейчас нельзя."
 

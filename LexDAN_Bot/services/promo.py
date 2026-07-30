@@ -85,7 +85,7 @@ def apply_promo(user: dict, code: str) -> tuple[bool, str]:
     used.append(key)
     user["used_promos"] = used
     listen_line = (
-        "\n🎧 Открыт ранний доступ к <b>Listening</b> на время пробного периода."
+        "\n🎧 Раздел <b>Listening</b> доступен на время пробного периода."
         if meta.get("listening")
         else ""
     )

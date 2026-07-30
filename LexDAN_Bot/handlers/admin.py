@@ -55,6 +55,7 @@ HELP = (
     "/grant_full <code>id</code> [дней]\n"
     "/grant_secret <code>id</code> [week|voice|both]\n"
     "/broadcast_fix — рассылка: фикс-апдейт + картинка\n"
+    "/broadcast_features — Listening / сейфы 30·70 / отмена списаний\n"
     "/revoke <code>id</code>\n"
     "/unlock_levels — открыть себе все уровни A0–C2\n"
     "/event — статус ивента + баллы по Grammar/Vocab/Listening\n"
@@ -672,6 +673,29 @@ async def admin_broadcast_fix(m: Message):
         return
     await m.answer("📣 Рассылаю обновление с картинкой…")
     result = await broadcast_fix_update(m.bot)
+    if not result.get("ok"):
+        await m.answer(f"❌ Не вышло: {result.get('error')}")
+        return
+    await m.answer(
+        f"✅ Готово.\n"
+        f"Отправлено: <b>{result.get('sent', 0)}</b>\n"
+        f"Ошибок: <b>{result.get('fail', 0)}</b>\n"
+        f"Помечено blocked: <b>{result.get('blocked', 0)}</b>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("broadcast_features"))
+async def admin_broadcast_features(m: Message):
+    if not _is_admin(m):
+        return
+    from services.broadcast import broadcast_features_update, features_update_image_path
+
+    if not features_update_image_path():
+        await m.answer("❌ Картинка для рассылки не найдена на сервере.")
+        return
+    await m.answer("📣 Рассылаю новости (Listening / сейфы / подписка)…")
+    result = await broadcast_features_update(m.bot)
     if not result.get("ok"):
         await m.answer(f"❌ Не вышло: {result.get('error')}")
         return

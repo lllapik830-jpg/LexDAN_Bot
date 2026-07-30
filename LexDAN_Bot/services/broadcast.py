@@ -15,6 +15,17 @@ FIX_UPDATE_CAPTION = (
     "👉 https://t.me/LexDan_Rico"
 )
 
+FEATURES_UPDATE_CAPTION = (
+    "🦜 <b>Рико с новостями</b>\n\n"
+    "🎧 <b>Listening</b> доступен полностью — это уже не ранний доступ.\n\n"
+    "🛡️ Стрик-сейфы теперь только за <b>30</b> и <b>70</b> дней серии.\n\n"
+    "💎 Если у вас активная подписка — в профиле → «Подписка» "
+    "появилась кнопка <b>«Отменить списания»</b>: "
+    "можно спокойно отключить автопродление, текущий период доработает до конца.\n\n"
+    "Канал обновлений:\n"
+    "👉 https://t.me/LexDan_Rico"
+)
+
 
 def fix_update_image_path() -> str | None:
     here = Path(__file__).resolve().parent.parent
@@ -28,15 +39,29 @@ def fix_update_image_path() -> str | None:
     return None
 
 
-async def broadcast_fix_update(bot) -> dict:
-    """Фото + текст про фикс всем user_id из БД (кроме служебных ключей)."""
+def features_update_image_path() -> str | None:
+    here = Path(__file__).resolve().parent.parent
+    candidates = [
+        here / "assets" / "rico_sad_cancel.png",
+        here / "assets" / "lexdan_fix_update.png",
+        here / "assets" / "posts" / "post-lexdan-rico-hello.png",
+    ]
+    for p in candidates:
+        if p.is_file():
+            return str(p)
+    return None
+
+
+async def _broadcast_photo(
+    bot,
+    *,
+    photo_path: str,
+    caption: str,
+    log_name: str,
+) -> dict:
     from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
     from services.database import load_users, save_users
-
-    photo_path = fix_update_image_path()
-    if not photo_path:
-        return {"ok": False, "error": "image_missing", "sent": 0, "fail": 0}
 
     users = load_users()
     kb = InlineKeyboardMarkup(
@@ -68,7 +93,7 @@ async def broadcast_fix_update(bot) -> dict:
             await bot.send_photo(
                 chat_id,
                 photo=FSInputFile(photo_path),
-                caption=FIX_UPDATE_CAPTION,
+                caption=caption,
                 parse_mode="HTML",
                 reply_markup=kb,
             )
@@ -79,11 +104,37 @@ async def broadcast_fix_update(bot) -> dict:
             if "blocked" in err or "deactivated" in err or "forbidden" in err:
                 payload["tg_blocked"] = True
                 blocked_ids.append(str(uid))
-            log.warning("broadcast_fix fail uid=%s: %s", uid, e)
+            log.warning("%s fail uid=%s: %s", log_name, uid, e)
         await asyncio.sleep(0.05)
 
     if blocked_ids:
         save_users(users, only=blocked_ids)
 
-    log.info("broadcast_fix_update sent=%s fail=%s blocked=%s", sent, fail, len(blocked_ids))
+    log.info("%s sent=%s fail=%s blocked=%s", log_name, sent, fail, len(blocked_ids))
     return {"ok": True, "sent": sent, "fail": fail, "blocked": len(blocked_ids)}
+
+
+async def broadcast_fix_update(bot) -> dict:
+    """Фото + текст про фикс всем user_id из БД (кроме служебных ключей)."""
+    photo_path = fix_update_image_path()
+    if not photo_path:
+        return {"ok": False, "error": "image_missing", "sent": 0, "fail": 0}
+    return await _broadcast_photo(
+        bot,
+        photo_path=photo_path,
+        caption=FIX_UPDATE_CAPTION,
+        log_name="broadcast_fix",
+    )
+
+
+async def broadcast_features_update(bot) -> dict:
+    """Listening / сейфы 30+70 / отмена списаний."""
+    photo_path = features_update_image_path()
+    if not photo_path:
+        return {"ok": False, "error": "image_missing", "sent": 0, "fail": 0}
+    return await _broadcast_photo(
+        bot,
+        photo_path=photo_path,
+        caption=FEATURES_UPDATE_CAPTION,
+        log_name="broadcast_features",
+    )

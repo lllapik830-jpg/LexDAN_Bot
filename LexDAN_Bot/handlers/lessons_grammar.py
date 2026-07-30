@@ -178,7 +178,7 @@ async def open_level_hub(m: Message, level: str):
     set_level_hub(str(m.from_user.id), level)
     from config import MANAGER_ID
 
-    extra = "\n🎧 <b>Listening</b> уже доступен."
+    extra = "\n🎧 <b>Listening</b> доступен."
     if m.from_user and m.from_user.id == MANAGER_ID:
         extra += "\n📖 <b>Reading</b> — тестовый доступ."
     else:

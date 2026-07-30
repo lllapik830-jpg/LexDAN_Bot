@@ -150,7 +150,7 @@ def streak_reward_text(plan: str, days: int) -> str:
         },
         "full": {
             7: "🔐 Секреты Рико: <b>Разбор недели</b> + <b>Голос дня</b> (акценты)",
-            14: "🛡️ <b>×2</b> стрик-сейфа + ещё один <b>Голос дня</b> + билет в реф-розыгрыш",
+            14: "🗣 ещё один <b>Голос дня</b> + билет в реф-розыгрыш",
             30: "Билет в розыгрыш полугодовой подписки (среди 30-дневных на 799)",
             50: "Ещё один <b>Голос дня</b> с разными акцентами",
             100: "Билет в розыгрыш <b>15 000₽</b> (среди 100-дневных на 799)",
@@ -180,6 +180,7 @@ def format_streak_rewards_message(user: dict) -> str:
             mark, status = "▫️", f" — ещё {d - streak} дн."
         lines.append(f"{mark} <b>{d} дн.</b>{status}\n{streak_reward_text(plan, d)}\n")
     lines.append(
+        "🛡️ Стрик-сейфы выдают только за <b>30</b> и <b>70</b> дней серии.\n"
         "Пропуск дня можно закрыть сейфом (кнопка «Восстановить серию»), "
         "если сейф есть."
     )
@@ -274,15 +275,13 @@ def _grant_streak_reward(user: dict, plan: str, days: int) -> str:
             "Кнопка <b>🔐 Секрет Рико</b> — в главном меню!"
         )
     if days == 14:
-        from services.growth import grant_safe
         from services.secret_missions import unlock_mission, MISSION_VOICE
 
-        grant_safe(user, 2)
         unlock_mission(user, MISSION_VOICE)
         user["referral_lottery_tickets"] = int(user.get("referral_lottery_tickets") or 0) + 1
         return (
-            "🔥 14 дней на 799! Вместо «лишних дней» подписки:\n"
-            "🛡️ <b>+2</b> стрик-сейфа · 🗣 ещё один <b>Голос дня</b> · "
+            "🔥 14 дней на 799!\n"
+            "🗣 ещё один <b>Голос дня</b> · "
             "🎟 <b>+1</b> билет в реф-розыгрыш.\n"
             "Секрет — в меню <b>🔐 Секрет Рико</b>."
         )
