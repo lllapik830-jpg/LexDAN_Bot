@@ -42,9 +42,9 @@ def fix_update_image_path() -> str | None:
 def features_update_image_path() -> str | None:
     here = Path(__file__).resolve().parent.parent
     candidates = [
-        here / "assets" / "rico_sad_cancel.png",
         here / "assets" / "lexdan_fix_update.png",
         here / "assets" / "posts" / "post-lexdan-rico-hello.png",
+        here / "assets" / "rico_sad_cancel.png",
     ]
     for p in candidates:
         if p.is_file():
