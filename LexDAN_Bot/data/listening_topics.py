@@ -5,16 +5,16 @@ from __future__ import annotations
 # roles: краткое описание пары говорящих для промпта
 LISTENING_TOPICS: dict[str, list[dict]] = {
     "A0": [
-        {"id": "hello", "title_ru": "Знакомство", "title_en": "Meeting someone", "roles": "two classmates meet", "setting": "saying hello, names, nice to meet you"},
-        {"id": "numbers", "title_ru": "Числа и телефон", "title_en": "Numbers", "roles": "shop assistant and customer", "setting": "phone number and age, very simple"},
-        {"id": "family", "title_ru": "Семья", "title_en": "Family", "roles": "child and parent", "setting": "mum, dad, brother, sister"},
-        {"id": "colors", "title_ru": "Цвета", "title_en": "Colors", "roles": "seller and buyer", "setting": "choosing a bag or T-shirt by color"},
-        {"id": "food_words", "title_ru": "Еда", "title_en": "Food words", "roles": "waiter and guest", "setting": "apple, water, bread, tea"},
-        {"id": "classroom", "title_ru": "В классе", "title_en": "In class", "roles": "teacher and student", "setting": "sit down, open the book, pen"},
-        {"id": "pets", "title_ru": "Питомцы", "title_en": "Pets", "roles": "two neighbours", "setting": "cat or dog, yes/no questions"},
-        {"id": "days", "title_ru": "Дни недели", "title_en": "Days", "roles": "two colleagues", "setting": "today, tomorrow, Monday"},
-        {"id": "weather_easy", "title_ru": "Погода просто", "title_en": "Simple weather", "roles": "two strangers at a bus stop", "setting": "sunny, rainy, cold, hot"},
-        {"id": "home", "title_ru": "Дом", "title_en": "Home", "roles": "host and visitor", "setting": "kitchen, room, door, window"},
+        {"id": "hello", "title_ru": "Знакомство", "title_en": "Meeting someone", "roles": "Oliver and Mia", "setting": "park fountain, names, ages, glasses, coffee"},
+        {"id": "numbers", "title_ru": "Числа и телефон", "title_en": "Numbers", "roles": "Ethan and Sophia", "setting": "phone numbers, brothers, ages, napkin"},
+        {"id": "family", "title_ru": "Семья", "title_en": "Family", "roles": "Emma talking about family", "setting": "mum Mary, dad doctor, brother age 10, four people"},
+        {"id": "colors", "title_ru": "Цвета", "title_en": "Colors", "roles": "Noah and Lily", "setting": "favourite colours, blue T-shirt, red pen, red bag"},
+        {"id": "food_words", "title_ru": "Еда", "title_en": "Food words", "roles": "Liam and Chloe", "setting": "burger, salad, coffee, tip, extra sauce"},
+        {"id": "classroom", "title_ru": "В классе", "title_en": "In class", "roles": "Jake and Zara", "setting": "maths, sport, 15 students, red dress, test, front row"},
+        {"id": "pets", "title_ru": "Питомцы", "title_en": "Pets", "roles": "Zack and Mila", "setting": "dog and cat Bella, park, pet shop, noise"},
+        {"id": "days", "title_ru": "Дни недели", "title_en": "Days", "roles": "Connor and Aurora", "setting": "Monday work, Wednesday study, Friday gym, Saturday cinema"},
+        {"id": "weather_easy", "title_ru": "Погода просто", "title_en": "Simple weather", "roles": "Felix and Ella", "setting": "sunny 20 degrees, rainy tomorrow, Saturday colder"},
+        {"id": "home", "title_ru": "Дом", "title_en": "Home", "roles": "Mason and Amelia", "setting": "room with TV, garden roses, dormitory, tea"},
     ],
     "A1": [
         {"id": "cafe_simple", "title_ru": "В кафе", "title_en": "At a café", "roles": "barista and customer", "setting": "ordering coffee and a snack"},

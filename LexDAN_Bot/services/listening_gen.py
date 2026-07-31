@@ -363,6 +363,19 @@ def _stable_pair_names(topic: dict) -> tuple[tuple[str, str], tuple[str, str]]:
     """Стабильные имена героев по topic id (не имена ElevenLabs-голосов)."""
     import hashlib
 
+    from data.listening_a0_fixed import get_a0_fixed
+
+    fixed = get_a0_fixed(str(topic.get("id") or ""))
+    if fixed and isinstance(fixed.get("speakers"), list) and len(fixed["speakers"]) >= 2:
+        s0, s1 = fixed["speakers"][0], fixed["speakers"][1]
+        g0 = (s0.get("gender") or "male").lower()
+        g1 = (s1.get("gender") or "female").lower()
+        if g0 not in {"male", "female"}:
+            g0 = "male"
+        if g1 not in {"male", "female"}:
+            g1 = "female"
+        return (str(s0.get("name") or "Oliver"), g0), (str(s1.get("name") or "Mia"), g1)
+
     raw = str(topic.get("id") or topic.get("title_en") or "x").encode("utf-8")
     seed = int(hashlib.md5(raw).hexdigest()[:8], 16)
     n0 = _MALE_NAMES[seed % len(_MALE_NAMES)]
@@ -1246,9 +1259,41 @@ def _fallback_dialogue_turns(topic: dict, n0: str, n1: str) -> list[tuple[str, s
 
 def _fallback_pack(level: str, topic: dict) -> dict:
     """Запасной диалог строго по теме; задания строятся из реплик отдельно."""
+    from data.listening_a0_fixed import get_a0_fixed
+
     roles = topic.get("roles") or "two people"
     role_a = roles.split(" and ")[0].strip() if " and " in roles else "speaker A"
     role_b = roles.split(" and ")[-1].strip() if " and " in roles else "speaker B"
+    tid = str(topic.get("id") or "")
+    fixed = get_a0_fixed(tid) if str(level or "").upper() == "A0" else None
+    if fixed:
+        sp = fixed["speakers"]
+        n0, n1 = sp[0]["name"], sp[1]["name"]
+        g0 = (sp[0].get("gender") or "male").lower()
+        g1 = (sp[1].get("gender") or "female").lower()
+        turns = []
+        for idx, text in fixed["turns"][:12]:
+            name = n0 if int(idx) == 0 else n1
+            turns.append({"speaker": name, "text": text})
+        # Task3 — как раньше из реплик; Task1/2 — фиксированные
+        _, _, events = _derive_tasks_from_turns(turns, n0, n1, topic)
+        t1 = [dict(q) for q in (fixed.get("task1") or [])]
+        t2 = [dict(q) for q in (fixed.get("task2") or [])]
+        for q in t1:
+            q.setdefault("options_ru", list(q.get("options") or []))
+            q.setdefault("explain_wrong_ru", q.get("explain_wrong_ru") or "")
+        return {
+            "speakers": [
+                {"name": n0, "gender": g0, "role": sp[0].get("role") or role_a},
+                {"name": n1, "gender": g1, "role": sp[1].get("role") or role_b},
+            ],
+            "turns": turns,
+            "task1": t1,
+            "task2": t2,
+            "task3_events": events,
+            "_fixed_a0": True,
+        }
+
     (n0, g0), (n1, g1) = _stable_pair_names(topic)
     pairs = _fallback_dialogue_turns(topic, n0, n1)
     turns = [{"speaker": a, "text": b} for a, b in pairs]
@@ -1266,9 +1311,14 @@ def _fallback_pack(level: str, topic: dict) -> dict:
 
 
 def generate_listening_pack(level: str, topic: dict) -> dict:
+    fallback = _fallback_pack(level, topic)
+    # A0 с авторским контентом — без GPT, чтобы диалог/задания не «уплыли»
+    if fallback.get("_fixed_a0"):
+        pack = {k: v for k, v in fallback.items() if not str(k).startswith("_")}
+        return _attach_voices_and_number(pack, level, topic)
+
     from services.gpt import _ask_json
 
-    fallback = _fallback_pack(level, topic)
     setting = topic.get("setting") or topic.get("title_en") or "everyday situation"
     roles = topic.get("roles") or "two people in a realistic situation"
     title_en = topic.get("title_en") or "Topic"
@@ -1329,7 +1379,15 @@ def generate_listening_pack(level: str, topic: dict) -> dict:
     pack["task1"] = t1
     pack["task2"] = t2
     pack["task3_events"] = ev
+    return _attach_voices_and_number(pack, level, topic)
 
+
+def _attach_voices_and_number(pack: dict, level: str, topic: dict) -> dict:
+    roles = topic.get("roles") or "two people"
+    setting = topic.get("setting") or topic.get("title_en") or "everyday situation"
+    sp = pack["speakers"]
+    n0 = sp[0]["name"]
+    n1 = sp[1]["name"]
     g0 = (sp[0].get("gender") or "male").lower()
     g1 = (sp[1].get("gender") or "female").lower()
     if g0 not in {"male", "female"}:
