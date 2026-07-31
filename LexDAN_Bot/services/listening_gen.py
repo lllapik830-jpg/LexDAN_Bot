@@ -359,13 +359,29 @@ _MALE_NAMES = ("Ben", "Tom", "Jake", "Omar", "Leo", "Chris", "Noah", "Ryan")
 _FEMALE_NAMES = ("Mia", "Emma", "Sara", "Lily", "Nora", "Anna", "Zoe", "Helen")
 
 
+def _get_level_fixed(level: str, topic_id: str) -> dict | None:
+    lvl = str(level or "").upper()
+    tid = str(topic_id or "")
+    if lvl == "A0":
+        from data.listening_a0_fixed import get_a0_fixed
+
+        return get_a0_fixed(tid)
+    if lvl == "A1":
+        from data.listening_a1_fixed import get_a1_fixed
+
+        return get_a1_fixed(tid)
+    return None
+
+
 def _stable_pair_names(topic: dict) -> tuple[tuple[str, str], tuple[str, str]]:
     """Стабильные имена героев по topic id (не имена ElevenLabs-голосов)."""
     import hashlib
 
     from data.listening_a0_fixed import get_a0_fixed
+    from data.listening_a1_fixed import get_a1_fixed
 
-    fixed = get_a0_fixed(str(topic.get("id") or ""))
+    tid = str(topic.get("id") or "")
+    fixed = get_a0_fixed(tid) or get_a1_fixed(tid)
     if fixed and isinstance(fixed.get("speakers"), list) and len(fixed["speakers"]) >= 2:
         s0, s1 = fixed["speakers"][0], fixed["speakers"][1]
         g0 = (s0.get("gender") or "male").lower()
@@ -376,7 +392,7 @@ def _stable_pair_names(topic: dict) -> tuple[tuple[str, str], tuple[str, str]]:
             g1 = "female"
         return (str(s0.get("name") or "Oliver"), g0), (str(s1.get("name") or "Mia"), g1)
 
-    raw = str(topic.get("id") or topic.get("title_en") or "x").encode("utf-8")
+    raw = tid.encode("utf-8") if tid else str(topic.get("title_en") or "x").encode("utf-8")
     seed = int(hashlib.md5(raw).hexdigest()[:8], 16)
     n0 = _MALE_NAMES[seed % len(_MALE_NAMES)]
     n1 = _FEMALE_NAMES[(seed // 7) % len(_FEMALE_NAMES)]
@@ -1259,13 +1275,11 @@ def _fallback_dialogue_turns(topic: dict, n0: str, n1: str) -> list[tuple[str, s
 
 def _fallback_pack(level: str, topic: dict) -> dict:
     """Запасной диалог строго по теме; задания строятся из реплик отдельно."""
-    from data.listening_a0_fixed import get_a0_fixed
-
     roles = topic.get("roles") or "two people"
     role_a = roles.split(" and ")[0].strip() if " and " in roles else "speaker A"
     role_b = roles.split(" and ")[-1].strip() if " and " in roles else "speaker B"
     tid = str(topic.get("id") or "")
-    fixed = get_a0_fixed(tid) if str(level or "").upper() == "A0" else None
+    fixed = _get_level_fixed(level, tid)
     if fixed:
         sp = fixed["speakers"]
         n0, n1 = sp[0]["name"], sp[1]["name"]
@@ -1291,7 +1305,7 @@ def _fallback_pack(level: str, topic: dict) -> dict:
             "task1": t1,
             "task2": t2,
             "task3_events": events,
-            "_fixed_a0": True,
+            "_fixed_content": True,
         }
 
     (n0, g0), (n1, g1) = _stable_pair_names(topic)
@@ -1312,8 +1326,8 @@ def _fallback_pack(level: str, topic: dict) -> dict:
 
 def generate_listening_pack(level: str, topic: dict) -> dict:
     fallback = _fallback_pack(level, topic)
-    # A0 с авторским контентом — без GPT, чтобы диалог/задания не «уплыли»
-    if fallback.get("_fixed_a0"):
+    # A0/A1 с авторским контентом — без GPT, чтобы диалог/задания не «уплыли»
+    if fallback.get("_fixed_content"):
         pack = {k: v for k, v in fallback.items() if not str(k).startswith("_")}
         return _attach_voices_and_number(pack, level, topic)
 
