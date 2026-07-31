@@ -337,34 +337,50 @@ def _fallback_week_cards(level: str) -> list[dict]:
 def _fallback_voice_phrases(level: str) -> list[str]:
     pools = {
         "A0": [
-            "Hello! How are you today?",
-            "My name is Alex.",
-            "I like coffee and tea.",
-            "See you tomorrow!",
+            "No worries — take your time!",
+            "That hit different today.",
+            "I'm down for pizza later.",
+            "Catch you on the flip side!",
         ],
         "A1": [
-            "What did you do yesterday?",
-            "I'm learning English every day.",
-            "Can you help me, please?",
-            "That sounds great — let's try!",
+            "It's giving main-character energy.",
+            "Low-key, that was awesome.",
+            "Spill the tea — what happened?",
+            "I'm so done with this Monday.",
         ],
         "A2": [
-            "I've been busy this week.",
-            "Could you say that again, please?",
-            "I'm trying to sound more natural.",
-            "Let's grab a coffee later.",
+            "Plot twist: I left my keys at home.",
+            "That playlist is actually fire.",
+            "Can we rain check and go tomorrow?",
+            "I ghosted the group chat by accident.",
         ],
         "B1": [
-            "I've been meaning to practice speaking more.",
-            "That makes sense — I hadn't thought of it that way.",
-            "Could you walk me through it one more time?",
-            "I'm getting more comfortable with small talk.",
+            "Honestly, that meeting could've been an email.",
+            "I'm running on caffeine and vibes today.",
+            "Don't @ me, but pineapple pizza slaps.",
+            "We need a soft launch before the big day.",
+        ],
+        "B2": [
+            "This whole situation is giving déjà vu.",
+            "I'll circle back once I've got bandwidth.",
+            "That take is spicy — walk me through it.",
+            "We're not reinventing the wheel here.",
+        ],
+        "C1": [
+            "Between us, the optics on that decision are rough.",
+            "I'm not married to the idea, but it's worth a pilot.",
+            "Let's not boil the ocean — ship a thin slice first.",
+            "That argument lands if you steelman the other side.",
+        ],
+        "C2": [
+            "There's a vibe shift in the room — read the subtext.",
+            "I'm allergic to performative urgency; let's prioritise.",
+            "His rhetoric outran the evidence by a mile.",
+            "Call it what it is: a soft veto dressed as feedback.",
         ],
     }
     if level in pools:
         return list(pools[level])
-    if level in {"B2", "C1", "C2"}:
-        return list(pools["B1"])
     return list(pools["A1"])
 
 
@@ -379,21 +395,38 @@ def build_voice_phrases(user: dict) -> list[str]:
                 "role": "system",
                 "content": (
                     "Return ONLY JSON {\"phrases\":[\"...\",\"...\",\"...\",\"...\"]} "
-                    "— 4 short spoken English lines for pronunciation practice, "
-                    f"CEFR {level}, natural conversation, not textbook drills."
+                    "— exactly 4 short spoken English lines for pronunciation practice. "
+                    f"CEFR {level}. Prefer idioms, slang, meme-y / pop-culture light references, "
+                    "colloquial chat English. "
+                    "FORBIDDEN banal lines: 'How are you today?', 'My name is…', "
+                    "'Nice to meet you', 'I like coffee', 'See you tomorrow', "
+                    "'What did you do yesterday?', textbook drills. "
+                    "Keep each line under 12 words, natural to say out loud."
                 ),
             },
             {"role": "user", "content": f"CEFR: {level}. Seed {random.random()}"},
         ],
         {"phrases": fallback},
-        temperature=0.5,
-        max_tokens=200,
+        temperature=0.85,
+        max_tokens=220,
     )
     phrases = data.get("phrases") if isinstance(data, dict) else None
     if not isinstance(phrases, list) or len(phrases) < 4:
         return fallback
     clean = [str(p).strip() for p in phrases[:4] if str(p).strip()]
-    return clean if len(clean) >= 4 else fallback
+    # отсечь совсем банальные от GPT
+    banned = (
+        "how are you",
+        "my name is",
+        "nice to meet you",
+        "see you tomorrow",
+        "i like coffee",
+        "what did you do yesterday",
+    )
+    filtered = [p for p in clean if not any(b in p.lower() for b in banned)]
+    if len(filtered) < 4:
+        return fallback
+    return filtered[:4]
 
 
 def attach_accent_tour(phrases: list[str], user: dict | None = None) -> list[dict]:

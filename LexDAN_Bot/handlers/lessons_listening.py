@@ -346,10 +346,31 @@ async def listening_ready(m: Message):
     set_listening_hub(uid, "listening_play")
 
     slow = _slow_for_level(level)
+    # Список героев с акцентами (уникальные спикеры)
+    cast_bits = []
+    seen_sp = set()
+    for t in turns_n:
+        sp = t.get("speaker") or ""
+        if not sp or sp in seen_sp:
+            continue
+        seen_sp.add(sp)
+        acc = (t.get("accent") or "").strip()
+        # accent может быть только в label — достанем из label если нет поля
+        if not acc:
+            lab = t.get("label") or ""
+            if " · " in lab:
+                mid = lab.split(" · ", 1)[1]
+                acc = mid.rsplit(" ", 1)[0].strip()
+        cast_bits.append(f"{sp}" + (f" · {acc}" if acc else ""))
+    cast_line = ""
+    if cast_bits:
+        cast_line = "👥 <b>Кто говорит:</b> " + "; ".join(cast_bits) + "\n\n"
     await m.answer(
-        "🎧 Слушай диалог по порядку. Каждая реплика — отдельное голосовое.\n"
+        cast_line
+        + "🎧 Слушай диалог по порядку. Каждая реплика — отдельное голосовое.\n"
         "Ниже цифры — можно повторно открыть текст реплики и перевести.",
         reply_markup=listened_kb(len(turns_n) or len(pack.get("turns") or [])),
+        parse_mode="HTML",
     )
     for t in turns_n:
         label = t.get("label") or f"{t['speaker']} {t['n']}"

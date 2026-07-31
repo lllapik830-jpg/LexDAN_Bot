@@ -179,10 +179,19 @@ async def _ask_rules_after_promo(m: Message, user_id: str, *, promo_msg: str = "
 async def _send_welcome_after_promo(m: Message, user_id: str, *, promo_msg: str = "") -> None:
     users = load_users()
     user = get_user(users, user_id)
+    ensure_growth(user)
     user["step"] = "ready"
     user["mode"] = MODE_MENU
     user["rules_accepted"] = True
     user.pop("pending_promo_msg", None)
+
+    from services.reg_campaign import (
+        grant_reg_full_trial_if_active,
+        reg_full_trial_welcome_html,
+        reg_event_welcome_html,
+    )
+
+    grant_reg_full_trial_if_active(user)
     save_users(users, only=user_id)
 
     extra = ""
@@ -192,6 +201,8 @@ async def _send_welcome_after_promo(m: Message, user_id: str, *, promo_msg: str 
         )
     if promo_msg:
         extra = "\n\n" + promo_msg + extra
+    extra += reg_full_trial_welcome_html()
+    extra += reg_event_welcome_html()
 
     name = user.get("name") or "друг"
     await m.answer(

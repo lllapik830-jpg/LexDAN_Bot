@@ -11,13 +11,53 @@ log = logging.getLogger(__name__)
 _DEFAULT_ADAM_ID = "pNInz6obpgDQGcFmaJgB"
 # Голоса Listening: новые + уже используемые в боте.
 # tags — подбор под ситуацию; prefer_levels — бонус на CEFR.
+# accent — подпись рядом с именем героя в диалоге.
 _LISTENING_VOICES: list[dict] = [
-    # ── новые ───────────────────────────────────────────────────────
+    # ── новые акценты (Charlie / Ollie / Alexandra / Jon) ───────────
+    {
+        "key": "charlie",
+        "name": "Charlie",
+        "gender": "female",
+        "voice_id": "6fZce9LFNG3iEITDfqZZ",
+        "accent": "British",
+        "flag": "🇬🇧",
+        "tags": {"friend", "casual", "chat", "teacher"},
+    },
+    {
+        "key": "ollie",
+        "name": "Ollie",
+        "gender": "male",
+        "voice_id": "jRAAK67SEFE9m7ci5DhD",
+        "accent": "British",
+        "flag": "🇬🇧",
+        "tags": {"friend", "casual", "chat", "work"},
+    },
+    {
+        "key": "alexandra",
+        "name": "Alexandra",
+        "gender": "female",
+        "voice_id": "kdmDKE6EkgrWrrykO9Qt",
+        "accent": "American",
+        "flag": "🇺🇸",
+        "tags": {"friend", "service", "consultant", "formal"},
+    },
+    {
+        "key": "jon",
+        "name": "Jon",
+        "gender": "male",
+        "voice_id": "Cz0K1kOv9tD8l0b5Qu53",
+        "accent": "American",
+        "flag": "🇺🇸",
+        "tags": {"friend", "casual", "chat", "interview"},
+    },
+    # ── остальные ───────────────────────────────────────────────────
     {
         "key": "jessa",
         "name": "Jessa",
         "gender": "female",
         "voice_id": "yj30vwTGJxSHezdAGsv9",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "casual", "chat"},
     },
     {
@@ -25,6 +65,8 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Adam",
         "gender": "male",
         "voice_id": "IRHApOXLvnW57QJPQH2P",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "casual", "chat"},
     },
     {
@@ -32,6 +74,8 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Alex",
         "gender": "male",
         "voice_id": "GzE4TcXfh9rYCU9gVgPp",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "service", "sales", "waiter", "consultant"},
     },
     {
@@ -39,6 +83,8 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Ad",
         "gender": "male",
         "voice_id": "ZzBnwUd5N5vZp018EN64",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"radio", "ads", "broadcast", "announcer"},
     },
     {
@@ -46,6 +92,8 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Allison",
         "gender": "female",
         "voice_id": "1wGbFxmAM3Fgw63G1zZJ",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "casual", "beginner", "calm"},
         "prefer_levels": {"A0", "A1"},
     },
@@ -54,14 +102,17 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Yuri",
         "gender": "male",
         "voice_id": "UalXHhfqFg6JugnheN0j",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"podcast", "host", "interview", "clear"},
     },
-    # ── уже были в боте ─────────────────────────────────────────────
     {
         "key": "adam",
         "name": "Adam",
         "gender": "male",
         "voice_id": _DEFAULT_ADAM_ID,
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "casual", "chat", "teacher"},
     },
     {
@@ -69,6 +120,8 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Scotty",
         "gender": "male",
         "voice_id": "NfUrCNRReUL9RXS9upG1",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "casual", "chat"},
     },
     {
@@ -76,6 +129,8 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Joe",
         "gender": "male",
         "voice_id": "av1BMOR1GPgThz9p4fLo",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "service", "consultant"},
     },
     {
@@ -83,6 +138,8 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Ed",
         "gender": "male",
         "voice_id": "dHd5gvgSOzSfduK4CvEg",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "casual", "work"},
     },
     {
@@ -90,6 +147,8 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Lucas",
         "gender": "male",
         "voice_id": "wSqOdjeNqDrHcoK0zorF",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"formal", "work", "interview", "manager"},
     },
     {
@@ -97,6 +156,8 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Jimbo",
         "gender": "male",
         "voice_id": "YLbQE9U7P1K6rBNJWNSv",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "casual", "travel"},
     },
     {
@@ -104,20 +165,17 @@ _LISTENING_VOICES: list[dict] = [
         "name": "Emmaline",
         "gender": "female",
         "voice_id": "nDJIICjR9zfJExIFeSCN",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "casual", "chat", "teacher"},
-    },
-    {
-        "key": "aria",
-        "name": "Aria",
-        "gender": "female",
-        "voice_id": "TC0Zp7WVFzhA8zpTlRqV",
-        "tags": {"formal", "work", "service", "consultant"},
     },
     {
         "key": "ruby",
         "name": "Ruby",
         "gender": "female",
         "voice_id": "b8gbDO0ybjX1VA89pBdX",
+        "accent": "American",
+        "flag": "🇺🇸",
         "tags": {"friend", "casual", "travel"},
     },
 ]
@@ -1483,21 +1541,36 @@ def _attach_voices_and_number(pack: dict, level: str, topic: dict) -> dict:
         used_keys.add(ev["key"])
         used_names.add(ev["name"])
     pack["voice_map"] = {
-        name: {"key": v["key"], "voice_id": v["voice_id"], "voice_name": v["name"]}
+        name: {
+            "key": v["key"],
+            "voice_id": v["voice_id"],
+            "voice_name": v["name"],
+            "accent": v.get("accent") or "",
+            "flag": v.get("flag") or "",
+        }
         for name, v in voice_map.items()
     }
     numbered = []
     for i, t in enumerate(pack["turns"], start=1):
         vinfo = pack["voice_map"].get(t["speaker"]) or {}
         speaker = t["speaker"]
+        accent = (vinfo.get("accent") or "").strip()
+        flag = (vinfo.get("flag") or "").strip()
+        if accent:
+            accent_bit = f" · {accent}"
+            if flag:
+                accent_bit += f" {flag}"
+        else:
+            accent_bit = ""
         numbered.append(
             {
                 "n": i,
                 "speaker": speaker,
                 "text": t["text"],
-                # Подпись = имя героя диалога (как в вопросах), НЕ имя голоса ElevenLabs
-                "label": f"{speaker} {i}",
+                # Имя героя + акцент голоса (не имя ElevenLabs)
+                "label": f"{speaker}{accent_bit} {i}",
                 "voice_id": vinfo.get("voice_id"),
+                "accent": accent,
             }
         )
     pack["turns_numbered"] = numbered

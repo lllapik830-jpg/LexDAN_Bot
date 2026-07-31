@@ -93,16 +93,86 @@ def generate_vocab_text(
     }
 
 
+def _diverse_word_examples(en: str, ru: str) -> tuple[str, str, str, str]:
+    """Локальные разнообразные примеры (не один шаблон на все слова)."""
+    w = (en or "word").strip()
+    r = (ru or "").strip() or w
+    templates = [
+        (
+            f"I can't imagine my day without this {w}.",
+            f"Не представляю свой день без этого: «{r}».",
+            f"Could you explain what {w} means in this context?",
+            f"Можешь объяснить, что значит «{r}» в этом контексте?",
+        ),
+        (
+            f"She mentioned {w} twice during the meeting.",
+            f"Она дважды упомянула «{r}» на встрече.",
+            f"That's a useful {w} to remember.",
+            f"Это полезное слово «{r}», его стоит запомнить.",
+        ),
+        (
+            f"We talked about {w} all evening.",
+            f"Мы весь вечер говорили про «{r}».",
+            f"I finally understood {w} after a few examples.",
+            f"Я наконец понял(а) «{r}» после нескольких примеров.",
+        ),
+        (
+            f"Is {w} formal or casual English?",
+            f"«{r}» — это формальный или разговорный английский?",
+            f"He used {w} in a really natural way.",
+            f"Он использовал «{r}» очень естественно.",
+        ),
+        (
+            f"Don't forget to practise {w} out loud.",
+            f"Не забудь потренировать «{r}» вслух.",
+            f"I heard {w} in a podcast yesterday.",
+            f"Вчера услышал(а) «{r}» в подкасте.",
+        ),
+        (
+            f"My friend always says {w} when she's excited.",
+            f"Моя подруга всегда говорит «{r}», когда радуется.",
+            f"Using {w} correctly takes a bit of practice.",
+            f"Правильно использовать «{r}» — дело практики.",
+        ),
+        (
+            f"There's a big difference between {w} and similar words.",
+            f"Между «{r}» и похожими словами большая разница.",
+            f"Can you make a sentence with {w}?",
+            f"Можешь составить предложение со словом «{r}»?",
+        ),
+        (
+            f"I looked up {w} and it clicked immediately.",
+            f"Я посмотрел(а) «{r}» — и сразу щёлкнуло.",
+            f"Please write {w} in your notebook.",
+            f"Запиши «{r}» в тетрадь.",
+        ),
+    ]
+    # стабильный выбор по слову — разные слова → разные шаблоны
+    idx = sum(ord(c) for c in w.lower()) % len(templates)
+    return templates[idx]
+
+
 def _format_word_card(word: dict, data: dict) -> str:
     en = word["en"]
     ru = word["ru"]
     emoji = word.get("emoji") or "📘"
     meaning = (data.get("meaning_ru") or f"Это значит «{ru}».").strip()
     assoc = (data.get("association_ru") or "").strip()
-    e1 = (data.get("example1_en") or f"I use {en} every day.").strip()
-    e1r = (data.get("example1_ru") or f"Я использую «{ru}» каждый день.").strip()
-    e2 = (data.get("example2_en") or f"This is my {en}.").strip()
-    e2r = (data.get("example2_ru") or f"Это мой/моя {ru}.").strip()
+    e1d, e1rd, e2d, e2rd = _diverse_word_examples(en, ru)
+    e1 = (data.get("example1_en") or e1d).strip()
+    e1r = (data.get("example1_ru") or e1rd).strip()
+    e2 = (data.get("example2_en") or e2d).strip()
+    e2r = (data.get("example2_ru") or e2rd).strip()
+    # если GPT/старый фолбэк выдал один и тот же банальный шаблон — подменим
+    bland = (
+        f"today i learned {en}".lower() in e1.lower()
+        or f"today i learned {en}".lower() in e2.lower()
+        or e1.lower().startswith("i know the word")
+        or e2.lower().startswith("i know the word")
+        or e1.lower() == e2.lower()
+    )
+    if bland:
+        e1, e1r, e2, e2r = e1d, e1rd, e2d, e2rd
 
     lines = [
         f"🦜 {emoji} <b>{en}</b> — <i>{ru}</i>",
@@ -128,13 +198,14 @@ def rico_word_card(level: str, topic_title: str, word: dict) -> str:
     en = word["en"]
     ru = word["ru"]
     emoji = word.get("emoji") or "📘"
+    e1, e1r, e2, e2r = _diverse_word_examples(en, ru)
     fallback = {
         "meaning_ru": f"Слово «{en}» значит «{ru}».",
         "association_ru": f"Представь картинку с эмодзи {emoji} — и сразу вспоминается «{ru}».",
-        "example1_en": f"I know the word {en}.",
-        "example1_ru": f"Я знаю слово «{ru}».",
-        "example2_en": f"Today I learned {en}.",
-        "example2_ru": f"Сегодня я выучил(а) «{ru}».",
+        "example1_en": e1,
+        "example1_ru": e1r,
+        "example2_en": e2,
+        "example2_ru": e2r,
     }
     try:
         data = _ask_json(
@@ -148,27 +219,69 @@ def rico_word_card(level: str, topic_title: str, word: dict) -> str:
                         "{"
                         '"meaning_ru":"краткое понятное объяснение на русском",'
                         '"association_ru":"короткая ассоциация/мнемоника на русском",'
-                        '"example1_en":"простое предложение на английском со словом",'
+                        '"example1_en":"живое предложение со словом (не шаблон)",'
                         '"example1_ru":"перевод примера 1 на русский",'
-                        '"example2_en":"другое простое предложение на английском",'
+                        '"example2_en":"ДРУГОЕ живое предложение со словом",'
                         '"example2_ru":"перевод примера 2 на русский"'
                         "}\n"
+                        "FORBIDDEN templates: 'Today I learned …', 'I know the word …', "
+                        "'This is my …', 'I use … every day' as the only pattern. "
+                        "Make two DIFFERENT natural sentences. "
                         f"Эмодзи для ассоциации: {emoji}. Уровень CEFR: {level}."
                     ),
                 },
                 {
                     "role": "user",
-                    "content": f"Тема: {topic_title}. Слово: {en} = {ru}",
+                    "content": f"Тема: {topic_title}. Слово: {en} = {ru}. Seed {random.random()}",
                 },
             ],
             fallback,
-            temperature=0.55,
+            temperature=0.75,
             max_tokens=380,
         )
         return _format_word_card(word, data if isinstance(data, dict) else fallback)
     except Exception as e:
         logging.error(f"rico_word_card: {e}")
         return _format_word_card(word, fallback)
+
+
+def _diverse_phrase_examples(en: str, ru: str) -> tuple[str, str, str, str]:
+    p = (en or "phrase").strip()
+    r = (ru or "").strip() or p
+    templates = [
+        (
+            f"In that situation I'd probably say, \"{p}\".",
+            f"В такой ситуации я, скорее всего, скажу: «{r}».",
+            f"Native speakers use \"{p}\" all the time in chats.",
+            f"Носители постоянно пишут «{r}» в переписке.",
+        ),
+        (
+            f"She replied with \"{p}\" and smiled.",
+            f"Она ответила «{r}» и улыбнулась.",
+            f"If someone helps you, \"{p}\" sounds natural.",
+            f"Если тебе помогли, «{r}» звучит естественно.",
+        ),
+        (
+            f"I overheard someone say \"{p}\" on the bus.",
+            f"В автобусе услышал(а), как кто-то сказал «{r}».",
+            f"Try dropping \"{p}\" into your next conversation.",
+            f"Попробуй вставить «{r}» в следующий разговор.",
+        ),
+        (
+            f"\"{p}\" fits better than a long formal sentence here.",
+            f"Здесь «{r}» уместнее, чем длинная формальная фраза.",
+            f"He always opens with \"{p}\" when he calls.",
+            f"Он всегда начинает звонок с «{r}».",
+        ),
+        (
+            f"Don't translate it word for word — just say \"{p}\".",
+            f"Не переводи дословно — просто скажи «{r}».",
+            f"I finally started using \"{p}\" without thinking.",
+            f"Я наконец начал(а) говорить «{r}» не задумываясь.",
+        ),
+    ]
+    idx = sum(ord(c) for c in p.lower()) % len(templates)
+    return templates[idx]
 
 
 def _format_phrase_card(phrase: dict, data: dict) -> str:
@@ -178,10 +291,18 @@ def _format_phrase_card(phrase: dict, data: dict) -> str:
     meaning = (data.get("meaning_ru") or f"Это значит «{ru}».").strip()
     when = (data.get("when_ru") or "").strip()
     assoc = (data.get("association_ru") or "").strip()
-    e1 = (data.get("example1_en") or f"I often say '{en}'.").strip()
-    e1r = (data.get("example1_ru") or f"Я часто говорю: «{ru}».").strip()
-    e2 = (data.get("example2_en") or f"People use '{en}' a lot.").strip()
-    e2r = (data.get("example2_ru") or f"Люди часто используют «{ru}».").strip()
+    e1d, e1rd, e2d, e2rd = _diverse_phrase_examples(en, ru)
+    e1 = (data.get("example1_en") or e1d).strip()
+    e1r = (data.get("example1_ru") or e1rd).strip()
+    e2 = (data.get("example2_en") or e2d).strip()
+    e2r = (data.get("example2_ru") or e2rd).strip()
+    bland = (
+        f"i say '{en}'".lower() in e1.lower()
+        or f"everyone knows '{en}'".lower() in e2.lower()
+        or e1.lower() == e2.lower()
+    )
+    if bland:
+        e1, e1r, e2, e2r = e1d, e1rd, e2d, e2rd
 
     lines = [
         f"🦜 {emoji} <b>{en}</b>",
@@ -210,14 +331,15 @@ def rico_phrase_card(level: str, topic_title: str, phrase: dict) -> str:
     en = phrase["en"]
     ru = phrase["ru"]
     emoji = phrase.get("emoji") or "💬"
+    e1, e1r, e2, e2r = _diverse_phrase_examples(en, ru)
     fallback = {
         "meaning_ru": f"Фраза «{en}» значит «{ru}».",
         "when_ru": "Говорят в повседневных ситуациях по смыслу фразы.",
         "association_ru": f"Эмодзи {emoji} поможет вспомнить «{ru}».",
-        "example1_en": f"I say '{en}' to friends.",
-        "example1_ru": f"Я говорю друзьям: «{ru}».",
-        "example2_en": f"Everyone knows '{en}'.",
-        "example2_ru": f"Все знают выражение «{ru}».",
+        "example1_en": e1,
+        "example1_ru": e1r,
+        "example2_en": e2,
+        "example2_ru": e2r,
     }
     try:
         data = _ask_json(
@@ -231,21 +353,23 @@ def rico_phrase_card(level: str, topic_title: str, phrase: dict) -> str:
                         '"meaning_ru":"...",'
                         '"when_ru":"когда говорят",'
                         '"association_ru":"...",'
-                        '"example1_en":"...",'
+                        '"example1_en":"живое предложение с фразой",'
                         '"example1_ru":"...",'
-                        '"example2_en":"...",'
+                        '"example2_en":"другое живое предложение",'
                         '"example2_ru":"..."'
                         "}\n"
+                        "FORBIDDEN: 'I say … to friends', 'Everyone knows …' as templates. "
+                        "Two DIFFERENT natural examples. "
                         f"Эмодзи: {emoji}. Уровень: {level}."
                     ),
                 },
                 {
                     "role": "user",
-                    "content": f"Тема: {topic_title}. Фраза: {en} = {ru}",
+                    "content": f"Тема: {topic_title}. Фраза: {en} = {ru}. Seed {random.random()}",
                 },
             ],
             fallback,
-            temperature=0.55,
+            temperature=0.75,
             max_tokens=380,
         )
         return _format_phrase_card(phrase, data if isinstance(data, dict) else fallback)
