@@ -17,6 +17,7 @@ BTN_RICO_CHAT = "🦜 Общение с Рико"
 BTN_EXTRA = "📝 Доп. задания"
 BTN_EXTRA_NEXT = "➡️ Далее"  # legacy alias
 BTN_EXTRA_SKIP = "⏭ Пропустить"
+BTN_EXTRA_HINT = "💡 Подсказка"
 BTN_EXTRA_DO = "✅ Делать задания"
 BTN_EXTRA_MISTAKES = "🔧 Отработать ошибки"
 BTN_TRANSLATE = "🌍 Перевести"
@@ -85,7 +86,7 @@ def grammar_extra_menu_kb(*, mistakes: int = 0) -> ReplyKeyboardMarkup:
 def grammar_extra_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BTN_EXTRA_SKIP)],
+            [KeyboardButton(text=BTN_EXTRA_HINT), KeyboardButton(text=BTN_EXTRA_SKIP)],
             [KeyboardButton(text="⬅️ К темам")],
             [KeyboardButton(text="🔙 Вернуться в меню")],
         ],

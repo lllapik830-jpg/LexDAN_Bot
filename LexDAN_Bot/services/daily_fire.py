@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import html
 import random
+import re
 from datetime import datetime, timedelta, timezone
 
 MSK = timezone(timedelta(hours=3))
@@ -47,6 +48,15 @@ def ensure_daily_fire(user: dict) -> dict:
     raw = user.get("daily_fire")
     if not isinstance(raw, dict):
         raw = {}
+    # история без повторов живёт отдельно и не сбрасывается в 00:00
+    seen = user.get("daily_fire_seen")
+    if not isinstance(seen, dict):
+        seen = {}
+    for k in KINDS:
+        if not isinstance(seen.get(k), list):
+            seen[k] = []
+    user["daily_fire_seen"] = seen
+
     if raw.get("date") != _today():
         raw = {
             "date": _today(),
@@ -60,6 +70,38 @@ def ensure_daily_fire(user: dict) -> dict:
             raw["opened"].setdefault(k, False)
     user["daily_fire"] = raw
     return raw
+
+
+def _norm_key(s: str) -> str:
+    t = (s or "").strip().lower()
+    t = t.replace("’", "'").replace("`", "'")
+    t = re.sub(r"[^\w\s'-]", " ", t, flags=re.UNICODE)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t[:160]
+
+
+def fingerprint_for(kind: str, payload: dict) -> str:
+    if kind in {"word", "phrase"}:
+        return _norm_key(payload.get("item") or "")
+    return _norm_key(payload.get("en") or "")
+
+
+def seen_keys(user: dict, kind: str) -> set[str]:
+    ensure_daily_fire(user)
+    return {str(x) for x in (user.get("daily_fire_seen") or {}).get(kind) or [] if x}
+
+
+def remember_seen(user: dict, kind: str, payload: dict) -> None:
+    ensure_daily_fire(user)
+    fp = fingerprint_for(kind, payload)
+    if not fp:
+        return
+    store = user.setdefault("daily_fire_seen", {})
+    arr = list(store.get(kind) or [])
+    if fp not in arr:
+        arr.append(fp)
+    # длинная память, но без бесконечного роста
+    store[kind] = arr[-400:]
 
 
 def is_opened(user: dict, kind: str) -> bool:
@@ -101,7 +143,8 @@ def hub_intro(user: dict) -> str:
         "🎙 <b>Голос дня</b> — короткое голосовое + текст и перевод под блюром",
         "💡 <b>Факт дня</b> — неожиданный факт + голос Рико + блюр-перевод\n",
         "Каждую кнопку можно открыть <b>один раз за день</b> "
-        "(потом можно переслушать то же самое).",
+        "(потом можно переслушать то же самое).\n"
+        "Каждый новый день — <b>новый</b> контент: слова, фразы, голоса и факты не повторяются 🔄",
     ]
     return "\n".join(lines)
 
@@ -135,12 +178,45 @@ _FALLBACK_WORDS = [
         "item": "sonder",
         "translation_ru": "осознание, что у каждого прохожего — своя огромная жизнь",
         "explain_ru": (
-            "Не официальный словарь Оксфорда, а слово из современного словаря ощущений. "
-            "Полезно, когда хочешь описать город вечером одной точной эмоцией."
+            "Не из классического Оксфорда, а из словаря тонких ощущений. "
+            "Одной точной эмоцией описывает город вечером."
         ),
-        "origin_ru": "Популярно через The Dictionary of Obscure Sorrows (John Koenig).",
+        "origin_ru": "The Dictionary of Obscure Sorrows (John Koenig).",
         "sentence_en": "Standing on the subway, I felt a sudden wave of sonder.",
         "sentence_ru": "Стоя в метро, я внезапно поймал волну sonder.",
+    },
+    {
+        "item": "ephemeral",
+        "translation_ru": "мимолётный, недолговечный",
+        "explain_ru": (
+            "Про красоту, которая не просит остаться навсегда: закат, пенка на кофе, "
+            "удачная шутка в чате. Звучит умно и очень по-английски."
+        ),
+        "origin_ru": "От греч. ephēmeros — «для одного дня».",
+        "sentence_en": "Street art is often ephemeral — here today, painted over tomorrow.",
+        "sentence_ru": "Уличное искусство часто ephemeral — сегодня есть, завтра закрасили.",
+    },
+    {
+        "item": "hiraeth",
+        "translation_ru": "тоска по дому, которого уже нет / по месту, куда нельзя вернуться",
+        "explain_ru": (
+            "Глубже обычного homesickness: тоска по чувству, а не только по адресу. "
+            "Заимствование из валлийского — англичане его полюбили."
+        ),
+        "origin_ru": "Валлийское слово, вошедшее в англоязычный обиход.",
+        "sentence_en": "Scrolling old photos gave me a quiet hiraeth for that summer.",
+        "sentence_ru": "Лента старых фото навеяла тихий hiraeth по тому лету.",
+    },
+    {
+        "item": "flabbergasted",
+        "translation_ru": "ошарашенный; в полном шоке (разговорно)",
+        "explain_ru": (
+            "Когда «wow» уже мало. Звучит смешно и театрально — идеально для реакций, "
+            "а не для официальных писем."
+        ),
+        "origin_ru": "Английский XVIII века, точное происхождение спорное — тем милее.",
+        "sentence_en": "I was flabbergasted when the tiny café had the best pasta in town.",
+        "sentence_ru": "Я был flabbergasted, что в крошечном кафе — лучшая паста в городе.",
     },
 ]
 
@@ -163,9 +239,42 @@ _FALLBACK_PHRASES = [
             "Когда событие сначала бесит, а потом оказывается подарком. "
             "Мягкий способ сказать: «ок, вселенная сыграла странно, но в плюс»."
         ),
-        "origin_ru": "Классический английский идиом, часто в разговорах про карьеру и переезды.",
+        "origin_ru": "Классический английский идиом.",
         "sentence_en": "Losing that job was a blessing in disguise — I built something better.",
         "sentence_ru": "Потеря той работы оказалась a blessing in disguise — я сделал лучше.",
+    },
+    {
+        "item": "to read the room",
+        "translation_ru": "считать атмосферу; понимать, что уместно сейчас",
+        "explain_ru": (
+            "Современный навык: не шутить на похоронах настроения. "
+            "Часто про созвоны, тусовки и чаты."
+        ),
+        "origin_ru": "Разговорный американский оборот.",
+        "sentence_en": "He started a loud joke, then finally read the room and went quiet.",
+        "sentence_ru": "Он начал громкую шутку, потом read the room и замолчал.",
+    },
+    {
+        "item": "to move the goalposts",
+        "translation_ru": "менять правила по ходу; сдвигать «финиш»",
+        "explain_ru": (
+            "Когда критерии успеха внезапно «переехали». Полезно в разговорах "
+            "про работу, отношения и бесконечные правки ТЗ."
+        ),
+        "origin_ru": "Спортивная метафора → перенос в жизнь и бизнес.",
+        "sentence_en": "Every week they move the goalposts, so the project never feels done.",
+        "sentence_ru": "Каждую неделю они move the goalposts — проект будто бесконечный.",
+    },
+    {
+        "item": "spill the tea",
+        "translation_ru": "рассказать сплетни / сочную правду (сленг)",
+        "explain_ru": (
+            "Не про чайник. «Tea» = gossip. Дружеский, мемный регистр — "
+            "не для собеседования, зато для сторис и чатов."
+        ),
+        "origin_ru": "Афроамериканский сленг → интернет-культура.",
+        "sentence_en": "Okay, spill the tea — what really happened at the party?",
+        "sentence_ru": "Ну же, spill the tea — что там было на вечеринке?",
     },
 ]
 
@@ -188,6 +297,26 @@ _FALLBACK_VOICES = [
         "ru": (
             "В английском есть вкусный глагол to ghost — исчезнуть из переписки "
             "без объяснений. Друзьям так не делай. А в сериалах замечай."
+        ),
+    },
+    {
+        "en": (
+            "Try this softener: 'I might be wrong, but…' It keeps your point "
+            "and lowers the temperature of any debate."
+        ),
+        "ru": (
+            "Попробуй смягчение: I might be wrong, but… Ты сохраняешь мысль "
+            "и снижаешь температуру любого спора."
+        ),
+    },
+    {
+        "en": (
+            "A lovely adjective: 'overwhelmed' — not just busy, but flooded. "
+            "Name the feeling and English suddenly feels more honest."
+        ),
+        "ru": (
+            "Классное слово overwhelmed — не просто «занят», а «захлёстнуло». "
+            "Назови чувство — и английский сразу честнее."
         ),
     },
 ]
@@ -213,29 +342,64 @@ _FALLBACK_FACTS = [
             "включая lonely, swagger и eyeball."
         ),
     },
+    {
+        "en": (
+            "English loves silent letters: the 'k' in knife, the 'b' in doubt, "
+            "the 'gh' in night — fossils of older pronunciations."
+        ),
+        "ru": (
+            "Английский любит немые буквы: k в knife, b в doubt, "
+            "gh в night — окаменелости старого произношения."
+        ),
+    },
+    {
+        "en": (
+            "The word 'okay' may come from a 19th-century joke abbreviation: "
+            "O.K. for 'oll korrect' — a playful misspelling of 'all correct'."
+        ),
+        "ru": (
+            "Слово okay, возможно, из шуточной аббревиатуры XIX века: "
+            "O.K. = oll korrect — игривая ошибка вместо all correct."
+        ),
+    },
 ]
 
 
-def _fallback(kind: str) -> dict:
+def _fallback_pool(kind: str) -> list[dict]:
     if kind == "word":
-        return dict(random.choice(_FALLBACK_WORDS))
+        return list(_FALLBACK_WORDS)
     if kind == "phrase":
-        return dict(random.choice(_FALLBACK_PHRASES))
+        return list(_FALLBACK_PHRASES)
     if kind == "voice":
-        return dict(random.choice(_FALLBACK_VOICES))
-    return dict(random.choice(_FALLBACK_FACTS))
+        return list(_FALLBACK_VOICES)
+    return list(_FALLBACK_FACTS)
 
 
-def _generate_gpt(kind: str, level: str) -> dict | None:
+def _fallback(kind: str, avoid: set[str] | None = None) -> dict:
+    avoid = avoid or set()
+    pool = _fallback_pool(kind)
+    fresh = [x for x in pool if fingerprint_for(kind, x) not in avoid]
+    choice = random.choice(fresh or pool)
+    return dict(choice)
+
+
+def _generate_gpt(kind: str, level: str, *, avoid: set[str] | None = None) -> dict | None:
     from services.gpt import _ask_json
 
     lvl = (level or "B1").upper()
+    avoid = avoid or set()
+    avoid_line = ""
+    if avoid:
+        sample = ", ".join(sorted(avoid)[:40])
+        avoid_line = (
+            f" Do NOT reuse any of these already-seen items/phrases/topics: {sample}."
+        )
     ban = (
         "Ban banal textbook stuff: hello, apple, cat, I go to school, "
         "How are you, weather is nice, my name is..."
     )
     if kind == "word":
-        fb = _fallback("word")
+        fb = _fallback("word", avoid)
         data = _ask_json(
             [
                 {
@@ -243,6 +407,7 @@ def _generate_gpt(kind: str, level: str) -> dict | None:
                     "content": (
                         "You curate a delightful Word of the Day for English learners. "
                         f"{ban} Pick a vivid, uncommon-but-useful word (CEFR ~{lvl}+). "
+                        f"Every day must feel NEW.{avoid_line} "
                         "Return ONLY JSON with keys: item, translation_ru, explain_ru, "
                         "origin_ru, sentence_en, sentence_ru. "
                         "explain_ru: warm tutor voice (Rico), 2-4 sentences in Russian. "
@@ -251,11 +416,11 @@ def _generate_gpt(kind: str, level: str) -> dict | None:
                 },
                 {
                     "role": "user",
-                    "content": f"Level hint: {lvl}. Make it witty and memorable.",
+                    "content": f"Level hint: {lvl}. Make it witty and memorable. Fresh word only.",
                 },
             ],
             fb,
-            temperature=0.85,
+            temperature=0.9,
             max_tokens=500,
         )
         if not (data.get("item") and data.get("sentence_en")):
@@ -263,14 +428,15 @@ def _generate_gpt(kind: str, level: str) -> dict | None:
         return data
 
     if kind == "phrase":
-        fb = _fallback("phrase")
+        fb = _fallback("phrase", avoid)
         data = _ask_json(
             [
                 {
                     "role": "system",
                     "content": (
                         "You curate Phrase of the Day (idiom / colloquial chunk). "
-                        f"{ban} CEFR ~{lvl}. Return ONLY JSON: item, translation_ru, "
+                        f"{ban} CEFR ~{lvl}. Fresh only — no repeats.{avoid_line} "
+                        "Return ONLY JSON: item, translation_ru, "
                         "explain_ru, origin_ru, sentence_en, sentence_ru. "
                         "Warm Russian tutor tone for explain_ru."
                     ),
@@ -278,7 +444,7 @@ def _generate_gpt(kind: str, level: str) -> dict | None:
                 {"role": "user", "content": f"Level: {lvl}. Fresh, useful in real talk."},
             ],
             fb,
-            temperature=0.85,
+            temperature=0.9,
             max_tokens=500,
         )
         if not (data.get("item") and data.get("sentence_en")):
@@ -286,7 +452,7 @@ def _generate_gpt(kind: str, level: str) -> dict | None:
         return data
 
     if kind == "voice":
-        fb = _fallback("voice")
+        fb = _fallback("voice", avoid)
         data = _ask_json(
             [
                 {
@@ -294,34 +460,35 @@ def _generate_gpt(kind: str, level: str) -> dict | None:
                     "content": (
                         "Write a short spoken English monologue for TTS (2-4 sentences), "
                         "fun linguistic/life insight — not a lecture. "
-                        f"{ban} Return ONLY JSON: en, ru (Russian translation of en)."
+                        f"{ban} Brand-new angle every time.{avoid_line} "
+                        "Return ONLY JSON: en, ru (Russian translation of en)."
                     ),
                 },
                 {"role": "user", "content": f"Audience CEFR ~{lvl}. Sound like a clever friend."},
             ],
             fb,
-            temperature=0.9,
+            temperature=0.95,
             max_tokens=350,
         )
         if not data.get("en"):
             return None
         return data
 
-    fb = _fallback("fact")
+    fb = _fallback("fact", avoid)
     data = _ask_json(
         [
             {
                 "role": "system",
                 "content": (
                     "Share one surprising English-language or culture fact in English "
-                    "(2-3 sentences). "
-                    f"{ban} Return ONLY JSON: en, ru."
+                    f"(2-3 sentences). {ban} Must be new, not previously used.{avoid_line} "
+                    "Return ONLY JSON: en, ru."
                 ),
             },
             {"role": "user", "content": f"Level ~{lvl}. Prefer weird-but-true language facts."},
         ],
         fb,
-        temperature=0.85,
+        temperature=0.9,
         max_tokens=350,
     )
     if not data.get("en"):
@@ -329,19 +496,9 @@ def _generate_gpt(kind: str, level: str) -> dict | None:
     return data
 
 
-def get_or_create_content(user: dict, kind: str) -> dict:
-    """Вернуть кэш дня или сгенерировать новый."""
-    cached = get_cached(user, kind)
-    if cached:
-        return cached
-    level = user.get("level") or "B1"
-    try:
-        data = _generate_gpt(kind, level) or _fallback(kind)
-    except Exception:
-        data = _fallback(kind)
-    # нормализация ключей
+def _normalize_payload(kind: str, data: dict) -> dict:
     if kind in {"word", "phrase"}:
-        payload = {
+        return {
             "item": str(data.get("item") or "").strip(),
             "translation_ru": str(data.get("translation_ru") or "").strip(),
             "explain_ru": str(data.get("explain_ru") or "").strip(),
@@ -349,12 +506,35 @@ def get_or_create_content(user: dict, kind: str) -> dict:
             "sentence_en": str(data.get("sentence_en") or "").strip(),
             "sentence_ru": str(data.get("sentence_ru") or "").strip(),
         }
-    else:
-        payload = {
-            "en": str(data.get("en") or "").strip(),
-            "ru": str(data.get("ru") or "").strip(),
-        }
+    return {
+        "en": str(data.get("en") or "").strip(),
+        "ru": str(data.get("ru") or "").strip(),
+    }
+
+
+def get_or_create_content(user: dict, kind: str) -> dict:
+    """Вернуть кэш дня или сгенерировать новый без повторов из истории."""
+    cached = get_cached(user, kind)
+    if cached:
+        return cached
+    level = user.get("level") or "B1"
+    avoid = seen_keys(user, kind)
+    payload = None
+    for _ in range(3):
+        try:
+            data = _generate_gpt(kind, level, avoid=avoid) or _fallback(kind, avoid)
+        except Exception:
+            data = _fallback(kind, avoid)
+        cand = _normalize_payload(kind, data)
+        fp = fingerprint_for(kind, cand)
+        if fp and fp not in avoid:
+            payload = cand
+            break
+        avoid = set(avoid) | ({fp} if fp else set())
+    if payload is None:
+        payload = _normalize_payload(kind, _fallback(kind, avoid))
     set_cached(user, kind, payload)
+    remember_seen(user, kind, payload)
     return payload
 
 

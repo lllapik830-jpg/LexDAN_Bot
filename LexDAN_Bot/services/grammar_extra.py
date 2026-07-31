@@ -129,7 +129,9 @@ def rico_mode_intro(level: str, *, done: int = 0, mistakes: int = 0) -> str:
         "🔧 <b>Отработать ошибки</b> — только то, где споткнулись\n\n"
         "Пиши ответ текстом. Апострофы, точки и заглавные — не придираюсь; "
         "смотрю на <b>смысл и грамматику уровня</b> 👀\n"
-        "Можно жать <b>⏭ Пропустить</b> — задание уйдёт в «Отработать ошибки»."
+        "Можно жать <b>⏭ Пропустить</b> — задание уйдёт в «Отработать ошибки».\n"
+        "Застрял(а)? Жми <b>💡 Подсказка</b> — подтолкну правилом/словом, "
+        "но ответ за тебя не напишу 💛"
     )
 
 
@@ -710,6 +712,71 @@ def format_skip() -> str:
     )
 
 
+def rico_extra_hint(level: str, ex: dict) -> str:
+    """
+    Дружелюбная подсказка без готового ответа:
+    правило, конструкция, направление мысли.
+    """
+    from services.gpt import _ask_json
+
+    subtype = ex.get("subtype") or subtype_for_level(level)
+    stem = (ex.get("prompt_en") or "").strip()
+    instruction = (ex.get("instruction_ru") or "").strip()
+    review_topic, _ = review_topic_for(level, ex)
+    lvl = str(level or "").upper()
+
+    subtype_hint = {
+        "fix_sentence": "Help notice WHAT is broken (tense/article/agreement) without rewriting the sentence.",
+        "order_words": "Hint at English word order pattern (S-V-O / time place) without assembling the full sentence.",
+        "paraphrase": "Suggest synonym direction or structure to keep SAME tense/meaning — no full paraphrase.",
+        "continue_sentence": "Hint which grammar construction fits the stem (e.g. 2nd conditional would+V1) — do NOT finish the sentence.",
+    }.get(subtype, "Give a gentle grammar nudge without the answer.")
+
+    fallback = (
+        f"🦜 Эй, ты справишься — это тебе по плечу 💪\n\n"
+        f"Подсказка: подумай про тему <b>{review_topic}</b>. "
+        "Не гонись за идеалом с первого раза — наметь конструкцию, а слова подставь сам(а). "
+        "Я в тебя верю ✨"
+    )
+
+    data = _ask_json(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "You are Rico, a warm parrot English tutor for Russian learners. "
+                    "Give a SHORT hint (3-5 sentences in Russian, friendly, emoji ok). "
+                    "NEVER write the full correct answer or a ready-made sentence the student can copy. "
+                    "You MAY name a rule, construction, tense, or suggest 1-2 word OPTIONS "
+                    "(not the whole solution). Encourage: 'тебе это по плечу', 'ты сможешь'. "
+                    f"{subtype_hint} "
+                    'Return ONLY JSON: {"hint_ru":"..."}'
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Level {lvl}. Subtype {subtype}. Topic hint: {review_topic}.\n"
+                    f"Instruction: {instruction}\n"
+                    f"Prompt: {stem}\n"
+                    "Do NOT reveal the model answer."
+                ),
+            },
+        ],
+        {"hint_ru": fallback},
+        temperature=0.45,
+        max_tokens=280,
+    )
+    hint = str((data or {}).get("hint_ru") or "").strip() or fallback
+    # страховка: если GPT всё же выдал слишком похожее на ответ — fallback
+    gold = _normalize_text(ex.get("answer") or "")
+    if gold and len(gold) > 8 and gold in _normalize_text(hint):
+        hint = fallback
+    if not hint.startswith("🦜"):
+        hint = "🦜 " + hint
+    return hint
+
+
 __all__ = [
     "has_extra_for_level",
     "subtype_for_level",
@@ -721,6 +788,7 @@ __all__ = [
     "format_ok",
     "format_bad",
     "format_skip",
+    "rico_extra_hint",
     "review_topic_for",
     "get_extra_bank",
 ]

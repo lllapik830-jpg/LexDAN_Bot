@@ -26,6 +26,7 @@ from handlers.lesson_keyboards import (
     BTN_EXTRA,
     BTN_EXTRA_NEXT,
     BTN_EXTRA_SKIP,
+    BTN_EXTRA_HINT,
     BTN_EXTRA_DO,
     BTN_EXTRA_MISTAKES,
     BTN_TRANSLATE,
@@ -635,6 +636,7 @@ _EXTRA_NAV_TEXTS = {
     BTN_EXTRA_DO,
     BTN_EXTRA_NEXT,
     BTN_EXTRA_SKIP,
+    BTN_EXTRA_HINT,
 }
 
 
@@ -809,6 +811,32 @@ async def extra_skip(m: Message):
         return
     level = (user.get("lesson") or {}).get("level") or "A1"
     await _skip_current_extra(m, str(m.from_user.id), level)
+
+
+@router.message(
+    ModeFilter(MODE_LESSONS),
+    LessonHubFilter("grammar_extra_exercise"),
+    F.text == BTN_EXTRA_HINT,
+)
+async def extra_hint(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    if assessment_busy(user):
+        return
+    lesson = user.get("lesson") or {}
+    ex = dict(lesson.get("exercise") or {})
+    level = lesson.get("level") or "A1"
+    if not ex:
+        await m.answer(
+            "Сначала открой задание — потом подскажу 💡",
+            reply_markup=grammar_extra_menu_kb(mistakes=len(get_extra_mistakes(user, level))),
+        )
+        return
+    from services.grammar_extra import rico_extra_hint
+
+    await m.answer("🦜 Секунду, подберу намёк…", parse_mode="HTML")
+    hint = await asyncio.to_thread(rico_extra_hint, level, ex)
+    await m.answer(hint, reply_markup=grammar_extra_kb(), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_extra_exercise"))
