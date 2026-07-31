@@ -1641,8 +1641,9 @@ async def _advance_grammar_test(m: Message, user: dict, correct: bool, *, your: 
         if passed and unlocked:
             text += (
                 f"\n\n🔓 <b>Открыт новый уровень: {unlocked}!</b>\n"
-                f"В профиле теперь тоже <b>{unlocked}</b>. "
-                f"Вернись к выбору уровней — он уже доступен."
+                f"В профиле теперь тоже <b>{unlocked}</b>.\n"
+                f"Доступны <b>Grammar</b>, <b>Vocabulary</b> и <b>Listening</b> на {unlocked} — "
+                f"вернись к выбору уровней."
             )
         users = load_users()
         user = get_user(users, uid)

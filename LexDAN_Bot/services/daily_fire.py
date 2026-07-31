@@ -62,10 +62,12 @@ def ensure_daily_fire(user: dict) -> dict:
             "date": _today(),
             "opened": {k: False for k in KINDS},
             "cache": {},
+            "celebrated": False,
         }
     else:
         raw.setdefault("opened", {})
         raw.setdefault("cache", {})
+        raw.setdefault("celebrated", False)
         for k in KINDS:
             raw["opened"].setdefault(k, False)
     user["daily_fire"] = raw
@@ -591,6 +593,171 @@ def tts_text_for(kind: str, data: dict) -> str:
     return (data.get("en") or "").strip()
 
 
+def accessible_cefr_levels(user: dict) -> list[str]:
+    from data.assessment_data import LEVELS, is_level_accessible_for_user
+
+    return [lv for lv in LEVELS if is_level_accessible_for_user(user, lv)]
+
+
+def _collect_practice_offers(user: dict) -> list[dict]:
+    """Кандидаты: незакрытый Grammar / невыученные слова Vocab / непройденный Listening."""
+    from data.grammar_curriculum import get_topics
+    from data.vocabulary_curriculum import get_vocab_topics
+    from data.vocabulary_words import get_words
+    from data.listening_topics import topics_for_level
+    from services.lesson_state import is_grammar_topic_done
+    from services.vocabulary_state import is_word_learned, ensure_vocab_progress
+    from services.listening_state import is_topic_done, ensure_listening
+
+    ensure_vocab_progress(user)
+    ensure_listening(user)
+    offers: list[dict] = []
+
+    for level in accessible_cefr_levels(user):
+        # Grammar
+        for idx, t in enumerate(get_topics(level) or []):
+            if is_grammar_topic_done(user, level, t):
+                continue
+            tid = str(t.get("id") or "")
+            title = str(t.get("title") or tid)
+            if not tid:
+                continue
+            offers.append(
+                {
+                    "section": "grammar",
+                    "level": level,
+                    "target_id": tid,
+                    "title": title,
+                    "label": f"📘 Grammar · {level}: {title[:28]}",
+                    "cb": f"dfgo:g:{level}:{idx}",
+                }
+            )
+
+        # Vocabulary — тема, где есть невыученные слова
+        for idx, t in enumerate(get_vocab_topics(level) or []):
+            tid = str(t.get("id") or "")
+            title = str(t.get("title") or tid)
+            if not tid:
+                continue
+            words = get_words(level, tid) or []
+            if not words:
+                continue
+            if any(not is_word_learned(user, level, tid, w.get("en") or "") for w in words):
+                offers.append(
+                    {
+                        "section": "vocab",
+                        "level": level,
+                        "target_id": tid,
+                        "title": title,
+                        "label": f"📗 Vocab · {level}: {title[:28]}",
+                        "cb": f"dfgo:v:{level}:{idx}",
+                    }
+                )
+
+        # Listening
+        for idx, t in enumerate(topics_for_level(level) or []):
+            tid = str(t.get("id") or "")
+            title = str(t.get("title_ru") or t.get("title") or tid)
+            if not tid:
+                continue
+            if is_topic_done(user, level, tid):
+                continue
+            offers.append(
+                {
+                    "section": "listening",
+                    "level": level,
+                    "target_id": tid,
+                    "title": title,
+                    "label": f"🎧 Listen · {level}: {title[:28]}",
+                    "cb": f"dfgo:l:{level}:{idx}",
+                }
+            )
+
+    return offers
+
+
+def _fallback_section_offers(user: dict) -> list[dict]:
+    """Если всё закрыто — предложить раздел на доступном уровне."""
+    levels = accessible_cefr_levels(user) or ["A1"]
+    level = random.choice(levels)
+    return [
+        {
+            "section": "grammar",
+            "level": level,
+            "target_id": "",
+            "title": "темы Grammar",
+            "label": f"📘 Grammar · {level}",
+            "cb": f"dfgo:g:{level}:_",
+        },
+        {
+            "section": "vocab",
+            "level": level,
+            "target_id": "",
+            "title": "слова Vocabulary",
+            "label": f"📗 Vocabulary · {level}",
+            "cb": f"dfgo:v:{level}:_",
+        },
+        {
+            "section": "listening",
+            "level": level,
+            "target_id": "",
+            "title": "Listening",
+            "label": f"🎧 Listening · {level}",
+            "cb": f"dfgo:l:{level}:_",
+        },
+    ]
+
+
+def pick_practice_offer(user: dict) -> dict:
+    """Случайное предложение продолжить занятия (только на доступных уровнях)."""
+    offers = _collect_practice_offers(user)
+    if not offers:
+        offers = _fallback_section_offers(user)
+    # сначала случайный раздел среди доступных, потом цель в нём — разнообразнее
+    sections = list({o["section"] for o in offers})
+    section = random.choice(sections)
+    pool = [o for o in offers if o["section"] == section] or offers
+    return dict(random.choice(pool))
+
+
+def format_ritual_done(offer: dict) -> str:
+    section = offer.get("section") or "grammar"
+    level = offer.get("level") or ""
+    title = offer.get("title") or ""
+    names = {
+        "grammar": "📘 Grammar",
+        "vocab": "📗 Vocabulary",
+        "listening": "🎧 Listening",
+    }
+    sec_name = names.get(section, "уроки")
+    where = f"{sec_name} · <b>{level}</b>"
+    if title and title not in {"темы Grammar", "слова Vocabulary", "Listening"}:
+        where += f"\n🎯 Тема: <b>{_esc(title)}</b>"
+    cheers = [
+        "Молодец! Так держать 🔥",
+        "Красава! Ритуал дня закрыт ✨",
+        "Йес! Ты соблюдаешь ежедневный ритуал — это сила 💪",
+    ]
+    return (
+        f"🦜 <b>{random.choice(cheers)}</b>\n\n"
+        "Ты открыл все искры <b>Огня дня</b> — привычка растёт, мозг в теме 🧠💛\n\n"
+        f"А теперь предлагаю позаниматься в {where}.\n"
+        "Жми кнопку ниже — я сразу перекину туда 👇"
+    )
+
+
+def should_celebrate_ritual(user: dict) -> bool:
+    df = ensure_daily_fire(user)
+    if df.get("celebrated"):
+        return False
+    return opened_count(user) >= 4
+
+
+def mark_ritual_celebrated(user: dict) -> None:
+    df = ensure_daily_fire(user)
+    df["celebrated"] = True
+
+
 __all__ = [
     "BTN_DAILY_FIRE",
     "BTN_DF_WORD",
@@ -611,4 +778,9 @@ __all__ = [
     "format_fact",
     "tts_text_for",
     "spoiler",
+    "pick_practice_offer",
+    "format_ritual_done",
+    "should_celebrate_ritual",
+    "mark_ritual_celebrated",
+    "accessible_cefr_levels",
 ]
