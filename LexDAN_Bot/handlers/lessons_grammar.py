@@ -25,6 +25,7 @@ from handlers.lesson_keyboards import (
     BTN_RICO_CHAT,
     BTN_EXTRA,
     BTN_EXTRA_NEXT,
+    BTN_EXTRA_SKIP,
     BTN_EXTRA_DO,
     BTN_EXTRA_MISTAKES,
     BTN_TRANSLATE,
@@ -625,6 +626,67 @@ def _extra_mistakes_btn_match(text: str) -> bool:
     return t == BTN_EXTRA_MISTAKES or t.startswith(BTN_EXTRA_MISTAKES + " ")
 
 
+_EXTRA_NAV_TEXTS = {
+    "⬅️ К темам",
+    "🔙 Вернуться в меню",
+    "⬅️ К разделам",
+    BTN_TRANSLATE,
+    "🦜 Помощь Рико",
+    BTN_EXTRA_DO,
+    BTN_EXTRA_NEXT,
+    BTN_EXTRA_SKIP,
+}
+
+
+def _is_extra_nav(text: str | None) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if t in _EXTRA_NAV_TEXTS:
+        return True
+    if _extra_mistakes_btn_match(t):
+        return True
+    return False
+
+
+async def _skip_current_extra(m: Message, uid: str, level: str) -> None:
+    """Пропуск: в ошибки + курсор вперёд + следующее задание."""
+    from services.grammar_extra import format_skip
+
+    users = load_users()
+    user = get_user(users, uid)
+    lesson = user.get("lesson") or {}
+    ex = dict(lesson.get("exercise") or {})
+    mode = lesson.get("extra_mode") or "practice"
+    item_id = int(ex.get("id") or 0)
+
+    if not mode:
+        await m.answer(
+            "Сначала выбери режим: «Делать задания» или «Отработать ошибки».",
+            reply_markup=grammar_extra_menu_kb(mistakes=len(get_extra_mistakes(user, level))),
+        )
+        return
+
+    if item_id:
+        mark_extra_mistake(uid, level, item_id)
+        if mode == "practice":
+            set_extra_cursor(uid, level, item_id)
+        elif mode == "mistakes":
+            users = load_users()
+            user = get_user(users, uid)
+            queue = list((user.get("lesson") or {}).get("extra_mistake_queue") or [])
+            if queue and int(queue[0]) == item_id:
+                queue = queue[1:] + [item_id]
+            elif item_id in queue:
+                queue = [x for x in queue if int(x) != item_id] + [item_id]
+            else:
+                queue = queue + [item_id]
+            set_extra_mode(uid, "mistakes", mistake_queue=queue)
+
+    await m.answer(format_skip(), reply_markup=grammar_extra_kb(), parse_mode="HTML")
+    await _launch_extra_exercise(m, uid, level)
+
+
 async def _launch_extra_exercise(m: Message, user_id: str, level: str):
     from services.grammar_extra import next_practice_index, prepare_extra_exercise
 
@@ -710,7 +772,8 @@ async def extra_start_practice(m: Message):
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_extra"))
 async def extra_start_mistakes(m: Message):
     if not m.text or not _extra_mistakes_btn_match(m.text):
-        return
+        # не глотаем «К темам» / меню / другие кнопки
+        raise SkipHandler
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     if assessment_busy(user):
@@ -737,37 +800,23 @@ async def extra_start_mistakes(m: Message):
 @router.message(
     ModeFilter(MODE_LESSONS),
     LessonHubFilter("grammar_extra", "grammar_extra_exercise"),
-    F.text == BTN_EXTRA_NEXT,
+    F.text.in_({BTN_EXTRA_SKIP, BTN_EXTRA_NEXT}),
 )
-async def extra_next(m: Message):
+async def extra_skip(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     if assessment_busy(user):
         return
     level = (user.get("lesson") or {}).get("level") or "A1"
-    mode = (user.get("lesson") or {}).get("extra_mode")
-    if not mode:
-        await m.answer(
-            "Сначала выбери режим: «Делать задания» или «Отработать ошибки».",
-            reply_markup=grammar_extra_menu_kb(mistakes=len(get_extra_mistakes(user, level))),
-        )
-        return
-    await _launch_extra_exercise(m, str(m.from_user.id), level)
+    await _skip_current_extra(m, str(m.from_user.id), level)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_extra_exercise"))
 async def extra_exercise_answer(m: Message):
     if not m.text or m.text.startswith("/"):
         return
-    if m.text in {
-        BTN_EXTRA_NEXT,
-        BTN_EXTRA_DO,
-        "⬅️ К темам",
-        "🔙 Вернуться в меню",
-        BTN_TRANSLATE,
-        "🦜 Помощь Рико",
-    } or _extra_mistakes_btn_match(m.text):
-        return
+    if _is_extra_nav(m.text):
+        raise SkipHandler
 
     from services.moderation import guard_user_text, ensure_moderation
     from services.grammar_extra import check_extra_answer, format_ok, format_bad
