@@ -14,6 +14,8 @@ from services.lesson_state import EXERCISE_TYPES, all_grammar_topics_done, is_gr
 
 BTN_GRAMMAR_TEST = "🎯 Тест по Grammar"
 BTN_RICO_CHAT = "🦜 Общение с Рико"
+BTN_EXTRA = "📝 Доп. задания"
+BTN_EXTRA_NEXT = "➡️ Далее"
 BTN_TRANSLATE = "🌍 Перевести"
 BTN_RICO_HELP = "🦜 Помощь Рико"
 
@@ -55,12 +57,27 @@ def grammar_topics_kb(level: str, user: dict | None = None) -> ReplyKeyboardMark
             row = []
     if row:
         rows.append(row)
-    rows.append([KeyboardButton(text=BTN_RICO_CHAT)])
+    lvl = (level or "").upper()
+    if lvl in {"A1", "A2", "B1", "B2", "C1", "C2"}:
+        rows.append([KeyboardButton(text=BTN_EXTRA), KeyboardButton(text=BTN_RICO_CHAT)])
+    else:
+        rows.append([KeyboardButton(text=BTN_RICO_CHAT)])
     if user and all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
         rows.append([KeyboardButton(text=BTN_GRAMMAR_TEST)])
     rows.append([KeyboardButton(text="⬅️ К разделам")])
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def grammar_extra_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_EXTRA_NEXT)],
+            [KeyboardButton(text="⬅️ К темам")],
+            [KeyboardButton(text="🔙 Вернуться в меню")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def grammar_rico_chat_kb() -> ReplyKeyboardMarkup:

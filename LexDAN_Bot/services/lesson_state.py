@@ -47,6 +47,8 @@ def _blank_progress() -> dict:
         "completed_topics": [],
         # {"A0": true, "A1": true} — тест по разделу Grammar сдан
         "grammar_test_passed": {},
+        # доп. задания: {"A1": [1, 5, 12], ...} — id 1..100
+        "extra_done": {},
     }
 
 
@@ -60,6 +62,7 @@ def ensure_progress(user: dict) -> dict:
         user["grammar_progress"].setdefault("completed_exercises", {})
         user["grammar_progress"].setdefault("completed_topics", [])
         user["grammar_progress"].setdefault("grammar_test_passed", {})
+        user["grammar_progress"].setdefault("extra_done", {})
     # Миграция со старого хранения внутри lesson
     old = (user.get("lesson") or {}).get("completed_exercises")
     if isinstance(old, dict) and old:
@@ -76,6 +79,59 @@ def ensure_progress(user: dict) -> dict:
             dest[key] = sorted(merged)
         user["lesson"]["completed_exercises"] = {}
     return user["grammar_progress"]
+
+
+def get_extra_done(user: dict, level: str) -> list[int]:
+    ensure_progress(user)
+    raw = (user["grammar_progress"].get("extra_done") or {}).get(str(level or "").upper()) or []
+    out = []
+    for n in raw:
+        try:
+            out.append(int(n))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def mark_extra_done(user_id: str, level: str, item_id: int) -> dict:
+    def mut(u):
+        ensure_progress(u)
+        store = u["grammar_progress"].setdefault("extra_done", {})
+        lvl = str(level or "").upper()
+        done = set(get_extra_done(u, lvl))
+        done.add(int(item_id))
+        store[lvl] = sorted(done)
+
+    return update_lesson(user_id, mut)
+
+
+def set_grammar_extra(user_id: str, level: str | None = None) -> dict:
+    def mut(u):
+        ensure_lesson(u)
+        if level:
+            u["lesson"]["level"] = level
+        u["lesson"]["hub"] = "grammar_extra"
+        u["lesson"]["section"] = "Grammar"
+        u["lesson"]["topic_id"] = "__extra__"
+        u["lesson"]["topic_title"] = "Доп. задания"
+        u["lesson"]["exercise"] = None
+        u["lesson"]["exercise_num"] = None
+
+    return update_lesson(user_id, mut)
+
+
+def start_extra_exercise(user_id: str, exercise: dict) -> dict:
+    def mut(u):
+        ensure_lesson(u)
+        u["lesson"]["hub"] = "grammar_extra_exercise"
+        u["lesson"]["section"] = "Grammar"
+        u["lesson"]["topic_id"] = "__extra__"
+        u["lesson"]["topic_title"] = "Доп. задания"
+        u["lesson"]["exercise_num"] = int(exercise.get("id") or 0)
+        u["lesson"]["exercise"] = exercise
+        u["lesson"].pop("speak", None)
+
+    return update_lesson(user_id, mut)
 
 
 def progress_key(level: str, topic_id: str) -> str:

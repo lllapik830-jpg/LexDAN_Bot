@@ -19,8 +19,11 @@ from handlers.lesson_keyboards import (
     exercise_write_kb,
     exercise_help_inline_kb,
     grammar_test_kb,
+    grammar_extra_kb,
     BTN_GRAMMAR_TEST,
     BTN_RICO_CHAT,
+    BTN_EXTRA,
+    BTN_EXTRA_NEXT,
     BTN_TRANSLATE,
     grammar_rico_chat_kb,
     lesson_limit_inline_kb,
@@ -61,6 +64,10 @@ from services.lesson_state import (
     update_grammar_test,
     clear_grammar_test,
     set_grammar_rico_chat,
+    set_grammar_extra,
+    start_extra_exercise,
+    get_extra_done,
+    mark_extra_done,
     start_speak_practice,
     bump_speak_attempt,
     clear_speak_practice,
@@ -146,6 +153,8 @@ def _kb_for_user(user: dict, *, user_id: str | int | None = None) -> ReplyKeyboa
         return grammar_test_kb(mcq_options=opts)
     if hub == "grammar_rico_chat":
         return grammar_rico_chat_kb()
+    if hub in {"grammar_extra", "grammar_extra_exercise"}:
+        return grammar_extra_kb()
     if user.get("assessment_done") or user.get("dev_unlock"):
         return lessons_home_levels(user.get("level"), user=user)
     return lessons_home_first()
@@ -563,6 +572,136 @@ async def open_grammar_rico_chat(m: Message):
             "Please greet me briefly and ask which grammar topic I want to start with."
         ),
         show_heard=False,
+    )
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_list"), F.text == BTN_EXTRA)
+async def open_grammar_extra(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    if assessment_busy(user):
+        return
+    ensure_lesson(user)
+    level = (user.get("lesson") or {}).get("level") or user.get("level") or "A1"
+    if level == "A0" or level not in {"A1", "A2", "B1", "B2", "C1", "C2"}:
+        await m.answer(
+            "Доп. задания доступны с уровня A1.",
+            reply_markup=grammar_topics_kb(level, user),
+        )
+        return
+
+    from services.grammar_extra import has_extra_for_level, title_for_level
+
+    if not has_extra_for_level(level):
+        await m.answer("Пока нет доп. заданий для этого уровня.", reply_markup=grammar_topics_kb(level, user))
+        return
+
+    set_grammar_extra(str(m.from_user.id), level)
+    done = get_extra_done(user, level)
+    await m.answer(
+        f"📝 <b>Доп. задания · {level}</b>\n"
+        f"<b>{title_for_level(level)}</b>\n\n"
+        f"База: 100 заданий. Пройдено: <b>{len(done)}</b>/100.\n"
+        "Пиши ответ текстом. Проверка мягкая — важны смысл и грамматика, "
+        "а не точки и заглавные буквы.\n\n"
+        "➡️ <b>Далее</b> — следующее задание.",
+        reply_markup=grammar_extra_kb(),
+        parse_mode="HTML",
+    )
+    await _launch_extra_exercise(m, str(m.from_user.id), level)
+
+
+async def _launch_extra_exercise(m: Message, user_id: str, level: str):
+    from services.grammar_extra import next_extra_index, prepare_extra_exercise
+
+    users = load_users()
+    user = get_user(users, user_id)
+    ok, limit_msg = can_do_grammar_exercise(user)
+    if not ok:
+        await m.answer(
+            limit_msg or "Дневной лимит упражнений исчерпан.",
+            reply_markup=grammar_extra_kb(),
+            parse_mode="HTML",
+        )
+        await m.answer("Лимит:", reply_markup=lesson_limit_inline_kb())
+        return
+
+    done = get_extra_done(user, level)
+    idx = next_extra_index(level, done)
+    card = prepare_extra_exercise(level, idx)
+    start_extra_exercise(user_id, card)
+    await m.answer(card["prompt"], reply_markup=grammar_extra_kb(), parse_mode="HTML")
+
+
+@router.message(
+    ModeFilter(MODE_LESSONS),
+    LessonHubFilter("grammar_extra", "grammar_extra_exercise"),
+    F.text == BTN_EXTRA_NEXT,
+)
+async def extra_next(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    if assessment_busy(user):
+        return
+    level = (user.get("lesson") or {}).get("level") or "A1"
+    set_grammar_extra(str(m.from_user.id), level)
+    await _launch_extra_exercise(m, str(m.from_user.id), level)
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_extra_exercise"))
+async def extra_exercise_answer(m: Message):
+    if not m.text or m.text.startswith("/"):
+        return
+    if m.text in {
+        BTN_EXTRA_NEXT,
+        "⬅️ К темам",
+        "🔙 Вернуться в меню",
+        BTN_TRANSLATE,
+        "🦜 Помощь Рико",
+    }:
+        return
+
+    from services.moderation import guard_user_text, ensure_moderation
+    from services.grammar_extra import check_extra_answer, format_ok, format_bad
+    from services.collection import collection_allowed
+    from services.event_magic import add_grammar_points
+
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_moderation(user)
+    if not await guard_user_text(m, user, m.text):
+        return
+
+    lesson = user.get("lesson") or {}
+    ex = dict(lesson.get("exercise") or {})
+    level = lesson.get("level") or "A1"
+    uid = str(m.from_user.id)
+    if not ex:
+        await m.answer("Сначала нажми ➡️ Далее.", reply_markup=grammar_extra_kb())
+        return
+
+    result = check_extra_answer(level, ex, m.text)
+    if _as_bool(result.get("correct")):
+        item_id = int(ex.get("id") or 0)
+        mark_extra_done(uid, level, item_id)
+        users = load_users()
+        user = get_user(users, uid)
+        ensure_growth(user)
+        note_grammar_exercise_done(user)
+        if collection_allowed(uid):
+            try:
+                add_grammar_points(user)
+            except Exception:
+                pass
+        save_users(users, only=uid)
+        await m.answer(format_ok(), reply_markup=grammar_extra_kb())
+        await _launch_extra_exercise(m, uid, level)
+        return
+
+    await m.answer(
+        format_bad(result.get("example") or ex.get("example") or ex.get("answer") or ""),
+        reply_markup=grammar_extra_kb(),
+        parse_mode="HTML",
     )
 
 
