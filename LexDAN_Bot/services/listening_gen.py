@@ -382,6 +382,10 @@ def _get_level_fixed(level: str, topic_id: str) -> dict | None:
         from data.listening_b2_fixed import get_b2_fixed
 
         return get_b2_fixed(tid)
+    if lvl == "C1":
+        from data.listening_c1_fixed import get_c1_fixed
+
+        return get_c1_fixed(tid)
     return None
 
 
@@ -394,6 +398,7 @@ def _stable_pair_names(topic: dict) -> tuple[tuple[str, str], tuple[str, str]]:
     from data.listening_a2_fixed import get_a2_fixed
     from data.listening_b1_fixed import get_b1_fixed
     from data.listening_b2_fixed import get_b2_fixed
+    from data.listening_c1_fixed import get_c1_fixed
 
     tid = str(topic.get("id") or "")
     fixed = (
@@ -402,6 +407,7 @@ def _stable_pair_names(topic: dict) -> tuple[tuple[str, str], tuple[str, str]]:
         or get_a2_fixed(tid)
         or get_b1_fixed(tid)
         or get_b2_fixed(tid)
+        or get_c1_fixed(tid)
     )
     if fixed and isinstance(fixed.get("speakers"), list) and len(fixed["speakers"]) >= 2:
         s0, s1 = fixed["speakers"][0], fixed["speakers"][1]
@@ -1303,12 +1309,29 @@ def _fallback_pack(level: str, topic: dict) -> dict:
     fixed = _get_level_fixed(level, tid)
     if fixed:
         sp = fixed["speakers"]
-        n0, n1 = sp[0]["name"], sp[1]["name"]
-        g0 = (sp[0].get("gender") or "male").lower()
-        g1 = (sp[1].get("gender") or "female").lower()
+        names: list[str] = []
+        speakers_out: list[dict] = []
+        for i, s in enumerate(sp):
+            if not isinstance(s, dict):
+                continue
+            name = str(s.get("name") or (role_a if i == 0 else role_b)).strip() or f"Speaker{i}"
+            g = (s.get("gender") or ("male" if i == 0 else "female")).lower()
+            if g not in {"male", "female"}:
+                g = "male" if i == 0 else "female"
+            default_role = role_a if i == 0 else role_b
+            names.append(name)
+            speakers_out.append({"name": name, "gender": g, "role": s.get("role") or default_role})
+        if len(names) < 2:
+            names = [role_a, role_b]
+            speakers_out = [
+                {"name": names[0], "gender": "male", "role": role_a},
+                {"name": names[1], "gender": "female", "role": role_b},
+            ]
+        n0, n1 = names[0], names[1]
         turns = []
         for idx, text in fixed["turns"][:12]:
-            name = n0 if int(idx) == 0 else n1
+            i = int(idx)
+            name = names[i] if 0 <= i < len(names) else names[0]
             turns.append({"speaker": name, "text": text})
         # Task3 — как раньше из реплик; Task1/2 — фиксированные
         _, _, events = _derive_tasks_from_turns(turns, n0, n1, topic)
@@ -1318,10 +1341,7 @@ def _fallback_pack(level: str, topic: dict) -> dict:
             q.setdefault("options_ru", list(q.get("options") or []))
             q.setdefault("explain_wrong_ru", q.get("explain_wrong_ru") or "")
         return {
-            "speakers": [
-                {"name": n0, "gender": g0, "role": sp[0].get("role") or role_a},
-                {"name": n1, "gender": g1, "role": sp[1].get("role") or role_b},
-            ],
+            "speakers": speakers_out,
             "turns": turns,
             "task1": t1,
             "task2": t2,
@@ -1431,6 +1451,31 @@ def _attach_voices_and_number(pack: dict, level: str, topic: dict) -> dict:
         g1 = "female"
     v0, v1 = _pick_voices(g0, g1, level=level, topic=topic, roles=roles, setting=setting)
     voice_map = {n0: v0, n1: v1}
+    # Медиация и т.п.: третий+ спикер — отдельный голос того же пола
+    used_keys = {v0["key"], v1["key"]}
+    used_names = {v0["name"], v1["name"]}
+    for extra in sp[2:]:
+        if not isinstance(extra, dict):
+            continue
+        ename = str(extra.get("name") or "").strip()
+        if not ename or ename in voice_map:
+            continue
+        eg = (extra.get("gender") or "male").lower()
+        if eg not in {"male", "female"}:
+            eg = "male"
+        pool = [
+            v
+            for v in _LISTENING_VOICES
+            if v.get("gender") == eg and v["key"] not in used_keys and v["name"] not in used_names
+        ]
+        if not pool:
+            pool = [v for v in _LISTENING_VOICES if v.get("gender") == eg and v["key"] not in used_keys]
+        if not pool:
+            pool = [v for v in _LISTENING_VOICES if v["key"] not in used_keys] or list(_LISTENING_VOICES)
+        ev = random.choice(pool)
+        voice_map[ename] = ev
+        used_keys.add(ev["key"])
+        used_names.add(ev["name"])
     pack["voice_map"] = {
         name: {"key": v["key"], "voice_id": v["voice_id"], "voice_name": v["name"]}
         for name, v in voice_map.items()
