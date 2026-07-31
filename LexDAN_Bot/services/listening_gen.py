@@ -374,6 +374,10 @@ def _get_level_fixed(level: str, topic_id: str) -> dict | None:
         from data.listening_a2_fixed import get_a2_fixed
 
         return get_a2_fixed(tid)
+    if lvl == "B1":
+        from data.listening_b1_fixed import get_b1_fixed
+
+        return get_b1_fixed(tid)
     return None
 
 
@@ -384,9 +388,10 @@ def _stable_pair_names(topic: dict) -> tuple[tuple[str, str], tuple[str, str]]:
     from data.listening_a0_fixed import get_a0_fixed
     from data.listening_a1_fixed import get_a1_fixed
     from data.listening_a2_fixed import get_a2_fixed
+    from data.listening_b1_fixed import get_b1_fixed
 
     tid = str(topic.get("id") or "")
-    fixed = get_a0_fixed(tid) or get_a1_fixed(tid) or get_a2_fixed(tid)
+    fixed = get_a0_fixed(tid) or get_a1_fixed(tid) or get_a2_fixed(tid) or get_b1_fixed(tid)
     if fixed and isinstance(fixed.get("speakers"), list) and len(fixed["speakers"]) >= 2:
         s0, s1 = fixed["speakers"][0], fixed["speakers"][1]
         g0 = (s0.get("gender") or "male").lower()
