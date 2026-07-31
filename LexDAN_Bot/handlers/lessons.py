@@ -221,7 +221,7 @@ def _write_prompt(topic: str, left: int) -> str:
 
 
 async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
-    from services.growth import ensure_growth, touch_activity, grant_safe
+    from services.growth import ensure_growth, touch_activity
     from services.database import load_users, get_user, save_users
     from handlers.keyboards import BTN_START_TODAY
 
@@ -229,10 +229,6 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
-    # Стартовый сейф один раз после теста (без 7-дневного безлимита)
-    if not user.get("post_test_safe_granted"):
-        grant_safe(user, 1)
-        user["post_test_safe_granted"] = True
     touch_activity(user)
     save_users(users)
 
@@ -245,7 +241,7 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         f"после сдачи теста по Grammar на текущем уровне.\n\n"
         f"{rico}\n\n"
         "Рецепт: <b>~15 минут в день</b>. Серия дней и друзья дают бустеры — смотри в профиле 🔥\n"
-        "🛡️ В подарок: <b>+1 стрик-сейф</b> на случай пропуска дня.\n\n"
+        "🛡️ Стрик-сейфы копятся за длинную серию: <b>30</b>, <b>70</b>, <b>100</b>, <b>150</b>…\n\n"
         f"👇 Лучший старт прямо сейчас — жми <b>{BTN_START_TODAY}</b>\n"
         "(открою Vocabulary и первую тему твоего уровня)."
     )

@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import random
 
-from services.growth import ensure_growth, grant_safe
+from services.growth import ensure_growth
 from services.rewards import set_grammar_cap_today
 
 MISSION_WEEK = "week_review"
@@ -143,13 +143,11 @@ def complete_mission(user: dict) -> str:
     user["pending_secret_rico"] = bool(sm["inbox"])
 
     set_grammar_cap_today(user, 24)
-    grant_safe(user, 1)
     title = MISSION_META.get(mtype, {}).get("title", "Секрет")
     return (
         f"🏆 <b>Секрет выполнен:</b> {title}\n\n"
         "Награда:\n"
-        "• сегодня до <b>24</b> баллов на уроки (Grammar + Vocab)\n"
-        "• <b>+1</b> стрик-сейф 🛡️\n\n"
+        "• сегодня до <b>24</b> баллов на уроки (Grammar + Vocab)\n\n"
         "Рико гордится тобой. Завтра — снова ~15 минут 💪"
     )
 

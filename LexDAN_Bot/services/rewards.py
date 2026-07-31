@@ -180,9 +180,10 @@ def format_streak_rewards_message(user: dict) -> str:
             mark, status = "▫️", f" — ещё {d - streak} дн."
         lines.append(f"{mark} <b>{d} дн.</b>{status}\n{streak_reward_text(plan, d)}\n")
     lines.append(
-        "🛡️ Стрик-сейфы выдают только за <b>30</b> и <b>70</b> дней серии.\n"
-        "Пропуск дня можно закрыть сейфом (кнопка «Восстановить серию»), "
-        "если сейф есть."
+        "🛡️ Стрик-сейфы: <b>30</b>, <b>70</b>, <b>100</b>, <b>150</b> "
+        "и дальше каждые <b>30</b> дней серии.\n"
+        "Пропуск дня в 00:00 МСК: если есть сейф — списывается сам и серия живёт; "
+        "если нет — серия обнуляется (в тот же день ещё можно восстановить кнопкой)."
     )
     if plan in {"free", "chat"}:
         lines.append(
@@ -381,7 +382,7 @@ def format_referral_rewards_message(user: dict, bot_username: str = "") -> str:
     lines.append(
         "<b>Что получает друг</b>\n"
         "• В день старта по ссылке — Grammar до <b>12</b> заданий\n"
-        "• Когда закроет 3 темы — <b>+1 стрик-сейф</b>\n"
+        "• Когда закроет 3 темы — реферальный прогресс засчитан + буст дня\n"
     )
     return "\n".join(lines)
 
@@ -402,10 +403,6 @@ def on_invitee_qualified(inviter: dict, invitee: dict) -> tuple[str, str]:
     if invitee.get("referral_qualified_done"):
         return "", ""
     invitee["referral_qualified_done"] = True
-
-    from services.growth import grant_safe
-
-    grant_safe(invitee, 1)
 
     q = int(inviter.get("referral_qualified") or 0) + 1
     inviter["referral_qualified"] = q
@@ -437,7 +434,7 @@ def on_invitee_qualified(inviter: dict, invitee: dict) -> tuple[str, str]:
     )
     to_invitee = (
         "🎉 Ты закрыл 3 темы Grammar — реферальный прогресс засчитан!\n"
-        "Рико дарит <b>+1 стрик-сейф</b> 🛡️"
+        "Рико гордится тобой 🦜 · сейфы копятся за длинную серию дней."
     )
     return to_inviter, to_invitee
 
@@ -452,11 +449,8 @@ def maybe_qualify_referral(invitee: dict, users: dict) -> tuple[str | None, str 
     ref = invitee.get("referred_by")
     if not ref or str(ref) not in users:
         invitee["referral_qualified_done"] = True
-        from services.growth import grant_safe
-
-        grant_safe(invitee, 1)
         return None, (
-            "🎉 Ты закрыл 3 темы Grammar!\nРико дарит <b>+1 стрик-сейф</b> 🛡️"
+            "🎉 Ты закрыл 3 темы Grammar — Рико гордится тобой 🦜"
         )
     inviter = users[str(ref)]
     if not isinstance(inviter, dict):

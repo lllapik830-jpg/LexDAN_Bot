@@ -232,8 +232,7 @@ def start_trial(user: dict, days: int = TRIAL_DAYS) -> None:
         user["premium_until"] = target
     if not user.get("trial_started_at"):
         user["trial_started_at"] = now
-        if int(user.get("streak_safes") or 0) < 1:
-            user["streak_safes"] = 1
+        # сейфы только за вехи серии, не за триал
 
 
 def extend_premium(user: dict, days: int) -> None:
@@ -243,16 +242,46 @@ def extend_premium(user: dict, days: int) -> None:
     user["premium_until"] = base + days * 86400
 
 
-STREAK_SAFE_MILESTONES = {
-    30: 1,
-    70: 1,
-}
+STREAK_SAFE_FIXED = (30, 70, 100, 150)
+
+
+def is_streak_safe_milestone(days: int) -> bool:
+    """Сейфы: 30, 70, 100, 150, далее каждые 30 (180, 210, …)."""
+    n = int(days or 0)
+    if n in STREAK_SAFE_FIXED:
+        return True
+    return n > 150 and (n - 150) % 30 == 0
+
+
+def iter_streak_safe_milestones(up_to: int = 2000):
+    for n in STREAK_SAFE_FIXED:
+        yield n
+    n = 180
+    while n <= up_to:
+        yield n
+        n += 30
+
+
+def next_streak_safe_milestone(streak: int, claimed: set | list | None = None) -> int | None:
+    claimed_set = {int(x) for x in (claimed or [])}
+    st = int(streak or 0)
+    for m in iter_streak_safe_milestones(max(st + 400, 500)):
+        if m not in claimed_set and m > st:
+            return m
+    return None
+
+
+# совместимость со старым кодом
+STREAK_SAFE_MILESTONES = {30: 1, 70: 1, 100: 1, 150: 1}
 
 BTN_RESTORE_STREAK = "🛡️ Восстановить серию"
 
 
 def detect_streak_break(user: dict) -> bool:
-    """Пропуск дня → серия сгорает; значение можно вернуть сейфом."""
+    """
+    Пропуск дня (МСК): без сейфа серия → 0.
+    Если сейфов хватает на пропущенные дни — списываем и продолжаем серию.
+    """
     today = _today()
     last = user.get("streak_last_date") or ""
     streak = int(user.get("streak") or 0)
@@ -263,10 +292,40 @@ def detect_streak_break(user: dict) -> bool:
         return False
     if user.get("streak_burned") and int(user.get("streak_pending_restore") or 0) > 0:
         return False
+
+    try:
+        last_d = datetime.fromisoformat(str(last)[:10]).date()
+    except ValueError:
+        last_d = None
+    today_d = datetime.now(MSK).date()
+    yesterday_d = today_d - timedelta(days=1)
+    if last_d is None:
+        missed = 1
+    else:
+        missed = (yesterday_d - last_d).days
+        if missed <= 0:
+            return False
+
+    safes = int(user.get("streak_safes") or 0)
+    if safes >= missed:
+        user["streak_safes"] = safes - missed
+        user["streak_last_date"] = yesterday
+        user["streak_burned"] = False
+        user["streak_pending_restore"] = 0
+        user["streak_burn_date"] = ""
+        user["streak_auto_save_notice"] = {
+            "date": today,
+            "used": missed,
+            "left": int(user["streak_safes"]),
+            "streak": streak,
+        }
+        return False
+
     user["streak_pending_restore"] = streak
     user["streak_burned"] = True
-    user["streak_burn_date"] = _today()
+    user["streak_burn_date"] = today
     user["streak"] = 0
+    user.pop("streak_auto_save_notice", None)
     return True
 
 
@@ -287,7 +346,8 @@ def restore_streak(user: dict) -> tuple[bool, str]:
         if int(user.get("streak_safes") or 0) <= 0:
             return False, (
                 "🦜 Сейфов нет 😢\n"
-                "Их дают за серию: <b>30</b> и <b>70</b> дней подряд."
+                "Их дают только за серию: <b>30</b>, <b>70</b>, <b>100</b>, <b>150</b> "
+                "и дальше каждые <b>30</b> дней."
             )
         return False, "🦜 Восстановить серию сейчас нельзя."
 
@@ -311,6 +371,23 @@ def grant_safe(user: dict, n: int = 1) -> None:
     user["streak_safes"] = int(user.get("streak_safes") or 0) + max(0, n)
 
 
+def pop_auto_save_notice(user: dict) -> str:
+    """Сообщение, если сейф сам закрыл пропуск (один раз за день)."""
+    notice = user.pop("streak_auto_save_notice", None)
+    if not isinstance(notice, dict):
+        return ""
+    if notice.get("date") != _today():
+        return ""
+    used = int(notice.get("used") or 1)
+    left = int(notice.get("left") or 0)
+    st = int(notice.get("streak") or user.get("streak") or 0)
+    day_word = "день" if used == 1 else ("дня" if used < 5 else "дней")
+    return (
+        f"🛡️ Пропуск закрыт сейфом: −<b>{used}</b> ({day_word}). "
+        f"Серия <b>{st}</b> дн. жива 🔥 · сейфов: <b>{left}</b>"
+    )
+
+
 def touch_streak(user: dict) -> dict:
     ensure_growth(user)
     today = _today()
@@ -323,6 +400,10 @@ def touch_streak(user: dict) -> dict:
         "burned": False,
         "pending_restore": int(user.get("streak_pending_restore") or 0),
     }
+
+    auto_msg = pop_auto_save_notice(user)
+    if auto_msg:
+        info["reward_msg"] = auto_msg
 
     if last == today:
         info["streak"] = int(user.get("streak") or 0)
@@ -339,16 +420,19 @@ def touch_streak(user: dict) -> dict:
         info["streak"] = 1
         info["pending_restore"] = int(user.get("streak_pending_restore") or 0)
         if can_restore_streak(user):
-            info["reward_msg"] = (
+            burn_msg = (
                 f"⚠️ Серия сгорела (было {info['pending_restore']} дн.).\n"
                 f"В профиле жми <b>{BTN_RESTORE_STREAK}</b> — сейфов: "
                 f"{int(user.get('streak_safes') or 0)}"
             )
         else:
-            info["reward_msg"] = (
+            burn_msg = (
                 f"⚠️ Серия сгорела (было {info['pending_restore']} дн.). "
                 "Сейфов нет — копи новую 💪"
             )
+        info["reward_msg"] = (
+            (info["reward_msg"] + "\n\n" + burn_msg).strip() if info["reward_msg"] else burn_msg
+        )
         return info
 
     if last == yesterday:
@@ -365,14 +449,16 @@ def touch_streak(user: dict) -> dict:
 
     claimed = list(user.get("streak_safe_milestones_claimed") or [])
     st = int(user["streak"])
-    if st in STREAK_SAFE_MILESTONES and st not in claimed:
-        n = STREAK_SAFE_MILESTONES[st]
+    if is_streak_safe_milestone(st) and st not in claimed:
         claimed.append(st)
         user["streak_safe_milestones_claimed"] = claimed
-        grant_safe(user, n)
-        info["reward_msg"] = (
-            f"🛡️ Бонус серии <b>{st}</b> дн.! +<b>{n}</b> стрик-сейф "
+        grant_safe(user, 1)
+        safe_msg = (
+            f"🛡️ Бонус серии <b>{st}</b> дн.! +<b>1</b> стрик-сейф "
             f"(всего: {int(user['streak_safes'])})"
+        )
+        info["reward_msg"] = (
+            (info["reward_msg"] + "\n\n" + safe_msg).strip() if info["reward_msg"] else safe_msg
         )
 
     # Награды лестницы (бустеры / скидки / розыгрыши)
@@ -753,10 +839,9 @@ def profile_growth_lines(user: dict, bot_username: str = "") -> str:
         streak_line += f" (сгорела с {pending} — можно восстановить)"
     next_safe = ""
     claimed = set(user.get("streak_safe_milestones_claimed") or [])
-    for st in sorted(STREAK_SAFE_MILESTONES):
-        if st not in claimed and st > int(user.get("streak") or 0):
-            next_safe = f"\n🎁 След. сейф за серию: <b>{st}</b> дн."
-            break
+    nxt = next_streak_safe_milestone(int(user.get("streak") or 0), claimed)
+    if nxt:
+        next_safe = f"\n🎁 След. сейф за серию: <b>{nxt}</b> дн."
     restore_hint = ""
     if can_restore_streak(user):
         restore_hint = f"\n👉 Жми кнопку <b>{BTN_RESTORE_STREAK}</b> ниже"

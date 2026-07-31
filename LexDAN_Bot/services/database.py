@@ -24,6 +24,7 @@ MODE_CHAT = "chat"
 MODE_LESSONS = "lessons"
 MODE_PROFILE = "profile"
 MODE_SECRET = "secret"
+MODE_DAILY_FIRE = "daily_fire"
 
 DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
 
@@ -458,6 +459,7 @@ def set_mode(user_id: str, mode: str) -> dict:
         MODE_LESSONS: "уроки",
         MODE_PROFILE: "профиль",
         MODE_SECRET: "секрет Рико",
+        MODE_DAILY_FIRE: "огонь дня",
     }
     user["last_section"] = labels.get(mode, mode)
     from datetime import datetime, timedelta, timezone

@@ -16,9 +16,11 @@ def is_dev_unlocked(user: dict | None) -> bool:
 
 def main_menu(user: dict | None = None) -> ReplyKeyboardMarkup:
     from services.secret_missions import BTN_SECRET, has_secret_entry
+    from services.daily_fire import BTN_DAILY_FIRE
 
     rows = [
         [KeyboardButton(text="🗣️ Общаться"), KeyboardButton(text="📚 Уроки")],
+        [KeyboardButton(text=BTN_DAILY_FIRE)],
     ]
     if user is not None and has_secret_entry(user):
         rows.append([KeyboardButton(text=BTN_SECRET)])
