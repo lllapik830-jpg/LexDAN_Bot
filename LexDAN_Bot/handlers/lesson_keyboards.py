@@ -16,6 +16,8 @@ BTN_GRAMMAR_TEST = "🎯 Тест по Grammar"
 BTN_RICO_CHAT = "🦜 Общение с Рико"
 BTN_EXTRA = "📝 Доп. задания"
 BTN_EXTRA_NEXT = "➡️ Далее"
+BTN_EXTRA_DO = "✅ Делать задания"
+BTN_EXTRA_MISTAKES = "🔧 Отработать ошибки"
 BTN_TRANSLATE = "🌍 Перевести"
 BTN_RICO_HELP = "🦜 Помощь Рико"
 
@@ -66,6 +68,16 @@ def grammar_topics_kb(level: str, user: dict | None = None) -> ReplyKeyboardMark
         rows.append([KeyboardButton(text=BTN_GRAMMAR_TEST)])
     rows.append([KeyboardButton(text="⬅️ К разделам")])
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+
+def grammar_extra_menu_kb(*, mistakes: int = 0) -> ReplyKeyboardMarkup:
+    rows = [
+        [KeyboardButton(text=BTN_EXTRA_DO)],
+        [KeyboardButton(text=BTN_EXTRA_MISTAKES + (f" ({mistakes})" if mistakes else ""))],
+        [KeyboardButton(text="⬅️ К темам")],
+        [KeyboardButton(text="🔙 Вернуться в меню")],
+    ]
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 

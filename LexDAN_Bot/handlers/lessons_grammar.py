@@ -20,10 +20,13 @@ from handlers.lesson_keyboards import (
     exercise_help_inline_kb,
     grammar_test_kb,
     grammar_extra_kb,
+    grammar_extra_menu_kb,
     BTN_GRAMMAR_TEST,
     BTN_RICO_CHAT,
     BTN_EXTRA,
     BTN_EXTRA_NEXT,
+    BTN_EXTRA_DO,
+    BTN_EXTRA_MISTAKES,
     BTN_TRANSLATE,
     grammar_rico_chat_kb,
     lesson_limit_inline_kb,
@@ -65,9 +68,15 @@ from services.lesson_state import (
     clear_grammar_test,
     set_grammar_rico_chat,
     set_grammar_extra,
+    set_extra_mode,
     start_extra_exercise,
     get_extra_done,
+    get_extra_cursor,
+    set_extra_cursor,
+    get_extra_mistakes,
     mark_extra_done,
+    mark_extra_mistake,
+    clear_extra_mistake,
     start_speak_practice,
     bump_speak_attempt,
     clear_speak_practice,
@@ -153,7 +162,10 @@ def _kb_for_user(user: dict, *, user_id: str | int | None = None) -> ReplyKeyboa
         return grammar_test_kb(mcq_options=opts)
     if hub == "grammar_rico_chat":
         return grammar_rico_chat_kb()
-    if hub in {"grammar_extra", "grammar_extra_exercise"}:
+    if hub == "grammar_extra":
+        mistakes = len(get_extra_mistakes(user, level))
+        return grammar_extra_menu_kb(mistakes=mistakes)
+    if hub == "grammar_extra_exercise":
         return grammar_extra_kb()
     if user.get("assessment_done") or user.get("dev_unlock"):
         return lessons_home_levels(user.get("level"), user=user)
@@ -590,29 +602,31 @@ async def open_grammar_extra(m: Message):
         )
         return
 
-    from services.grammar_extra import has_extra_for_level, title_for_level
+    from services.grammar_extra import has_extra_for_level, rico_mode_intro
 
     if not has_extra_for_level(level):
         await m.answer("Пока нет доп. заданий для этого уровня.", reply_markup=grammar_topics_kb(level, user))
         return
 
     set_grammar_extra(str(m.from_user.id), level)
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
     done = get_extra_done(user, level)
+    mistakes = get_extra_mistakes(user, level)
     await m.answer(
-        f"📝 <b>Доп. задания · {level}</b>\n"
-        f"<b>{title_for_level(level)}</b>\n\n"
-        f"База: 100 заданий. Пройдено: <b>{len(done)}</b>/100.\n"
-        "Пиши ответ текстом. Проверка мягкая — важны смысл и грамматика, "
-        "а не точки и заглавные буквы.\n\n"
-        "➡️ <b>Далее</b> — следующее задание.",
-        reply_markup=grammar_extra_kb(),
+        rico_mode_intro(level, done=len(done), mistakes=len(mistakes)),
+        reply_markup=grammar_extra_menu_kb(mistakes=len(mistakes)),
         parse_mode="HTML",
     )
-    await _launch_extra_exercise(m, str(m.from_user.id), level)
+
+
+def _extra_mistakes_btn_match(text: str) -> bool:
+    t = (text or "").strip()
+    return t == BTN_EXTRA_MISTAKES or t.startswith(BTN_EXTRA_MISTAKES + " ")
 
 
 async def _launch_extra_exercise(m: Message, user_id: str, level: str):
-    from services.grammar_extra import next_extra_index, prepare_extra_exercise
+    from services.grammar_extra import next_practice_index, prepare_extra_exercise
 
     users = load_users()
     user = get_user(users, user_id)
@@ -626,11 +640,98 @@ async def _launch_extra_exercise(m: Message, user_id: str, level: str):
         await m.answer("Лимит:", reply_markup=lesson_limit_inline_kb())
         return
 
+    lesson = user.get("lesson") or {}
+    mode = lesson.get("extra_mode") or "practice"
+
+    if mode == "mistakes":
+        queue = list(lesson.get("extra_mistake_queue") or get_extra_mistakes(user, level))
+        if not queue:
+            set_grammar_extra(user_id, level)
+            users = load_users()
+            user = get_user(users, user_id)
+            await m.answer(
+                "🦜 Ошибок в очереди больше нет — ты красава! 💚\n"
+                "Можно снова жать «Делать задания» или вернуться к темам.",
+                reply_markup=grammar_extra_menu_kb(mistakes=0),
+                parse_mode="HTML",
+            )
+            return
+        item_id = int(queue[0])
+        idx = item_id - 1
+        card = prepare_extra_exercise(level, idx)
+        start_extra_exercise(user_id, card)
+        left = len(queue)
+        await m.answer(
+            f"🔧 <b>Отработка ошибок</b> · осталось {left}\n\n" + card["prompt"],
+            reply_markup=grammar_extra_kb(),
+            parse_mode="HTML",
+        )
+        return
+
+    # practice — продолжение с курсора
     done = get_extra_done(user, level)
-    idx = next_extra_index(level, done)
+    cursor = get_extra_cursor(user, level)
+    idx = next_practice_index(level, done, cursor)
+    if idx is None:
+        set_grammar_extra(user_id, level)
+        mistakes = get_extra_mistakes(user, level)
+        await m.answer(
+            "🦜 База из 100 заданий на этом уровне пройдена! 🎉\n"
+            + (
+                f"Остались ошибки на повтор: <b>{len(mistakes)}</b> — жми «Отработать ошибки»."
+                if mistakes
+                else "Ошибок в запасе нет — ты огонь 🔥"
+            ),
+            reply_markup=grammar_extra_menu_kb(mistakes=len(mistakes)),
+            parse_mode="HTML",
+        )
+        return
+
     card = prepare_extra_exercise(level, idx)
     start_extra_exercise(user_id, card)
     await m.answer(card["prompt"], reply_markup=grammar_extra_kb(), parse_mode="HTML")
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_extra"), F.text == BTN_EXTRA_DO)
+async def extra_start_practice(m: Message):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    if assessment_busy(user):
+        return
+    level = (user.get("lesson") or {}).get("level") or "A1"
+    set_extra_mode(str(m.from_user.id), "practice")
+    await m.answer(
+        "🦜 Ок, продолжаем с места остановки. Пиши ответ текстом — я рядом 💛",
+        parse_mode="HTML",
+    )
+    await _launch_extra_exercise(m, str(m.from_user.id), level)
+
+
+@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_extra"))
+async def extra_start_mistakes(m: Message):
+    if not m.text or not _extra_mistakes_btn_match(m.text):
+        return
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    if assessment_busy(user):
+        return
+    level = (user.get("lesson") or {}).get("level") or "A1"
+    mistakes = get_extra_mistakes(user, level)
+    if not mistakes:
+        await m.answer(
+            "🦜 Пока нет сохранённых ошибок — сначала порешай в режиме «Делать задания». "
+            "Я запомню, где споткнёмся 🔧",
+            reply_markup=grammar_extra_menu_kb(mistakes=0),
+            parse_mode="HTML",
+        )
+        return
+    set_extra_mode(str(m.from_user.id), "mistakes", mistake_queue=list(mistakes))
+    await m.answer(
+        f"🦜 Берём твои <b>{len(mistakes)}</b> ошибок подряд. "
+        "Исправил(а) — вычёркиваем из списка. Поехали 🔧✨",
+        parse_mode="HTML",
+    )
+    await _launch_extra_exercise(m, str(m.from_user.id), level)
 
 
 @router.message(
@@ -644,7 +745,13 @@ async def extra_next(m: Message):
     if assessment_busy(user):
         return
     level = (user.get("lesson") or {}).get("level") or "A1"
-    set_grammar_extra(str(m.from_user.id), level)
+    mode = (user.get("lesson") or {}).get("extra_mode")
+    if not mode:
+        await m.answer(
+            "Сначала выбери режим: «Делать задания» или «Отработать ошибки».",
+            reply_markup=grammar_extra_menu_kb(mistakes=len(get_extra_mistakes(user, level))),
+        )
+        return
     await _launch_extra_exercise(m, str(m.from_user.id), level)
 
 
@@ -654,11 +761,12 @@ async def extra_exercise_answer(m: Message):
         return
     if m.text in {
         BTN_EXTRA_NEXT,
+        BTN_EXTRA_DO,
         "⬅️ К темам",
         "🔙 Вернуться в меню",
         BTN_TRANSLATE,
         "🦜 Помощь Рико",
-    }:
+    } or _extra_mistakes_btn_match(m.text):
         return
 
     from services.moderation import guard_user_text, ensure_moderation
@@ -675,15 +783,27 @@ async def extra_exercise_answer(m: Message):
     lesson = user.get("lesson") or {}
     ex = dict(lesson.get("exercise") or {})
     level = lesson.get("level") or "A1"
+    mode = lesson.get("extra_mode") or "practice"
     uid = str(m.from_user.id)
     if not ex:
-        await m.answer("Сначала нажми ➡️ Далее.", reply_markup=grammar_extra_kb())
+        await m.answer(
+            "Сначала выбери режим в меню доп. заданий.",
+            reply_markup=grammar_extra_menu_kb(mistakes=len(get_extra_mistakes(user, level))),
+        )
         return
 
     result = check_extra_answer(level, ex, m.text)
+    item_id = int(ex.get("id") or 0)
+
     if _as_bool(result.get("correct")):
-        item_id = int(ex.get("id") or 0)
         mark_extra_done(uid, level, item_id)
+        clear_extra_mistake(uid, level, item_id)
+        if mode == "mistakes":
+            users = load_users()
+            user = get_user(users, uid)
+            queue = list((user.get("lesson") or {}).get("extra_mistake_queue") or [])
+            queue = [x for x in queue if int(x) != item_id]
+            set_extra_mode(uid, "mistakes", mistake_queue=queue)
         users = load_users()
         user = get_user(users, uid)
         ensure_growth(user)
@@ -694,15 +814,33 @@ async def extra_exercise_answer(m: Message):
             except Exception:
                 pass
         save_users(users, only=uid)
-        await m.answer(format_ok(), reply_markup=grammar_extra_kb())
+        await m.answer(format_ok(), reply_markup=grammar_extra_kb(), parse_mode="HTML")
         await _launch_extra_exercise(m, uid, level)
         return
 
+    # ошибка — запомнить, объяснить, авто-следующее
+    mark_extra_mistake(uid, level, item_id)
+    if mode == "practice":
+        set_extra_cursor(uid, level, item_id)  # next after this id
+    elif mode == "mistakes":
+        users = load_users()
+        user = get_user(users, uid)
+        queue = list((user.get("lesson") or {}).get("extra_mistake_queue") or [])
+        if queue and int(queue[0]) == item_id:
+            queue = queue[1:] + [item_id]
+        set_extra_mode(uid, "mistakes", mistake_queue=queue)
+
     await m.answer(
-        format_bad(result.get("example") or ex.get("example") or ex.get("answer") or ""),
+        format_bad(
+            example=result.get("example") or ex.get("example") or ex.get("answer") or "",
+            explain_ru=result.get("explain_ru") or "",
+            review_topic=result.get("review_topic") or "",
+            review_tip=result.get("review_tip") or "",
+        ),
         reply_markup=grammar_extra_kb(),
         parse_mode="HTML",
     )
+    await _launch_extra_exercise(m, uid, level)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_rico_chat"), F.text == BTN_TRANSLATE)

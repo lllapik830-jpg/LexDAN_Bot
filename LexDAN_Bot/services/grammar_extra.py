@@ -1,5 +1,5 @@
 """
-Доп. задания Grammar (A1–C2): выдача карточек и мягкая проверка ответов.
+Доп. задания Grammar (A1–C2): карточки, мягкая проверка, душевный фидбек Рико.
 """
 
 from __future__ import annotations
@@ -14,6 +14,35 @@ from data.grammar_extra_banks import (
     get_extra_item,
     has_extra_for_level,
 )
+
+# К какой теме Grammar отсылать при ошибке (по уровню + типу)
+_REVIEW_BY_LEVEL: dict[str, dict[str, tuple[str, str]]] = {
+    # (topic_id_hint, human title)
+    "A1": {
+        "fix_sentence": ("present_simple", "Present Simple"),
+        "default": ("present_simple", "Present Simple"),
+    },
+    "A2": {
+        "order_words": ("word_order", "Порядок слов / Word order"),
+        "default": ("past_simple", "Past Simple"),
+    },
+    "B1": {
+        "paraphrase": ("conditionals_0_1", "Условные / перефраз"),
+        "default": ("present_perfect", "Present Perfect"),
+    },
+    "B2": {
+        "continue_sentence": ("conditionals_mixed", "Сложные конструкции / Conditionals"),
+        "default": ("passives", "Passive Voice"),
+    },
+    "C1": {
+        "continue_sentence": ("inversion", "Продвинутый синтаксис"),
+        "default": ("nominalisation", "Сложные структуры"),
+    },
+    "C2": {
+        "continue_sentence": ("discourse", "Дискурс и нюансы"),
+        "default": ("style_register", "Стиль и регистр"),
+    },
+}
 
 
 def _normalize_text(s: str) -> str:
@@ -54,19 +83,118 @@ def title_for_level(level: str) -> str:
     return LEVEL_TITLE_RU.get(str(level or "").upper(), "Доп. задания")
 
 
-def next_extra_index(level: str, done_ids: list[int] | None = None) -> int:
-    """Следующий индекс 0..99: сначала непройденные, иначе случайный."""
+def rico_mode_intro(level: str, *, done: int = 0, mistakes: int = 0) -> str:
+    """Тёплое вступление Рико перед выбором режима."""
+    lvl = str(level or "").upper()
+    title = title_for_level(lvl)
+    tips = {
+        "A1": (
+            "Здесь мы ловим <b>маленькие, но вредные ошибки</b> в предложении "
+            "и чиним их вместе. Не страшно ошибаться — так мозг запоминает лучше 🧠✨"
+        ),
+        "A2": (
+            "Слова в куче — как пазл 🧩 Собери из них <b>живое правильное предложение</b>. "
+            "Порядок слов в английском — суперсила!"
+        ),
+        "B1": (
+            "Перефраз — это когда одно и то же говоришь <b>другими словами</b> 💬 "
+            "Как друг, который понял мысль и пересказал по-своему."
+        ),
+        "B2": (
+            "Я кидаю начало фразы — ты <b>дописываешь конец</b> логично и красиво ✍️ "
+            "Тут важны смысл и грамматика уровня B2, не зубрёжка."
+        ),
+        "C1": (
+            "Продолжай мысль на уровне C1: нюансы, связность, взрослый английский 🎓 "
+            "Пиши так, будто объясняешь идею умному другу."
+        ),
+        "C2": (
+            "C2 — это почти родной вайб 🔥 Допиши фразу тонко, стильно, по делу. "
+            "Я рядом, если что-то поедет."
+        ),
+    }
+    tip = tips.get(lvl, tips["A1"])
+    return (
+        f"🦜 <b>Рико · Доп. задания · {lvl}</b>\n"
+        f"<b>{title}</b>\n\n"
+        f"Привет! Давай потренируемся как друзья-репетиторы 💛\n\n"
+        f"{tip}\n\n"
+        f"📊 Пройдено: <b>{done}</b>/100\n"
+        f"🔧 В ошибках на повтор: <b>{mistakes}</b>\n\n"
+        "Выбери режим:\n"
+        "✅ <b>Делать задания</b> — продолжим с того места, где остановились\n"
+        "🔧 <b>Отработать ошибки</b> — только то, где споткнулись\n\n"
+        "Пиши ответ текстом. Точки и заглавные буквы не придираюсь — "
+        "смотрю на <b>смысл и грамматику</b> 👀"
+    )
+
+
+def review_topic_for(level: str, ex: dict) -> tuple[str, str]:
+    """(topic_title, tip_ru) для отсылки при ошибке."""
+    lvl = str(level or "").upper()
+    subtype = ex.get("subtype") or subtype_for_level(lvl)
+    mapping = _REVIEW_BY_LEVEL.get(lvl) or _REVIEW_BY_LEVEL["A1"]
+    topic_id, title = mapping.get(subtype) or mapping.get("default") or ("", "Grammar")
+
+    # уточнение для A1 fix по содержимому ошибки
+    blob = f"{ex.get('prompt_en') or ''} {ex.get('answer') or ''}".lower()
+    if lvl == "A1" and subtype == "fix_sentence":
+        if any(x in blob for x in (" was ", " were ", " went ", " yesterday", " last ")):
+            topic_id, title = "past_simple", "Past Simple"
+        elif any(x in blob for x in (" a ", " an ", "the ")):
+            topic_id, title = "articles_a_an", "Articles (a/an/the)"
+        elif any(x in blob for x in ("don't", "doesn't", "did", "can ", "must ")):
+            topic_id, title = "present_simple", "Present Simple / вспомогательные"
+        elif any(x in blob for x in ("is ", "are ", "am ")):
+            topic_id, title = "to_be", "To be (am/is/are)"
+
+    # подтянуть реальное название темы из curriculum, если есть
+    try:
+        from data.grammar_curriculum import get_topics
+
+        for t in get_topics(lvl) or []:
+            tid = str(t.get("id") or "")
+            if topic_id and (tid == topic_id or topic_id in tid or tid in topic_id):
+                title = t.get("title") or title
+                break
+            # fuzzy by keywords in title
+            low = (t.get("title") or "").lower()
+            key = title.split("/")[0].strip().lower()
+            if key and key[:8] in low:
+                title = t.get("title") or title
+                break
+    except Exception:
+        pass
+
+    tips = {
+        "fix_sentence": "Сравни свою версию с образцом и посмотри, какая форма «поехала».",
+        "order_words": "В английском почти всегда Subject → Verb → Object. Собери по этой схеме.",
+        "paraphrase": "Сохрани смысл, но поменяй слова/конструкцию — не копируй исходник.",
+        "continue_sentence": "Продолжение должно логично цепляться к началу и быть грамматичным.",
+    }
+    tip = tips.get(subtype, "Загляни в тему Grammar и пробегись глазами по правилам ещё раз.")
+    return title, tip
+
+
+def next_practice_index(level: str, done_ids: list[int] | None, cursor: int) -> int | None:
+    """
+    Следующий индекс 0..99 по порядку с места остановки.
+    None — всё пройдено.
+    """
     bank = get_extra_bank(level)
     n = len(bank) or 100
     done = {int(x) for x in (done_ids or [])}
-    remaining = [i for i in range(n) if (i + 1) not in done]
-    if remaining:
-        return random.choice(remaining)
-    return random.randrange(n)
+    if len(done) >= n:
+        return None
+    start = max(0, int(cursor or 0)) % n
+    for i in range(n):
+        idx = (start + i) % n
+        if (idx + 1) not in done:
+            return idx
+    return None
 
 
 def prepare_extra_exercise(level: str, index: int) -> dict:
-    """Готовая карточка для показа (words перемешаны для A2)."""
     item = get_extra_item(level, index)
     if not item:
         raise ValueError(f"no extra bank for {level}")
@@ -75,7 +203,6 @@ def prepare_extra_exercise(level: str, index: int) -> dict:
     display_words = list(words)
     if subtype == "order_words" and display_words:
         random.shuffle(display_words)
-        # не оставляем исходный порядок
         if display_words == words and len(words) > 1:
             display_words = words[1:] + words[:1]
 
@@ -84,6 +211,7 @@ def prepare_extra_exercise(level: str, index: int) -> dict:
         prompt_en = " / ".join(display_words)
 
     instruction = item.get("instruction_ru") or title_for_level(level)
+    review_title, _ = review_topic_for(level, {"subtype": subtype, "prompt_en": prompt_en, "answer": item.get("answer")})
     card = {
         "kind": "write",
         "subtype": subtype,
@@ -96,24 +224,37 @@ def prepare_extra_exercise(level: str, index: int) -> dict:
         "answer": item.get("answer") or "",
         "accept": list(item.get("accept") or []),
         "example": item.get("example") or item.get("answer") or "",
-        "prompt": _format_prompt(level, instruction, prompt_en, subtype),
+        "review_topic": review_title,
+        "prompt": _format_prompt(level, instruction, prompt_en, subtype, item_id=int(item.get("id") or index + 1)),
     }
     return card
 
 
-def _format_prompt(level: str, instruction: str, prompt_en: str, subtype: str) -> str:
+def _format_prompt(level: str, instruction: str, prompt_en: str, subtype: str, *, item_id: int) -> str:
     title = title_for_level(level)
+    cheer = random.choice(
+        [
+            "Давай, я в тебя верю 💪",
+            "Поехали, это по плечу ✨",
+            "Спокойно, пиши как чувствуешь 🫶",
+            "Рико рядом — ошибаться можно 🦜",
+        ]
+    )
     if subtype == "order_words":
         body = f"<b>{instruction}</b>\n\n<code>{prompt_en}</code>"
     elif subtype == "continue_sentence":
         body = f"<b>{instruction}</b>\n\n<i>{prompt_en}</i>"
     else:
         body = f"<b>{instruction}</b>\n\n{prompt_en}"
-    return f"📝 <b>Доп. задания · {level}</b>\n{title}\n\n{body}"
+    return (
+        f"🦜 <b>Доп · {level}</b> · №{item_id}/100\n"
+        f"<i>{title}</i>\n\n"
+        f"{body}\n\n"
+        f"{cheer}"
+    )
 
 
 def _strip_stem_prefix(user: str, stem: str) -> str:
-    """Если пользователь повторил начало фразы — сравниваем хвост."""
     u = _normalize_text(user)
     s = _normalize_text(stem)
     if s and u.startswith(s):
@@ -130,11 +271,9 @@ def _order_match(user_answer: str, gold: str, words: list[str] | None = None) ->
     g = _tokens(gold)
     if u == g:
         return True
-    # допускаем пропущенный вспомогательный артикль в начале/конце
     if answers_equivalent(gold, user_answer):
         return True
     if words:
-        # все ключевые слова из набора должны быть, порядок = gold
         needed = _tokens(" ".join(words))
         if sorted(u) == sorted(needed) and u == g:
             return True
@@ -155,7 +294,6 @@ def _local_extra_ok(ex: dict, user_answer: str) -> bool:
     if subtype == "continue_sentence":
         stem = ex.get("prompt_en") or ""
         tail = _strip_stem_prefix(user_answer, stem)
-        # хвост совпал с примером / accept
         cands = [example, gold] + accept
         for c in cands:
             c_norm = _normalize_text(c)
@@ -166,13 +304,11 @@ def _local_extra_ok(ex: dict, user_answer: str) -> bool:
                 return True
             if answers_equivalent(c, user_answer):
                 return True
-        # очень короткий бессмысленный ответ
         if len(tail.split()) < 2 and len(_tokens(user_answer)) < 3:
             return False
         return False
 
     if subtype == "fix_sentence":
-        # если пользователь просто скопировал ошибочное предложение — нет
         bad = ex.get("prompt_en") or ""
         if answers_equivalent(bad, user_answer):
             return False
@@ -184,26 +320,73 @@ def _local_extra_ok(ex: dict, user_answer: str) -> bool:
     return False
 
 
+def _local_explain(level: str, ex: dict, user_answer: str) -> str:
+    subtype = ex.get("subtype") or ""
+    example = (ex.get("example") or ex.get("answer") or "").strip()
+    bad = (ex.get("prompt_en") or "").strip()
+    if subtype == "fix_sentence":
+        return (
+            f"В исходнике была грамматическая осечка: <i>{bad}</i>\n"
+            f"Нужно поправить форму/согласование. Верный ориентир: <b>{example}</b>."
+        )
+    if subtype == "order_words":
+        return (
+            "Слова те же, но порядок «поехал». "
+            f"Собери так: <b>{example}</b>."
+        )
+    if subtype == "paraphrase":
+        return (
+            "Смысл рядом, но перефраз пока не попал в цель. "
+            f"Можно так: <b>{example}</b>."
+        )
+    return (
+        "Продолжение должно цепляться к началу и звучать естественно. "
+        f"Например: <b>{example}</b>."
+    )
+
+
 def check_extra_answer(level: str, ex: dict, user_answer: str) -> dict:
     """
-    Мягкая проверка. Ответ:
-      {"correct": True}  → показать «✅ Верно!»
-      {"correct": False, "example": "..."} → «❌ Не совсем. Правильно будет: …»
+    {"correct": bool, "example": str, "explain_ru": str, "review_topic": str, "review_tip": str}
     """
     example = (ex.get("example") or ex.get("answer") or "").strip()
     subtype = ex.get("subtype") or subtype_for_level(level)
+    review_topic, review_tip = review_topic_for(level, ex)
 
     if _local_extra_ok(ex, user_answer):
-        return {"correct": True, "example": example}
+        return {
+            "correct": True,
+            "example": example,
+            "explain_ru": "",
+            "review_topic": review_topic,
+            "review_tip": review_tip,
+        }
 
-    # GPT для paraphrase / continue / сложных fix
     if subtype in {"paraphrase", "continue_sentence", "fix_sentence"}:
         gpt = _gpt_soft_check(level, ex, user_answer)
         if gpt.get("correct"):
-            return {"correct": True, "example": example}
-        return {"correct": False, "example": (gpt.get("example") or example).strip() or example}
+            return {
+                "correct": True,
+                "example": example,
+                "explain_ru": "",
+                "review_topic": review_topic,
+                "review_tip": review_tip,
+            }
+        return {
+            "correct": False,
+            "example": (gpt.get("example") or example).strip() or example,
+            "explain_ru": (gpt.get("explain_ru") or _local_explain(level, ex, user_answer)).strip(),
+            "review_topic": (gpt.get("review_topic") or review_topic).strip() or review_topic,
+            "review_tip": review_tip,
+        }
 
-    return {"correct": False, "example": example}
+    return {
+        "correct": False,
+        "example": example,
+        "explain_ru": _local_explain(level, ex, user_answer),
+        "review_topic": review_topic,
+        "review_tip": review_tip,
+    }
 
 
 def _gpt_soft_check(level: str, ex: dict, user_answer: str) -> dict:
@@ -214,81 +397,127 @@ def _gpt_soft_check(level: str, ex: dict, user_answer: str) -> dict:
     gold = ex.get("answer") or ""
     example = ex.get("example") or gold
     accept = ", ".join(ex.get("accept") or [])
+    review_topic, _ = review_topic_for(level, ex)
 
     if subtype == "fix_sentence":
         hint = (
             "Student must FIX the grammar error. Accept any correct grammatical rewrite "
-            "with the same meaning. Ignore punctuation, capitalization, extra/missing "
-            "periods and minor wording. Reject if the original error remains or meaning changed."
+            "with the same meaning. Ignore punctuation/capitalization. "
+            "Reject if the original error remains."
         )
-        task = f"Broken sentence: {stem}\nExpected idea: {gold}"
+        task = f"Broken: {stem}\nModel: {gold}"
     elif subtype == "paraphrase":
         hint = (
-            "Student must PARAPHRASE. Accept any natural rewording with the same meaning. "
-            "Do NOT require the model answer verbatim. Ignore punctuation and capitalization."
+            "Student must PARAPHRASE with same meaning. Accept natural rewording. "
+            "Ignore punctuation/capitalization."
         )
-        task = f"Original: {stem}\nExample paraphrase: {gold}\nAlso ok: {accept}"
+        task = f"Original: {stem}\nExample: {gold}\nAlso ok: {accept}"
     else:
         hint = (
-            "Student must CONTINUE the unfinished sentence logically and grammatically. "
-            "Accept ANY sensible completion at this CEFR level. Do not demand the sample ending. "
-            "Reject only if unfinished, off-topic, or clearly ungrammatical for the level. "
-            "Ignore punctuation and capitalization."
+            "Student must CONTINUE the stem logically. Accept any sensible completion. "
+            "Reject unfinished/off-topic/clearly ungrammatical. Ignore punctuation."
         )
-        task = f"Stem: {stem}\nSample ending: {example}\nFull sample: {gold}"
+        task = f"Stem: {stem}\nSample: {example}"
 
     data = _ask_json(
         [
             {
                 "role": "system",
                 "content": (
-                    "You grade English grammar practice answers for Russian learners. "
-                    "Be LENIENT and meaning-focused. Never reject for spaces, commas, "
-                    "periods, or capital letters. "
+                    "Grade English grammar practice for Russian learners. Be LENIENT. "
                     f"{hint} "
-                    'Return ONLY JSON: {"correct":bool,"example":"short sample answer"} '
-                    "If correct=false, example must be a short correct version (not a lecture)."
+                    "If incorrect, explain briefly in warm friendly Russian (2-4 short sentences), "
+                    "like a tutor-friend named Rico — no scolding. "
+                    'Return ONLY JSON: {"correct":bool,"example":"short correct sample",'
+                    '"explain_ru":"friendly Russian explanation","review_topic":"grammar topic name"}'
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"Level {level}. Subtype {subtype}.\n{task}\nStudent: {user_answer}"
+                    f"Level {level}. Subtype {subtype}. Suggested review topic: {review_topic}.\n"
+                    f"{task}\nStudent: {user_answer}"
                 ),
             },
         ],
-        {"correct": False, "example": example},
-        temperature=0.0,
+        {
+            "correct": False,
+            "example": example,
+            "explain_ru": _local_explain(level, ex, user_answer),
+            "review_topic": review_topic,
+        },
+        temperature=0.2,
     )
     if not isinstance(data, dict):
-        return {"correct": False, "example": example}
-    ex_out = str(data.get("example") or example).strip() or example
-    # safety: if local-ish match to example after GPT said no
+        return {
+            "correct": False,
+            "example": example,
+            "explain_ru": _local_explain(level, ex, user_answer),
+            "review_topic": review_topic,
+        }
     if not data.get("correct") and answers_equivalent(gold, user_answer, ex.get("accept")):
-        return {"correct": True, "example": ex_out}
-    return {"correct": bool(data.get("correct")), "example": ex_out}
+        return {"correct": True, "example": example, "explain_ru": "", "review_topic": review_topic}
+    return {
+        "correct": bool(data.get("correct")),
+        "example": str(data.get("example") or example).strip() or example,
+        "explain_ru": str(data.get("explain_ru") or "").strip(),
+        "review_topic": str(data.get("review_topic") or review_topic).strip() or review_topic,
+    }
+
+
+_OK_LINES = [
+    "✅ Верно! Красава, Рико гордится 🦜💛",
+    "✅ Есть! Прям в яблочко 🎯",
+    "✅ Супер! Так держать, дружище ✨",
+    "✅ Йес! Чувствуется прогресс 🔥",
+    "✅ Отлично! Мозг явно в теме 🧠💚",
+]
 
 
 def format_ok() -> str:
-    return "✅ Верно!"
+    return random.choice(_OK_LINES)
 
 
-def format_bad(example: str) -> str:
+def format_bad(
+    *,
+    example: str,
+    explain_ru: str = "",
+    review_topic: str = "",
+    review_tip: str = "",
+) -> str:
     ex = (example or "").strip()
-    # короткий пример — обрезаем слишком длинное
-    if len(ex) > 120:
-        ex = ex[:117].rstrip() + "…"
-    return f"❌ Не совсем. Правильно будет: {ex}"
+    if len(ex) > 140:
+        ex = ex[:137].rstrip() + "…"
+    lines = [
+        "😅 <b>Почти!</b> Сейчас разберём без стресса.",
+    ]
+    if explain_ru:
+        lines.append("")
+        lines.append(explain_ru)
+    lines.append("")
+    lines.append(f"💡 Ориентир: <b>{ex}</b>")
+    if review_topic:
+        lines.append("")
+        lines.append(
+            f"📚 Повтори тему в Grammar: <b>{review_topic}</b>"
+        )
+        if review_tip:
+            lines.append(f"<i>{review_tip}</i>")
+    lines.append("")
+    lines.append("👉 Сейчас следующее — не зависаем, учимся на ходу 🚀")
+    return "\n".join(lines)
 
 
 __all__ = [
     "has_extra_for_level",
     "subtype_for_level",
     "title_for_level",
-    "next_extra_index",
+    "rico_mode_intro",
+    "next_practice_index",
     "prepare_extra_exercise",
     "check_extra_answer",
     "format_ok",
     "format_bad",
+    "review_topic_for",
     "get_extra_bank",
 ]

@@ -49,6 +49,10 @@ def _blank_progress() -> dict:
         "grammar_test_passed": {},
         # доп. задания: {"A1": [1, 5, 12], ...} — id 1..100
         "extra_done": {},
+        # следующий индекс 0..99 для режима «делать задания»
+        "extra_cursor": {},
+        # id заданий с ошибками: {"A1": [3, 7], ...}
+        "extra_mistakes": {},
     }
 
 
@@ -63,6 +67,8 @@ def ensure_progress(user: dict) -> dict:
         user["grammar_progress"].setdefault("completed_topics", [])
         user["grammar_progress"].setdefault("grammar_test_passed", {})
         user["grammar_progress"].setdefault("extra_done", {})
+        user["grammar_progress"].setdefault("extra_cursor", {})
+        user["grammar_progress"].setdefault("extra_mistakes", {})
     # Миграция со старого хранения внутри lesson
     old = (user.get("lesson") or {}).get("completed_exercises")
     if isinstance(old, dict) and old:
@@ -93,6 +99,60 @@ def get_extra_done(user: dict, level: str) -> list[int]:
     return out
 
 
+def get_extra_cursor(user: dict, level: str) -> int:
+    ensure_progress(user)
+    try:
+        return int((user["grammar_progress"].get("extra_cursor") or {}).get(str(level or "").upper()) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def set_extra_cursor(user_id: str, level: str, cursor: int) -> dict:
+    def mut(u):
+        ensure_progress(u)
+        store = u["grammar_progress"].setdefault("extra_cursor", {})
+        store[str(level or "").upper()] = max(0, int(cursor))
+
+    return update_lesson(user_id, mut)
+
+
+def get_extra_mistakes(user: dict, level: str) -> list[int]:
+    ensure_progress(user)
+    raw = (user["grammar_progress"].get("extra_mistakes") or {}).get(str(level or "").upper()) or []
+    out = []
+    for n in raw:
+        try:
+            out.append(int(n))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def mark_extra_mistake(user_id: str, level: str, item_id: int) -> dict:
+    def mut(u):
+        ensure_progress(u)
+        store = u["grammar_progress"].setdefault("extra_mistakes", {})
+        lvl = str(level or "").upper()
+        arr = list(get_extra_mistakes(u, lvl))
+        iid = int(item_id)
+        if iid not in arr:
+            arr.append(iid)
+        store[lvl] = arr
+
+    return update_lesson(user_id, mut)
+
+
+def clear_extra_mistake(user_id: str, level: str, item_id: int) -> dict:
+    def mut(u):
+        ensure_progress(u)
+        store = u["grammar_progress"].setdefault("extra_mistakes", {})
+        lvl = str(level or "").upper()
+        iid = int(item_id)
+        store[lvl] = [x for x in get_extra_mistakes(u, lvl) if x != iid]
+
+    return update_lesson(user_id, mut)
+
+
 def mark_extra_done(user_id: str, level: str, item_id: int) -> dict:
     def mut(u):
         ensure_progress(u)
@@ -101,6 +161,9 @@ def mark_extra_done(user_id: str, level: str, item_id: int) -> dict:
         done = set(get_extra_done(u, lvl))
         done.add(int(item_id))
         store[lvl] = sorted(done)
+        # с курсора — следующий после этого id
+        curs = u["grammar_progress"].setdefault("extra_cursor", {})
+        curs[lvl] = int(item_id)  # 0-based next = item_id (since id is 1-based, index+1)
 
     return update_lesson(user_id, mut)
 
@@ -116,6 +179,18 @@ def set_grammar_extra(user_id: str, level: str | None = None) -> dict:
         u["lesson"]["topic_title"] = "Доп. задания"
         u["lesson"]["exercise"] = None
         u["lesson"]["exercise_num"] = None
+        u["lesson"]["extra_mode"] = None
+        u["lesson"]["extra_mistake_queue"] = []
+
+    return update_lesson(user_id, mut)
+
+
+def set_extra_mode(user_id: str, mode: str, *, mistake_queue: list[int] | None = None) -> dict:
+    def mut(u):
+        ensure_lesson(u)
+        u["lesson"]["extra_mode"] = mode  # practice | mistakes
+        if mistake_queue is not None:
+            u["lesson"]["extra_mistake_queue"] = [int(x) for x in mistake_queue]
 
     return update_lesson(user_id, mut)
 
