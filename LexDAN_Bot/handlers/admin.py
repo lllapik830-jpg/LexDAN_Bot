@@ -62,6 +62,7 @@ HELP = (
     "/event_force on|off — форс-активация (тест)\n"
     "/event_announce [force] — рассылка «ивент начался»\n"
     "/event_finalize — подвести итоги и выдать призы\n"
+    "/test_winners — тест эксклюзивных паков 1/2/3 места\n"
 )
 
 
