@@ -6,9 +6,9 @@ from datetime import datetime, timedelta, timezone
 
 MSK = timezone(timedelta(hours=3))
 
-# Акция для новых регистраций (реклама). Конец: 04.08.2026 00:00 МСК.
+# Акция для новых регистраций (реклама). Конец: 05.08.2026 00:00 МСК.
 REG_FULL_TRIAL_DAYS = 3
-REG_FULL_TRIAL_END = datetime(2026, 8, 4, 0, 0, 0, tzinfo=MSK)
+REG_FULL_TRIAL_END = datetime(2026, 8, 5, 0, 0, 0, tzinfo=MSK)
 
 
 def now_msk() -> datetime:

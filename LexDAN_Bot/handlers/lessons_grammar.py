@@ -101,7 +101,9 @@ from services.rico_tutor import (
 )
 from services.growth import (
     can_do_grammar_exercise,
+    can_do_grammar_extra,
     note_grammar_exercise_done,
+    note_grammar_extra_attempt,
     note_lesson_completed,
     ensure_growth,
 )
@@ -686,6 +688,11 @@ async def _skip_current_extra(m: Message, uid: str, level: str) -> None:
             set_extra_mode(uid, "mistakes", mistake_queue=queue)
 
     await m.answer(format_skip(), reply_markup=grammar_extra_kb(), parse_mode="HTML")
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_growth(user)
+    note_grammar_extra_attempt(user)
+    save_users(users, only=uid)
     await _launch_extra_exercise(m, uid, level)
 
 
@@ -694,10 +701,10 @@ async def _launch_extra_exercise(m: Message, user_id: str, level: str):
 
     users = load_users()
     user = get_user(users, user_id)
-    ok, limit_msg = can_do_grammar_exercise(user)
+    ok, limit_msg = can_do_grammar_extra(user)
     if not ok:
         await m.answer(
-            limit_msg or "Дневной лимит упражнений исчерпан.",
+            limit_msg or "Дневной лимит доп. заданий исчерпан.",
             reply_markup=grammar_extra_kb(),
             parse_mode="HTML",
         )
@@ -884,7 +891,7 @@ async def extra_exercise_answer(m: Message):
         users = load_users()
         user = get_user(users, uid)
         ensure_growth(user)
-        note_grammar_exercise_done(user)
+        note_grammar_extra_attempt(user)
         if collection_allowed(uid):
             try:
                 add_grammar_points(user)
@@ -906,6 +913,12 @@ async def extra_exercise_answer(m: Message):
         if queue and int(queue[0]) == item_id:
             queue = queue[1:] + [item_id]
         set_extra_mode(uid, "mistakes", mistake_queue=queue)
+
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_growth(user)
+    note_grammar_extra_attempt(user)
+    save_users(users, only=uid)
 
     await m.answer(
         format_bad(

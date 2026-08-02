@@ -174,13 +174,16 @@ async def _send_word_story(m: Message, user: dict, *, count_toward_limit: bool =
         story = generate_vocab_text(level, topic["title"], batch, kind="words")
     # ВАЖНО: кнопки = выбранный батч слов, а не «highlighted» от ИИ (там часто 1 слово)
     batch_en = [w["en"] for w in batch]
+    from services.vocabulary_tutor import highlight_target_terms
+
+    text_en = highlight_target_terms(story["text_en"], batch_en)
 
     update_vocab_lesson(
         str(m.from_user.id),
         hub="vocab_topic",
         vocab_mode="words",
         vocab_batch=batch_en,
-        vocab_text_en=story["text_en"],
+        vocab_text_en=text_en,
         vocab_text_ru=story["text_ru"],
         vocab_active_item=None,
         vocab_practice_step=0,
@@ -193,9 +196,10 @@ async def _send_word_story(m: Message, user: dict, *, count_toward_limit: bool =
     prog = topic_progress_line(user, level, topic_id)
     text = (
         f"📗 <b>{topic['title']}</b> · {prog}\n\n"
-        f"{story['text_en']}\n\n"
+        f"{text_en}\n\n"
         f"{story['text_ru']}\n\n"
-        f"🦜 В этом тексте <b>{len(batch_en)}</b> новых слов. "
+        f"🦜 В этом тексте <b>{len(batch_en)}</b> новых слов "
+        "(они выделены <b>жирным</b>). "
         "Нажми слово на кнопке, чтобы изучить его."
     )
     await m.answer(text, reply_markup=vocab_topic_kb(level, topic_id, user, batch_en), parse_mode="HTML")
@@ -246,13 +250,16 @@ async def _send_phrase_story(m: Message, user: dict, *, count_toward_limit: bool
     async with status(m, "🦜 Готовлю текст с фразами…"):
         story = generate_vocab_text(level, topic["title"], batch, kind="phrases")
     batch_en = [p["en"] for p in batch]
+    from services.vocabulary_tutor import highlight_target_terms
+
+    text_en = highlight_target_terms(story["text_en"], batch_en)
 
     update_vocab_lesson(
         str(m.from_user.id),
         hub="vocab_phrases",
         vocab_mode="phrases",
         vocab_batch=batch_en,
-        vocab_text_en=story["text_en"],
+        vocab_text_en=text_en,
         vocab_text_ru=story["text_ru"],
         vocab_active_item=None,
         vocab_practice_step=0,
@@ -264,9 +271,9 @@ async def _send_phrase_story(m: Message, user: dict, *, count_toward_limit: bool
     user = get_user(users, str(m.from_user.id))
     text = (
         f"📌 <b>Фразы · {topic['title']}</b>\n\n"
-        f"{story['text_en']}\n\n"
+        f"{text_en}\n\n"
         f"{story['text_ru']}\n\n"
-        "🦜 Нажми на фразу, чтобы разобрать её подробнее."
+        "🦜 Фразы выделены <b>жирным</b>. Нажми на фразу, чтобы разобрать её подробнее."
     )
     await m.answer(text, reply_markup=vocab_phrase_topic_kb(level, topic_id, user, batch_en), parse_mode="HTML")
 

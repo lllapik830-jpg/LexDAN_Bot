@@ -4,8 +4,42 @@
 
 import logging
 import random
+import re
 
 from services.gpt import _ask_json
+
+
+def highlight_target_terms(text: str, terms: list[str]) -> str:
+    """
+    Выделить целевые слова/фразы жирным <b>…</b> в тексте.
+    Снимает старые <i>/<b>, затем оборачивает термины (длинные первыми).
+    """
+    out = re.sub(r"</?(?:b|i|strong|em)>", "", text or "", flags=re.IGNORECASE)
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for t in terms or []:
+        s = (t or "").strip()
+        if not s:
+            continue
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(s)
+    cleaned.sort(key=len, reverse=True)
+    for term in cleaned:
+        if " " in term or "-" in term:
+            pat = re.compile(re.escape(term), re.IGNORECASE)
+        else:
+            pat = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
+
+        def _repl(m: re.Match, _term=term) -> str:
+            return f"<b>{m.group(0)}</b>"
+
+        out = pat.sub(_repl, out)
+    # убрать случайное двойное выделение
+    out = re.sub(r"<b>\s*<b>(.*?)</b>\s*</b>", r"<b>\1</b>", out, flags=re.IGNORECASE | re.DOTALL)
+    return out
 
 
 def generate_vocab_text(
@@ -16,16 +50,16 @@ def generate_vocab_text(
     kind: str = "words",
 ) -> dict:
     """
-    kind=words: 6-7 предложений, 4-5 слов курсивом
-    kind=phrases: до 5 предложений, 2 фразы курсивом
+    kind=words: 6-7 предложений, целевые слова жирным
+    kind=phrases: до 5 предложений, 2 фразы жирным
     """
     if kind == "phrases":
         labels = [p["en"] for p in words[:2]]
         count = 2
         fallback_en = (
-            f"My family is very important to me. We often say <i>{labels[0] if labels else 'family first'}</i> "
+            f"My family is very important to me. We often say <b>{labels[0] if labels else 'family first'}</b> "
             f"when we talk. Last weekend we had dinner together. "
-            f"My grandmother told us <i>{labels[1] if len(labels) > 1 else 'home sweet home'}</i> "
+            f"My grandmother told us <b>{labels[1] if len(labels) > 1 else 'home sweet home'}</b> "
             f"and everyone smiled."
         )
         fallback_ru = (
@@ -37,10 +71,10 @@ def generate_vocab_text(
         count = min(5, len(labels))
         fallback_en = (
             f"Today I want to tell you about {topic_title.lower()}. "
-            f"I see my <i>{labels[0] if labels else 'friend'}</i> every day. "
-            f"We like to <i>{labels[1] if len(labels) > 1 else 'talk'}</i> together. "
-            f"Sometimes we visit a <i>{labels[2] if len(labels) > 2 else 'place'}</i> nearby. "
-            f"It makes me feel <i>{labels[3] if len(labels) > 3 else 'happy'}</i>. "
+            f"I see my <b>{labels[0] if labels else 'friend'}</b> every day. "
+            f"We like to <b>{labels[1] if len(labels) > 1 else 'talk'}</b> together. "
+            f"Sometimes we visit a <b>{labels[2] if len(labels) > 2 else 'place'}</b> nearby. "
+            f"It makes me feel <b>{labels[3] if len(labels) > 3 else 'happy'}</b>. "
             f"I hope you enjoy these new words!"
         )
         fallback_ru = (
@@ -60,14 +94,14 @@ def generate_vocab_text(
     )
     if kind == "phrases":
         system += (
-            "Max 5 sentences. Wrap EXACTLY 2 given phrases in <i>...</i> in BOTH languages. "
+            "Max 5 sentences. Wrap EXACTLY 2 given phrases in <b>...</b> in the English text. "
             "highlighted = list of 2 English phrases without tags."
         )
     else:
         system += (
-            "6-7 sentences. Wrap EXACTLY 4-5 given words in <i>...</i> in English text. "
-            "Same words wrapped in <i> in Russian translation. "
-            "highlighted = list of English words/phrases used (without tags)."
+            "6-7 sentences. Wrap EVERY given target word in <b>...</b> in the English text "
+            "(bold HTML, not italic). "
+            "highlighted = list of English words used (without tags)."
         )
 
     data = _ask_json(
@@ -86,10 +120,13 @@ def generate_vocab_text(
     highlighted = data.get("highlighted") or labels[:count]
     if not isinstance(highlighted, list):
         highlighted = labels[:count]
+    highlighted = [str(x) for x in highlighted[:count]] or labels[:count]
+    # гарантируем жирное выделение целевых слов из батча
+    text_en = highlight_target_terms((data.get("text_en") or fallback_en).strip(), labels[:count])
     return {
-        "text_en": (data.get("text_en") or fallback_en).strip(),
+        "text_en": text_en,
         "text_ru": (data.get("text_ru") or fallback_ru).strip(),
-        "highlighted": [str(x) for x in highlighted[:count]],
+        "highlighted": highlighted,
     }
 
 
