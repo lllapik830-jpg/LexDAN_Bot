@@ -1,6 +1,8 @@
-"""Эксклюзивные задания Рико — /test_winners и прохождение паков 1/2/3."""
+"""Эксклюзивные задания Рико — /test_winners, сказка 1 места, паки 2/3."""
 
 from __future__ import annotations
+
+import random
 
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -26,19 +28,27 @@ from services.exclusive_rico import (
     BTN_EX_HINT,
     BTN_EX_SKIP,
     BTN_EX_EXIT,
+    BTN_EX_TRANSLATE,
+    BTN_EX_READY,
     PLACE_BUTTONS,
     get_pack,
     start_pack,
     get_active,
     clear_active,
+    is_story_mode,
+    ready_html,
+    story_begin,
+    story_next,
+    current_scene,
     current_task,
-    advance,
+    format_line_html,
     format_task_card,
+    resolve_voice_id,
     mcq_options,
     check_answer,
+    advance,
 )
 from services.elevenlabs import send_voice_reply
-from services.voices import RICO_VOICE_ID
 from services.stt import recognize_english
 
 router = Router()
@@ -49,7 +59,6 @@ def _uid(m: Message) -> str:
 
 
 def _can_test(m: Message, user: dict) -> bool:
-    """Менеджер или активный триал/премиум — для обкатки."""
     if m.from_user and m.from_user.id == MANAGER_ID:
         return True
     if user.get("in_promo_trial") or user.get("reg_full_trial_granted"):
@@ -69,17 +78,81 @@ def _hub_kb() -> ReplyKeyboardMarkup:
     )
 
 
+def _ready_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_EX_READY)],
+            [KeyboardButton(text=BTN_EX_EXIT)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def _line_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_EX_NEXT), KeyboardButton(text=BTN_EX_TRANSLATE)],
+            [KeyboardButton(text=BTN_EX_EXIT)],
+        ],
+        resize_keyboard=True,
+    )
+
+
 def _play_kb(task: dict | None) -> ReplyKeyboardMarkup:
     rows: list[list[KeyboardButton]] = []
     if task and (task.get("kind") or "") == "mcq":
         for opt in mcq_options(task):
             rows.append([KeyboardButton(text=opt)])
     rows.append([KeyboardButton(text=BTN_EX_HINT), KeyboardButton(text=BTN_EX_SKIP)])
+    rows.append([KeyboardButton(text=BTN_EX_TRANSLATE)])
     rows.append([KeyboardButton(text=BTN_EX_EXIT)])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-async def _send_task(m: Message, user: dict) -> None:
+async def _send_story_scene(m: Message, user: dict, scene: dict | None) -> None:
+    if not scene:
+        clear_active(user)
+        await m.answer(
+            "🏁 <b>Конец сказки.</b>\n"
+            "Рико стал учителем — а ты прошёл легенду. "
+            "Можно выбрать другое место или выйти в меню.",
+            reply_markup=_hub_kb(),
+            parse_mode="HTML",
+        )
+        return
+
+    if scene.get("type") == "task":
+        await m.answer(
+            format_task_card(user, scene),
+            reply_markup=_play_kb(scene),
+            parse_mode="HTML",
+        )
+        if (scene.get("kind") or "") == "voice":
+            line = (scene.get("voice_text") or "").strip()
+            if line:
+                await send_voice_reply(
+                    m,
+                    line,
+                    title="Легенда · задание",
+                    voice_id=resolve_voice_id("rico"),
+                )
+        return
+
+    # line
+    html = format_line_html(scene)
+    await m.answer(html, reply_markup=_line_kb(), parse_mode="HTML")
+    en = (scene.get("en") or "").strip()
+    if en:
+        speaker = (scene.get("speaker") or "narrator").lower()
+        await send_voice_reply(
+            m,
+            en,
+            title=scene.get("label") or speaker,
+            voice_id=resolve_voice_id(speaker),
+        )
+
+
+async def _send_pack_task(m: Message, user: dict) -> None:
     task = current_task(user)
     if not task:
         clear_active(user)
@@ -93,6 +166,8 @@ async def _send_task(m: Message, user: dict) -> None:
     if (task.get("kind") or "") == "voice":
         line = (task.get("voice_text") or "").strip()
         if line:
+            from services.voices import RICO_VOICE_ID
+
             await send_voice_reply(m, line, title="Эксклюзив Рико", voice_id=RICO_VOICE_ID)
 
 
@@ -103,7 +178,7 @@ async def cmd_test_winners(m: Message):
     user = get_user(users, uid)
     ensure_growth(user)
     if not _can_test(m, user):
-        return  # молча, как админ-команды
+        return
     clear_active(user)
     set_mode(uid, MODE_EXCLUSIVE)
     users = users_for(uid)
@@ -111,11 +186,11 @@ async def cmd_test_winners(m: Message):
     save_users(users, only=uid)
     await m.answer(
         "🧪 <b>Тест призов ивента</b>\n\n"
-        "Выбери место — загрузится эксклюзивный пак Рико:\n"
-        "🥇 <b>1</b> — Легенда · квест + голос + перефраз + ошибки профи (20)\n"
+        "Выбери место:\n"
+        "🥇 <b>1</b> — Легенда · сказка «Как Рико стал учителем» (20 заданий в сюжете)\n"
         "🥈 <b>2</b> — Мастер · сленг/идиомы + карты слов (8)\n"
         "🥉 <b>3</b> — Охотник · охота на ошибки + загадки (8)\n\n"
-        "Контент разный у каждого места. Это тестовый режим (прогресс пака локальный).",
+        "Тестовый режим — прогресс локальный.",
         reply_markup=_hub_kb(),
         parse_mode="HTML",
     )
@@ -130,16 +205,81 @@ async def pick_place(m: Message):
     place = PLACE_BUTTONS.get((m.text or "").strip())
     if not place:
         return
-    pack = get_pack(place)
-    if not pack:
-        await m.answer("Пак не найден 😅", reply_markup=_hub_kb())
-        return
+
     start_pack(user, place, test_mode=True)
     save_users(users, only=uid)
+
+    if place == 1:
+        await m.answer(ready_html(), reply_markup=_ready_kb(), parse_mode="HTML")
+        return
+
+    pack = get_pack(place)
     await m.answer(pack.get("intro_html") or pack.get("title") or "Старт!", parse_mode="HTML")
     users = users_for(uid)
     user = get_user(users, uid)
-    await _send_task(m, user)
+    await _send_pack_task(m, user)
+
+
+@router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_READY)
+async def story_ready(m: Message):
+    uid = _uid(m)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    if not is_story_mode(user):
+        return
+    active = get_active(user)
+    if not active or active.get("phase") != "ready":
+        await m.answer("Нажми «1 место», чтобы начать сказку заново.", reply_markup=_hub_kb())
+        return
+    scene = story_begin(user)
+    save_users(users, only=uid)
+    await _send_story_scene(m, user, scene)
+
+
+@router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_NEXT)
+async def story_or_pack_next(m: Message):
+    uid = _uid(m)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    if is_story_mode(user):
+        active = get_active(user)
+        if active and active.get("phase") == "task":
+            await m.answer(
+                "Сейчас задание — ответь, возьми подсказку или пропусти.",
+                reply_markup=_play_kb(current_task(user)),
+            )
+            return
+        scene = story_next(user)
+        save_users(users, only=uid)
+        users = users_for(uid)
+        user = get_user(users, uid)
+        await _send_story_scene(m, user, scene)
+        return
+    # pack 2/3 — «далее» = skip alias
+    await exclusive_skip(m)
+
+
+@router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_TRANSLATE)
+async def exclusive_translate(m: Message):
+    uid = _uid(m)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    active = get_active(user)
+    if is_story_mode(user) and active:
+        ru = (active.get("last_ru") or "").strip()
+        if ru:
+            await m.answer(
+                f"🌐 <b>Перевод:</b>\n{ru}",
+                reply_markup=_line_kb() if active.get("phase") == "line" else _play_kb(current_task(user)),
+                parse_mode="HTML",
+            )
+            return
+        await m.answer(
+            "Пока нечего переводить — дождись реплики на английском.",
+            reply_markup=_line_kb() if active.get("phase") == "line" else _hub_kb(),
+        )
+        return
+    await m.answer("Перевод доступен в сказке 1 места 🌍", reply_markup=_hub_kb())
 
 
 @router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_EXIT)
@@ -177,6 +317,28 @@ async def exclusive_skip(m: Message):
     if not get_active(user):
         await m.answer("Сначала выбери место 👇", reply_markup=_hub_kb())
         return
+
+    if is_story_mode(user):
+        if get_active(user).get("phase") != "task":
+            await m.answer("Пропуск только на заданиях. Жми «Далее».", reply_markup=_line_kb())
+            return
+        scene = advance(user)  # story_complete_task via advance
+        # advance returns bool for pack; for story it returns bool from story_complete_task is not None
+        # Wait - advance for story returns `scene is not None` which is bool. Good.
+        save_users(users, only=uid)
+        users = users_for(uid)
+        user = get_user(users, uid)
+        await m.answer("⏭ Ок, история идёт дальше…", parse_mode="HTML")
+        # after advance, get current scene
+        sc = current_scene(user)
+        # BUG: advance already called story_next which advanced. current_scene should be the new one.
+        # But advance returns bool, and story_complete_task already moved. If False, story ended and clear_active.
+        if not get_active(user):
+            await _send_story_scene(m, user, None)
+            return
+        await _send_story_scene(m, user, sc)
+        return
+
     more = advance(user)
     save_users(users, only=uid)
     if not more:
@@ -189,12 +351,7 @@ async def exclusive_skip(m: Message):
     await m.answer("⏭ Ок, дальше — не зависаем 🚀", parse_mode="HTML")
     users = users_for(uid)
     user = get_user(users, uid)
-    await _send_task(m, user)
-
-
-@router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_NEXT)
-async def exclusive_next_alias(m: Message):
-    await exclusive_skip(m)
+    await _send_pack_task(m, user)
 
 
 @router.message(ModeFilter(MODE_EXCLUSIVE), F.voice)
@@ -234,6 +391,8 @@ async def exclusive_answer(m: Message):
         BTN_EX_SKIP,
         BTN_EX_NEXT,
         BTN_EX_EXIT,
+        BTN_EX_TRANSLATE,
+        BTN_EX_READY,
         "🔙 Вернуться в меню",
     }:
         return
@@ -241,6 +400,16 @@ async def exclusive_answer(m: Message):
     uid = _uid(m)
     users = users_for(uid)
     user = get_user(users, uid)
+
+    if is_story_mode(user):
+        active = get_active(user)
+        if active and active.get("phase") == "ready":
+            await m.answer("Нажми «Я готов!», когда будешь готов ✨", reply_markup=_ready_kb())
+            return
+        if active and active.get("phase") == "line":
+            await m.answer("Жми «Далее», чтобы продолжить сказку ➡️", reply_markup=_line_kb())
+            return
+
     task = current_task(user)
     if not task:
         await m.answer("Выбери место кнопкой 👇", reply_markup=_hub_kb())
@@ -261,16 +430,26 @@ async def _grade_and_advance(
         )
         return
 
-    more = advance(user)
-    save_users(users, only=uid)
     cheers = [
         "✅ Есть! Красава 🦜",
         "✅ В яблочко 🎯",
         "✅ Супер, так держать ✨",
     ]
-    import random
-
     await m.answer(random.choice(cheers), parse_mode="HTML")
+
+    if is_story_mode(user):
+        more = advance(user)
+        save_users(users, only=uid)
+        users = users_for(uid)
+        user = get_user(users, uid)
+        if not get_active(user):
+            await _send_story_scene(m, user, None)
+            return
+        await _send_story_scene(m, user, current_scene(user))
+        return
+
+    more = advance(user)
+    save_users(users, only=uid)
     if not more:
         await m.answer(
             "🏆 <b>Пак закрыт!</b> Рико гордится.\n"
@@ -281,4 +460,4 @@ async def _grade_and_advance(
         return
     users = users_for(uid)
     user = get_user(users, uid)
-    await _send_task(m, user)
+    await _send_pack_task(m, user)
