@@ -330,7 +330,7 @@ def format_drop_caption(result: dict) -> str:
         if result.get("finale"):
             msg += (
                 "\n\n🦜 <b>Рико:</b> Ты собрал(а) все 15 магических элементов! "
-                "Баллы ивента теперь видны — продолжай занятия и поднимайся в топ 💚"
+                "Альбом полный — красота 💚 Баллы и топ от заданий считаются отдельно."
             )
         return msg
 
@@ -356,10 +356,10 @@ def format_album_text(user: dict) -> str:
         lines.append("✅ Альбом полный — новые карточки больше не выпадают.\n")
     elif not is_event_active():
         lines.append("⏳ Карты выпадают только во время ивента.\n")
-    if can_show_points(user):
-        lines.append(f"🏅 Баллы ивента: <b>{format_points(get_points(user))}</b>\n")
-    else:
-        lines.append("🔒 Баллы ивента откроются после всех 15 элементов.\n")
+    lines.append(
+        f"🏅 Баллы ивента: <b>{format_points(get_points(user))}</b>\n"
+        "<i>Элементы — для коллекции; в топ попадаешь по баллам за задания.</i>\n"
+    )
     for e in COLLECTION_ELEMENTS:
         i = int(e["id"])
         rar = RARITY_LABEL_RU.get(e["rarity"], "")

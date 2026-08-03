@@ -263,9 +263,8 @@ def get_points(user: dict) -> float:
 
 
 def can_show_points(user: dict) -> bool:
-    from services.collection import is_complete
-
-    return is_complete(user)
+    """Баллы и топ всегда видны; элементы — просто коллекция «для красоты»."""
+    return True
 
 
 def add_points(user: dict, amount: float, *, kind: str) -> float:
@@ -412,17 +411,12 @@ def format_leaderboard_text_for(
             lines.append(f"{medal} {who} — <b>{pts}</b>{mark}")
 
     lines.append("")
-    if can_show_points(user):
-        my = format_points(get_points(user))
-        place = _place_of(user_id, users, frozen_rows=rows if frozen else None)
-        if place:
-            lines.append(f"Ты: <b>{my}</b> балл. · место <b>{place}</b>")
-        else:
-            lines.append(f"Твои баллы: <b>{my}</b>")
+    my = format_points(get_points(user))
+    place = _place_of(user_id, users, frozen_rows=rows if frozen else None)
+    if place:
+        lines.append(f"Ты: <b>{my}</b> балл. · место <b>{place}</b>")
     else:
-        lines.append(
-            "🔒 Твои баллы откроются, когда соберёшь все 15 элементов."
-        )
+        lines.append(f"Твои баллы: <b>{my}</b>")
     return "\n".join(lines)
 
 
