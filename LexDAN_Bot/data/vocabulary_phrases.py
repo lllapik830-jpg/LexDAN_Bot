@@ -212,6 +212,10 @@ def get_phrase_entry(level: str, topic_id: str, en: str) -> dict | None:
     for p in get_phrases(level, topic_id):
         if p["en"].lower() == key:
             return p
+    if (level or "").upper() == "EX" or (topic_id or "") == "rico_prize":
+        from data.exclusive_vocab import get_exclusive_phrase
+
+        return get_exclusive_phrase(en)
     return None
 
 

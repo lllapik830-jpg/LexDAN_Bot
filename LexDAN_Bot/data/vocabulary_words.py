@@ -554,6 +554,10 @@ def get_word_entry(level: str, topic_id: str, en: str) -> dict | None:
     for w in get_words(level, topic_id):
         if w["en"].lower() == key:
             return w
+    if (level or "").upper() == "EX" or (topic_id or "") == "rico_prize":
+        from data.exclusive_vocab import get_exclusive_word
+
+        return get_exclusive_word(en)
     return None
 
 

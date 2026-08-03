@@ -41,6 +41,8 @@ BTN_EX_SKIP = BTN_STORY_SKIP
 BTN_EX_EXIT = BTN_STORY_EXIT
 BTN_EX_TRANSLATE = BTN_STORY_TRANSLATE
 BTN_EX_READY = BTN_READY
+BTN_EX_RESUME = "▶️ Продолжить с места остановки"
+BTN_EX_RESTART = "🔄 Начать сначала"
 
 PLACE_BUTTONS = {
     BTN_EX_PLACE_1: 1,
@@ -87,6 +89,7 @@ def ensure_exclusive(user: dict) -> dict:
         raw = {}
     raw.setdefault("active", None)
     raw.setdefault("done_ids", [])
+    raw.setdefault("checkpoints", {})
     user["exclusive_rico"] = raw
     return raw
 
@@ -100,6 +103,85 @@ def get_active(user: dict) -> dict | None:
 def clear_active(user: dict) -> None:
     ensure_exclusive(user)
     user["exclusive_rico"]["active"] = None
+
+
+def get_checkpoint(user: dict, place: int) -> dict | None:
+    ensure_exclusive(user)
+    cp = user["exclusive_rico"]["checkpoints"].get(str(int(place)))
+    return cp if isinstance(cp, dict) else None
+
+
+def clear_checkpoint(user: dict, place: int) -> None:
+    ensure_exclusive(user)
+    user["exclusive_rico"]["checkpoints"].pop(str(int(place)), None)
+
+
+def has_resumable_progress(user: dict, place: int) -> bool:
+    cp = get_checkpoint(user, place)
+    if not cp:
+        return False
+    place = int(place)
+    if place == 1:
+        if cp.get("mode") != "story":
+            return False
+        # есть прогресс, если уже не на самом старте ready
+        if cp.get("phase") == "ready" and int(cp.get("scene_index") or 0) == 0 and int(cp.get("tasks_done") or 0) == 0:
+            return False
+        return True
+    if cp.get("mode") != "pack":
+        return False
+    idx = int(cp.get("index") or 0)
+    total = int(cp.get("total") or 0)
+    return total > 0 and 0 <= idx < total
+
+
+def park_active(user: dict) -> bool:
+    """Сохранить прогресс в checkpoint и снять active. True если сохранили."""
+    active = get_active(user)
+    if not active:
+        return False
+    place = int(active.get("place") or 0)
+    if place <= 0:
+        clear_active(user)
+        return False
+
+    if active.get("mode") == "story":
+        if (
+            active.get("phase") == "ready"
+            and int(active.get("scene_index") or 0) == 0
+            and int(active.get("tasks_done") or 0) == 0
+        ):
+            clear_active(user)
+            return False
+        ensure_exclusive(user)
+        user["exclusive_rico"]["checkpoints"][str(place)] = dict(active)
+        clear_active(user)
+        return True
+
+    if active.get("mode") == "pack":
+        idx = int(active.get("index") or 0)
+        total = int(active.get("total") or 0)
+        if total > 0 and idx < total:
+            ensure_exclusive(user)
+            user["exclusive_rico"]["checkpoints"][str(place)] = dict(active)
+            clear_active(user)
+            return True
+        clear_checkpoint(user, place)
+        clear_active(user)
+        return False
+
+    clear_active(user)
+    return False
+
+
+def resume_checkpoint(user: dict, place: int) -> dict | None:
+    """Восстановить active из checkpoint."""
+    cp = get_checkpoint(user, place)
+    if not cp or not has_resumable_progress(user, place):
+        return None
+    ensure_exclusive(user)
+    user["exclusive_rico"]["active"] = dict(cp)
+    return user["exclusive_rico"]["active"]
 
 
 def is_story_mode(user: dict) -> bool:
@@ -129,6 +211,7 @@ def start_pack(user: dict, place: int, *, test_mode: bool = False) -> dict:
     if not pack:
         raise ValueError(f"no pack for place {place}")
     ensure_exclusive(user)
+    clear_checkpoint(user, place)
     tasks = list(pack.get("tasks") or [])
     user["exclusive_rico"]["active"] = {
         "place": place,
@@ -145,6 +228,7 @@ def start_pack(user: dict, place: int, *, test_mode: bool = False) -> dict:
 
 def start_legend_story(user: dict, *, test_mode: bool = False) -> dict:
     ensure_exclusive(user)
+    clear_checkpoint(user, 1)
     user["exclusive_rico"]["active"] = {
         "place": 1,
         "mode": "story",
@@ -292,6 +376,7 @@ def story_next(user: dict) -> dict | None:
     active["scene_index"] = idx
     scene = _sync_phase_from_scene(user)
     if scene is None:
+        clear_checkpoint(user, 1)
         clear_active(user)
     return scene
 
@@ -362,9 +447,58 @@ def advance(user: dict) -> bool:
                 ep["exclusive_tasks_remaining"] = max(0, left - 1)
     active["index"] = int(active.get("index") or 0) + 1
     if active["index"] >= int(active.get("total") or 0):
+        place = int(active.get("place") or 0)
+        clear_checkpoint(user, place)
         clear_active(user)
         return False
     return True
+
+
+def grant_task_vocab(user: dict, task: dict) -> list[str]:
+    """
+    Засчитать слово/фразу из задания 2/3 в vocabulary_progress + счётчики.
+    Возвращает короткие HTML-строки о новых добавлениях.
+    """
+    from data.exclusive_vocab import EX_LEVEL, EX_TOPIC, resolve_exclusive_entry
+
+    raw = task.get("learn") or task.get("learn_items")
+    if not raw:
+        return []
+    items = raw if isinstance(raw, list) else [raw]
+    notes: list[str] = []
+
+    vp = user.get("vocabulary_progress")
+    if not isinstance(vp, dict):
+        vp = {"words": [], "phrases": [], "final_test_passed": {}}
+        user["vocabulary_progress"] = vp
+    vp.setdefault("words", [])
+    vp.setdefault("phrases", [])
+
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        kind = (it.get("kind") or "phrase").strip().lower()
+        en = (it.get("en") or "").strip()
+        if not en:
+            continue
+        entry = resolve_exclusive_entry(kind, en)
+        display_en = (entry or {}).get("en") or en
+        ru = (entry or {}).get("ru") or (it.get("ru") or "")
+        emoji = (entry or {}).get("emoji") or "✨"
+        key = f"{EX_LEVEL}:{EX_TOPIC}:{display_en.lower()}"
+        bucket = "words" if kind == "word" else "phrases"
+        lst = list(vp.get(bucket) or [])
+        if key in lst:
+            continue
+        lst.append(key)
+        vp[bucket] = lst
+        label = "слово" if kind == "word" else "фраза"
+        ru_bit = f" — {ru}" if ru else ""
+        notes.append(f"{emoji} В повторение: <b>{display_en}</b> ({label}){ru_bit}")
+
+    user["words_learned"] = len(vp.get("words") or [])
+    user["phrases_learned"] = len(vp.get("phrases") or [])
+    return notes
 
 
 def format_task_card(user: dict, task: dict) -> str:
@@ -603,6 +737,8 @@ __all__ = [
     "BTN_EX_EXIT",
     "BTN_EX_TRANSLATE",
     "BTN_EX_READY",
+    "BTN_EX_RESUME",
+    "BTN_EX_RESTART",
     "PLACE_BUTTONS",
     "PACKS_BY_PLACE",
     "LEGEND_SCENES",
@@ -610,6 +746,11 @@ __all__ = [
     "ensure_exclusive",
     "get_active",
     "clear_active",
+    "park_active",
+    "get_checkpoint",
+    "clear_checkpoint",
+    "has_resumable_progress",
+    "resume_checkpoint",
     "is_story_mode",
     "start_pack",
     "start_legend_story",
@@ -622,6 +763,7 @@ __all__ = [
     "resolve_voice_id",
     "current_task",
     "advance",
+    "grant_task_vocab",
     "format_task_card",
     "mcq_options",
     "check_answer",

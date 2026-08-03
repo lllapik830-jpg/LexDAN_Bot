@@ -169,6 +169,7 @@ def topic_combined_progress(user: dict, level: str, topic_id: str, words_total: 
 def get_all_learned_word_entries(user: dict) -> list[tuple[str, str, str]]:
     """[(level, topic_id, en), ...]"""
     from data.vocabulary_words import get_word_entry
+    from data.exclusive_vocab import get_exclusive_word, EX_LEVEL, EX_TOPIC
 
     ensure_vocab_progress(user)
     out = []
@@ -177,14 +178,15 @@ def get_all_learned_word_entries(user: dict) -> list[tuple[str, str, str]]:
         if len(parts) != 3:
             continue
         level, topic_id, en = parts
-        entry = get_word_entry(level, topic_id, en)
+        entry = get_word_entry(level, topic_id, en) or get_exclusive_word(en)
         if entry:
-            out.append((level, topic_id, entry["en"]))
+            out.append((level or EX_LEVEL, topic_id or EX_TOPIC, entry["en"]))
     return out
 
 
 def get_all_learned_phrase_entries(user: dict) -> list[tuple[str, str, str]]:
     from data.vocabulary_phrases import get_phrase_entry
+    from data.exclusive_vocab import get_exclusive_phrase, EX_LEVEL, EX_TOPIC
 
     ensure_vocab_progress(user)
     out = []
@@ -193,9 +195,9 @@ def get_all_learned_phrase_entries(user: dict) -> list[tuple[str, str, str]]:
         if len(parts) != 3:
             continue
         level, topic_id, en = parts
-        entry = get_phrase_entry(level, topic_id, en)
+        entry = get_phrase_entry(level, topic_id, en) or get_exclusive_phrase(en)
         if entry:
-            out.append((level, topic_id, entry["en"]))
+            out.append((level or EX_LEVEL, topic_id or EX_TOPIC, entry["en"]))
     return out
 
 

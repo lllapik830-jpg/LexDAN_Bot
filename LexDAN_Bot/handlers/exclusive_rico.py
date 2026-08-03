@@ -30,11 +30,17 @@ from services.exclusive_rico import (
     BTN_EX_EXIT,
     BTN_EX_TRANSLATE,
     BTN_EX_READY,
+    BTN_EX_RESUME,
+    BTN_EX_RESTART,
     PLACE_BUTTONS,
     get_pack,
     start_pack,
     get_active,
     clear_active,
+    park_active,
+    has_resumable_progress,
+    resume_checkpoint,
+    ensure_exclusive,
     is_story_mode,
     ready_html,
     story_begin,
@@ -47,6 +53,7 @@ from services.exclusive_rico import (
     mcq_options,
     check_answer,
     advance,
+    grant_task_vocab,
 )
 from services.elevenlabs import send_voice_reply
 from services.stt import recognize_english
@@ -82,6 +89,17 @@ def _ready_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=BTN_EX_READY)],
+            [KeyboardButton(text=BTN_EX_EXIT)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def _resume_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_EX_RESUME)],
+            [KeyboardButton(text=BTN_EX_RESTART)],
             [KeyboardButton(text=BTN_EX_EXIT)],
         ],
         resize_keyboard=True,
@@ -138,7 +156,6 @@ async def _send_story_scene(m: Message, user: dict, scene: dict | None) -> None:
                 )
         return
 
-    # line
     html = format_line_html(scene)
     await m.answer(html, reply_markup=_line_kb(), parse_mode="HTML")
     en = (scene.get("en") or "").strip()
@@ -152,7 +169,7 @@ async def _send_story_scene(m: Message, user: dict, scene: dict | None) -> None:
         )
 
 
-async def _send_pack_task(m: Message, user: dict) -> None:
+async def _send_pack_task(m: Message, user: dict, *, resumed: bool = False) -> None:
     task = current_task(user)
     if not task:
         clear_active(user)
@@ -162,6 +179,14 @@ async def _send_pack_task(m: Message, user: dict) -> None:
             parse_mode="HTML",
         )
         return
+    if resumed:
+        active = get_active(user) or {}
+        n = int(active.get("index") or 0) + 1
+        total = int(active.get("total") or 0)
+        await m.answer(
+            f"▶️ Продолжаем с задания <b>{n}/{total}</b>",
+            parse_mode="HTML",
+        )
     await m.answer(format_task_card(user, task), reply_markup=_play_kb(task), parse_mode="HTML")
     if (task.get("kind") or "") == "voice":
         line = (task.get("voice_text") or "").strip()
@@ -169,6 +194,23 @@ async def _send_pack_task(m: Message, user: dict) -> None:
             from services.voices import RICO_VOICE_ID
 
             await send_voice_reply(m, line, title="Эксклюзив Рико", voice_id=RICO_VOICE_ID)
+
+
+async def _resume_story_into(m: Message, user: dict) -> None:
+    active = resume_checkpoint(user, 1)
+    if not active:
+        start_pack(user, 1, test_mode=True)
+        await m.answer(ready_html(), reply_markup=_ready_kb(), parse_mode="HTML")
+        return
+    phase = active.get("phase")
+    if phase == "ready":
+        await m.answer(ready_html(), reply_markup=_ready_kb(), parse_mode="HTML")
+        return
+    await m.answer(
+        "▶️ Продолжаем сказку с того места, где остановился.",
+        parse_mode="HTML",
+    )
+    await _send_story_scene(m, user, current_scene(user))
 
 
 @router.message(Command("test_winners"))
@@ -179,7 +221,9 @@ async def cmd_test_winners(m: Message):
     ensure_growth(user)
     if not _can_test(m, user):
         return
-    clear_active(user)
+    park_active(user)
+    ensure_exclusive(user)
+    user["exclusive_rico"]["pending_place"] = None
     set_mode(uid, MODE_EXCLUSIVE)
     users = users_for(uid)
     user = get_user(users, uid)
@@ -187,10 +231,10 @@ async def cmd_test_winners(m: Message):
     await m.answer(
         "🧪 <b>Тест призов ивента</b>\n\n"
         "Выбери место:\n"
-        "🥇 <b>1</b> — Легенда · сказка «Как Рико стал учителем» (20 заданий в сюжете)\n"
-        "🥈 <b>2</b> — Мастер · сленг/идиомы + карты слов (8)\n"
-        "🥉 <b>3</b> — Охотник · охота на ошибки + загадки (8)\n\n"
-        "Тестовый режим — прогресс локальный.",
+        "🥇 <b>1</b> — Легенда · сказка (прогресс сохраняется)\n"
+        "🥈 <b>2</b> — Мастер · сленг + карты слов → в повторение\n"
+        "🥉 <b>3</b> — Охотник · ошибки + загадки → в повторение\n\n"
+        "Выход сохраняет прогресс 2/3 и сказки 1 места.",
         reply_markup=_hub_kb(),
         parse_mode="HTML",
     )
@@ -206,7 +250,33 @@ async def pick_place(m: Message):
     if not place:
         return
 
+    park_active(user)
+    ensure_exclusive(user)
+
+    if place == 1 and has_resumable_progress(user, 1):
+        user["exclusive_rico"]["pending_place"] = 1
+        save_users(users, only=uid)
+        cp = user["exclusive_rico"]["checkpoints"].get("1") or {}
+        done = int(cp.get("tasks_done") or 0)
+        await m.answer(
+            "📖 У тебя есть сохранённая сказка.\n"
+            f"Сделано заданий: <b>{done}/20</b>.\n\n"
+            "Продолжить с места остановки или начать сначала?",
+            reply_markup=_resume_kb(),
+            parse_mode="HTML",
+        )
+        return
+
+    if place in (2, 3) and has_resumable_progress(user, place):
+        resume_checkpoint(user, place)
+        save_users(users, only=uid)
+        users = users_for(uid)
+        user = get_user(users, uid)
+        await _send_pack_task(m, user, resumed=True)
+        return
+
     start_pack(user, place, test_mode=True)
+    user["exclusive_rico"]["pending_place"] = None
     save_users(users, only=uid)
 
     if place == 1:
@@ -215,6 +285,48 @@ async def pick_place(m: Message):
 
     pack = get_pack(place)
     await m.answer(pack.get("intro_html") or pack.get("title") or "Старт!", parse_mode="HTML")
+    users = users_for(uid)
+    user = get_user(users, uid)
+    await _send_pack_task(m, user)
+
+
+@router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_RESUME)
+async def resume_place(m: Message):
+    uid = _uid(m)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ensure_exclusive(user)
+    place = int(user["exclusive_rico"].get("pending_place") or 1)
+    user["exclusive_rico"]["pending_place"] = None
+    if place == 1:
+        await _resume_story_into(m, user)
+        save_users(users, only=uid)
+        return
+    if has_resumable_progress(user, place):
+        resume_checkpoint(user, place)
+        save_users(users, only=uid)
+        users = users_for(uid)
+        user = get_user(users, uid)
+        await _send_pack_task(m, user)
+        return
+    await m.answer("Сохранённого прогресса нет — выбери место заново.", reply_markup=_hub_kb())
+
+
+@router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_RESTART)
+async def restart_place(m: Message):
+    uid = _uid(m)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ensure_exclusive(user)
+    place = int(user["exclusive_rico"].get("pending_place") or 1)
+    user["exclusive_rico"]["pending_place"] = None
+    start_pack(user, place, test_mode=True)
+    save_users(users, only=uid)
+    if place == 1:
+        await m.answer(ready_html(), reply_markup=_ready_kb(), parse_mode="HTML")
+        return
+    pack = get_pack(place)
+    await m.answer(pack.get("intro_html") or "Старт!", parse_mode="HTML")
     users = users_for(uid)
     user = get_user(users, uid)
     await _send_pack_task(m, user)
@@ -229,7 +341,7 @@ async def story_ready(m: Message):
         return
     active = get_active(user)
     if not active or active.get("phase") != "ready":
-        await m.answer("Нажми «1 место», чтобы начать сказку заново.", reply_markup=_hub_kb())
+        await m.answer("Нажми «1 место», чтобы начать сказку.", reply_markup=_hub_kb())
         return
     scene = story_begin(user)
     save_users(users, only=uid)
@@ -255,7 +367,6 @@ async def story_or_pack_next(m: Message):
         user = get_user(users, uid)
         await _send_story_scene(m, user, scene)
         return
-    # pack 2/3 — «далее» = skip alias
     await exclusive_skip(m)
 
 
@@ -288,12 +399,15 @@ async def exit_exclusive(m: Message):
     uid = _uid(m)
     users = users_for(uid)
     user = get_user(users, uid)
-    clear_active(user)
+    saved = park_active(user)
+    ensure_exclusive(user)
+    user["exclusive_rico"]["pending_place"] = None
     set_mode(uid, MODE_MENU)
     users = users_for(uid)
     user = get_user(users, uid)
     save_users(users, only=uid)
-    await m.answer("Главное меню:", reply_markup=main_menu(user))
+    note = "\n\n💾 Прогресс сохранён — можно продолжить позже." if saved else ""
+    await m.answer(f"Главное меню:{note}", reply_markup=main_menu(user))
 
 
 @router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_HINT)
@@ -322,21 +436,15 @@ async def exclusive_skip(m: Message):
         if get_active(user).get("phase") != "task":
             await m.answer("Пропуск только на заданиях. Жми «Далее».", reply_markup=_line_kb())
             return
-        scene = advance(user)  # story_complete_task via advance
-        # advance returns bool for pack; for story it returns bool from story_complete_task is not None
-        # Wait - advance for story returns `scene is not None` which is bool. Good.
+        advance(user)
         save_users(users, only=uid)
         users = users_for(uid)
         user = get_user(users, uid)
         await m.answer("⏭ Ок, история идёт дальше…", parse_mode="HTML")
-        # after advance, get current scene
-        sc = current_scene(user)
-        # BUG: advance already called story_next which advanced. current_scene should be the new one.
-        # But advance returns bool, and story_complete_task already moved. If False, story ended and clear_active.
         if not get_active(user):
             await _send_story_scene(m, user, None)
             return
-        await _send_story_scene(m, user, sc)
+        await _send_story_scene(m, user, current_scene(user))
         return
 
     more = advance(user)
@@ -351,7 +459,9 @@ async def exclusive_skip(m: Message):
     await m.answer("⏭ Ок, дальше — не зависаем 🚀", parse_mode="HTML")
     users = users_for(uid)
     user = get_user(users, uid)
-    await _send_pack_task(m, user)
+    task = current_task(user)
+    if task:
+        await m.answer(format_task_card(user, task), reply_markup=_play_kb(task), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_EXCLUSIVE), F.voice)
@@ -396,6 +506,8 @@ async def exclusive_answer(m: Message):
         BTN_EX_EXIT,
         BTN_EX_TRANSLATE,
         BTN_EX_READY,
+        BTN_EX_RESUME,
+        BTN_EX_RESTART,
         "🔙 Вернуться в меню",
     }:
         return
@@ -440,8 +552,19 @@ async def _grade_and_advance(
     ]
     await m.answer(random.choice(cheers), parse_mode="HTML")
 
+    # слова/фразы 2–3 места → повторение + счётчики
+    if not is_story_mode(user):
+        notes = grant_task_vocab(user, task)
+        for note in notes:
+            wl = int(user.get("words_learned") or 0)
+            pl = int(user.get("phrases_learned") or 0)
+            await m.answer(
+                f"{note}\n📊 Выучено: слова <b>{wl}</b> · фразы <b>{pl}</b>",
+                parse_mode="HTML",
+            )
+
     if is_story_mode(user):
-        more = advance(user)
+        advance(user)
         save_users(users, only=uid)
         users = users_for(uid)
         user = get_user(users, uid)
@@ -456,6 +579,7 @@ async def _grade_and_advance(
     if not more:
         await m.answer(
             "🏆 <b>Пак закрыт!</b> Рико гордится.\n"
+            "Новые слова и фразы уже в «🔁 Повторить изученные…».\n"
             "Можно прогнать другое место или вернуться в меню.",
             reply_markup=_hub_kb(),
             parse_mode="HTML",
@@ -463,4 +587,6 @@ async def _grade_and_advance(
         return
     users = users_for(uid)
     user = get_user(users, uid)
-    await _send_pack_task(m, user)
+    task2 = current_task(user)
+    if task2:
+        await m.answer(format_task_card(user, task2), reply_markup=_play_kb(task2), parse_mode="HTML")

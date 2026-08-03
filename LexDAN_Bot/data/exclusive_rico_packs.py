@@ -35,6 +35,7 @@ PLACE_2_PACK: dict = {
     "tasks": [
         {
             "id": "p2_s1",
+            "learn": {"kind": "phrase", "en": "spill the tea"},
             "chapter": "slang",
             "chapter_title": "💬 Сленг / идиомы",
             "kind": "write",
@@ -50,6 +51,7 @@ PLACE_2_PACK: dict = {
         },
         {
             "id": "p2_s2",
+            "learn": {"kind": "phrase", "en": "read the room"},
             "chapter": "slang",
             "chapter_title": "💬 Сленг / идиомы",
             "kind": "write",
@@ -65,6 +67,7 @@ PLACE_2_PACK: dict = {
         },
         {
             "id": "p2_s3",
+            "learn": {"kind": "phrase", "en": "move the goalposts"},
             "chapter": "slang",
             "chapter_title": "💬 Сленг / идиомы",
             "kind": "write",
@@ -80,6 +83,7 @@ PLACE_2_PACK: dict = {
         },
         {
             "id": "p2_s4",
+            "learn": {"kind": "phrase", "en": "a blessing in disguise"},
             "chapter": "slang",
             "chapter_title": "💬 Сленг / идиомы",
             "kind": "write",
@@ -95,6 +99,7 @@ PLACE_2_PACK: dict = {
         },
         {
             "id": "p2_w1",
+            "learn": {"kind": "word", "en": "serendipity"},
             "chapter": "word_map",
             "chapter_title": "🗂 Карта слова",
             "kind": "write",
@@ -112,6 +117,7 @@ PLACE_2_PACK: dict = {
         },
         {
             "id": "p2_w2",
+            "learn": {"kind": "word", "en": "petrichor"},
             "chapter": "word_map",
             "chapter_title": "🗂 Карта слова",
             "kind": "write",
@@ -129,6 +135,7 @@ PLACE_2_PACK: dict = {
         },
         {
             "id": "p2_w3",
+            "learn": {"kind": "word", "en": "ephemeral"},
             "chapter": "word_map",
             "chapter_title": "🗂 Карта слова",
             "kind": "write",
@@ -146,6 +153,7 @@ PLACE_2_PACK: dict = {
         },
         {
             "id": "p2_w4",
+            "learn": {"kind": "word", "en": "flabbergasted"},
             "chapter": "word_map",
             "chapter_title": "🗂 Карта слова",
             "kind": "write",
@@ -176,6 +184,7 @@ PLACE_3_PACK: dict = {
     "tasks": [
         {
             "id": "p3_h1",
+            "learn": {"kind": "phrase", "en": "I have been waiting since 6 o'clock"},
             "chapter": "hunt",
             "chapter_title": "🎯 Охота на ошибку",
             "kind": "fix",
@@ -197,6 +206,7 @@ PLACE_3_PACK: dict = {
         },
         {
             "id": "p3_h2",
+            "learn": {"kind": "phrase", "en": "I agree"},
             "chapter": "hunt",
             "chapter_title": "🎯 Охота на ошибку",
             "kind": "fix",
@@ -212,6 +222,7 @@ PLACE_3_PACK: dict = {
         },
         {
             "id": "p3_h3",
+            "learn": {"kind": "phrase", "en": "Don't forget to buy milk"},
             "chapter": "hunt",
             "chapter_title": "🎯 Охота на ошибку",
             "kind": "fix",
@@ -231,6 +242,7 @@ PLACE_3_PACK: dict = {
         },
         {
             "id": "p3_h4",
+            "learn": {"kind": "phrase", "en": "If I see her, I will tell her"},
             "chapter": "hunt",
             "chapter_title": "🎯 Охота на ошибку",
             "kind": "fix",
@@ -250,6 +262,7 @@ PLACE_3_PACK: dict = {
         },
         {
             "id": "p3_r1",
+            "learn": {"kind": "phrase", "en": "If I had more free time, I would travel"},
             "chapter": "riddle",
             "chapter_title": "🧩 Спойлер-квест",
             "kind": "mcq",
@@ -268,6 +281,7 @@ PLACE_3_PACK: dict = {
         },
         {
             "id": "p3_r2",
+            "learn": {"kind": "phrase", "en": "If I had more free time, I would travel"},
             "chapter": "riddle",
             "chapter_title": "🧩 Спойлер-квест",
             "kind": "write",
@@ -284,6 +298,7 @@ PLACE_3_PACK: dict = {
         },
         {
             "id": "p3_r3",
+            "learn": {"kind": "phrase", "en": "I've been learning English for two years"},
             "chapter": "riddle",
             "chapter_title": "🧩 Спойлер-квест",
             "kind": "mcq",
@@ -302,6 +317,7 @@ PLACE_3_PACK: dict = {
         },
         {
             "id": "p3_r4",
+            "learn": {"kind": "phrase", "en": "I've been learning English for two years"},
             "chapter": "riddle",
             "chapter_title": "🧩 Спойлер-квест",
             "kind": "write",
