@@ -134,6 +134,7 @@ async def main():
         else:
             logging.info("PUBLIC_BASE_URL пуст — укажи его в env для уведомлений ЮKassa")
         asyncio.create_task(_reminder_loop())
+        asyncio.create_task(_trial_last_day_offer_loop())
         asyncio.create_task(_autorenew_loop())
         asyncio.create_task(_event_finalize_loop())
         asyncio.create_task(_event_announce_once())
@@ -164,9 +165,8 @@ async def _event_announce_once():
 
 
 async def _reminder_loop():
-    """Раз в час: напоминания + оффер последнего дня триала."""
+    """Раз в час: напоминания «не заходил»."""
     from services.reminders import send_due_reminders
-    from services.trial_last_day import send_due_last_day_offers
 
     await asyncio.sleep(45)  # дать боту подняться
     while True:
@@ -176,13 +176,22 @@ async def _reminder_loop():
                 logging.info(f"Reminders sent: {n}")
         except Exception as e:
             logging.error(f"Reminder loop error: {e}")
+        await asyncio.sleep(3600)
+
+
+async def _trial_last_day_offer_loop():
+    """Раз в 6 часов: оффер последнего дня триала (−15%)."""
+    from services.trial_last_day import send_due_last_day_offers
+
+    await asyncio.sleep(90)
+    while True:
         try:
             offer = await send_due_last_day_offers(bot)
             if offer.get("sent"):
                 logging.info("Trial last-day offers: %s", offer)
         except Exception as e:
             logging.error(f"Trial last-day offer loop error: {e}")
-        await asyncio.sleep(3600)
+        await asyncio.sleep(6 * 3600)
 
 
 async def _event_finalize_loop():
