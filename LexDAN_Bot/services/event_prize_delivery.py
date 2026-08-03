@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -12,11 +13,13 @@ from aiogram.types import FSInputFile
 
 from data.event_congrats import get_congrats
 from services.event_magic import (
+    EVENT_ID,
     EVENT_TITLE,
     TITLE_PLACE_1,
     TITLE_PLACE_2,
     TITLE_PLACE_3,
     TITLE_PLACE_4_10,
+    format_points,
     load_event_state,
     save_event_state,
 )
@@ -34,6 +37,10 @@ PLACE3_STICKER_SET_URL = f"https://t.me/addstickers/{PLACE3_STICKER_SET_NAME}"
 # Стикерпак 4–10 мест (MC_Collectoin via @fStikBot) — 1 стикер
 PLACE4_STICKER_SET_NAME = "t_me_LexDan_MC_Collectoin_by_fStikBot"
 PLACE4_STICKER_SET_URL = f"https://t.me/addstickers/{PLACE4_STICKER_SET_NAME}"
+
+RESULTS_HEADER = (
+    f"🏁 Ивент «{EVENT_TITLE}» закончен, результаты:"
+)
 
 BTN_LEGEND_TASK = "🏆 Задание для легенды"
 BTN_MASTER_TASK = "🥈 Задание для мастера"
@@ -58,6 +65,10 @@ def prize_task_button_for(user: dict | None) -> str | None:
 
 async def _send_text(bot: Bot, chat_id: int, text: str) -> None:
     await bot.send_message(chat_id, text, parse_mode="HTML")
+
+
+async def _send_results_header(bot: Bot, chat_id: int) -> None:
+    await _send_text(bot, chat_id, RESULTS_HEADER)
 
 
 async def _send_photo(bot: Bot, chat_id: int, path: Path, caption: str = "") -> None:
@@ -103,6 +114,7 @@ async def _send_sticker_pack(
     set_name: str,
     set_url: str,
     state_key: str,
+    max_stickers: int = 1,
     fallback_photo: Path | None = None,
     fallback_caption: str = "",
 ) -> None:
@@ -114,7 +126,7 @@ async def _send_sticker_pack(
     )
     file_ids = await _resolve_sticker_file_ids(bot, set_name=set_name, state_key=state_key)
     if file_ids:
-        for fid in file_ids:
+        for fid in file_ids[: max(1, int(max_stickers))]:
             try:
                 await bot.send_sticker(chat_id, sticker=fid)
             except Exception as e:
@@ -126,7 +138,6 @@ async def _send_sticker_pack(
 
 async def _send_congrats_voice(bot: Bot, chat_id: int, place: int) -> None:
     """Текст + голос классическим Rico (не alt) + перевод."""
-    import asyncio
     import os
     import tempfile
 
@@ -170,6 +181,7 @@ async def _send_congrats_voice(bot: Bot, chat_id: int, place: int) -> None:
 
 
 async def deliver_place_1(bot: Bot, chat_id: int, *, username: str = "") -> None:
+    await _send_results_header(bot, chat_id)
     who = f"@{username.lstrip('@')}" if username else "чемпион"
     await _send_photo(
         bot,
@@ -203,6 +215,7 @@ async def deliver_place_1(bot: Bot, chat_id: int, *, username: str = "") -> None
 
 
 async def deliver_place_2(bot: Bot, chat_id: int) -> None:
+    await _send_results_header(bot, chat_id)
     await _send_congrats_voice(bot, chat_id, 2)
     await _send_text(
         bot,
@@ -224,6 +237,7 @@ async def deliver_place_2(bot: Bot, chat_id: int) -> None:
 
 
 async def deliver_place_3(bot: Bot, chat_id: int) -> None:
+    await _send_results_header(bot, chat_id)
     await _send_congrats_voice(bot, chat_id, 3)
     await _send_text(
         bot,
@@ -236,6 +250,7 @@ async def deliver_place_3(bot: Bot, chat_id: int) -> None:
         chat_id,
         f"🎖 Титул <b>{TITLE_PLACE_3}</b> закреплён табличкой рядом с ником в профиле.",
     )
+    # Ссылка на пак + один любой стикер (не весь набор)
     await _send_sticker_pack(
         bot,
         chat_id,
@@ -243,11 +258,13 @@ async def deliver_place_3(bot: Bot, chat_id: int) -> None:
         set_name=PLACE3_STICKER_SET_NAME,
         set_url=PLACE3_STICKER_SET_URL,
         state_key="place3_sticker_file_ids",
+        max_stickers=1,
     )
 
 
 async def deliver_place_4_10(bot: Bot, chat_id: int) -> None:
     """Приз мест 4…N (до 10): если в топе 7 человек — выдаём 4–7."""
+    await _send_results_header(bot, chat_id)
     await _send_sticker_pack(
         bot,
         chat_id,
@@ -255,29 +272,49 @@ async def deliver_place_4_10(bot: Bot, chat_id: int) -> None:
         set_name=PLACE4_STICKER_SET_NAME,
         set_url=PLACE4_STICKER_SET_URL,
         state_key="place4_sticker_file_ids",
+        max_stickers=1,
         fallback_photo=THANKS_STICKER_IMG,
         fallback_caption="🎟 Thanks for joining, LexDan champion!",
     )
     await _send_text(
         bot,
         chat_id,
-        f"🏁 Ивент «{EVENT_TITLE}» завершён.\n\n"
         f"🎖 Тебе присвоен титул <b>{TITLE_PLACE_4_10}</b> — "
         "он отображается табличкой рядом с ником в профиле.\n"
         "Гонка лидеров сохранила итоги — до следующего ивента можно смотреть топ.",
     )
 
 
+async def deliver_consolation(bot: Bot, chat_id: int, *, score: float) -> None:
+    """Сообщение участнику вне топ-10."""
+    pts = format_points(score)
+    await _send_text(
+        bot,
+        chat_id,
+        f"🏁 Ивент «{EVENT_TITLE}» закончился.\n\n"
+        "К сожалению, ты не выиграл ничего.\n"
+        f"Твой итоговый счёт: <b>{pts}</b>\n\n"
+        "Удачи в следующем ивенте, уже скоро!",
+    )
+
+
 async def deliver_all_prizes(bot: Bot, top: list[dict] | None = None) -> dict:
     """
-    Разослать призы топ-10. Идемпотентно через state['prizes_delivered'].
+    Разослать призы топ-10 + утешение остальным участникам.
+    Идемпотентно через state['prizes_delivered'].
     """
+    from config import MANAGER_ID
+    from services.database import load_users
+
     state = load_event_state()
     if state.get("prizes_delivered") and not state.get("force_deliver"):
-        return {"ok": True, "already": True, "sent": 0, "fail": 0}
+        return {"ok": True, "already": True, "sent": 0, "fail": 0, "consolation": 0}
 
     if top is None:
         top = list(state.get("frozen_top") or [])
+
+    top_ids = {str(r.get("user_id") or "") for r in top if r.get("user_id")}
+    manager_id = str(MANAGER_ID)
 
     sent = 0
     fail = 0
@@ -308,8 +345,47 @@ async def deliver_all_prizes(bot: Bot, top: list[dict] | None = None) -> dict:
         except Exception as e:
             log.error("Prize deliver fail uid=%s place=%s: %s", uid, place, e)
             fail += 1
+        await asyncio.sleep(0.05)
+
+    consolation = 0
+    users = load_users()
+    for uid, payload in (users or {}).items():
+        if not isinstance(payload, dict) or str(uid).startswith("__"):
+            continue
+        if str(uid) == manager_id:
+            continue
+        if str(uid) in top_ids:
+            continue
+        me = payload.get("magic_event")
+        if not isinstance(me, dict) or me.get("event_id") != EVENT_ID:
+            continue
+        try:
+            score = float(me.get("points") or 0)
+        except (TypeError, ValueError):
+            score = 0.0
+        # Только тем, кто реально участвовал (есть баллы)
+        if score <= 0:
+            continue
+        try:
+            chat_id = int(uid)
+        except ValueError:
+            fail += 1
+            continue
+        try:
+            await deliver_consolation(bot, chat_id, score=score)
+            consolation += 1
+        except Exception as e:
+            log.error("Consolation fail uid=%s: %s", uid, e)
+            fail += 1
+        await asyncio.sleep(0.05)
 
     state["prizes_delivered"] = True
     state["force_deliver"] = False
     save_event_state(state)
-    return {"ok": True, "already": False, "sent": sent, "fail": fail}
+    return {
+        "ok": True,
+        "already": False,
+        "sent": sent,
+        "fail": fail,
+        "consolation": consolation,
+    }

@@ -760,6 +760,7 @@ async def admin_event_finalize(m: Message, command: CommandObject):
     delivery = await deliver_all_prizes(m.bot, top)
     await m.answer(
         f"📬 Рассылка призов: отправлено {delivery.get('sent', 0)}, "
+        f"утешение {delivery.get('consolation', 0)}, "
         f"ошибок {delivery.get('fail', 0)}"
     )
 
@@ -786,7 +787,9 @@ async def admin_event_deliver(m: Message, command: CommandObject):
         await m.answer("Рассылка уже была. Повторить: /event_deliver force")
         return
     await m.answer(
-        f"📬 Готово. Отправлено: {delivery.get('sent', 0)}, ошибок: {delivery.get('fail', 0)}"
+        f"📬 Готово. Отправлено: {delivery.get('sent', 0)}, "
+        f"утешение: {delivery.get('consolation', 0)}, "
+        f"ошибок: {delivery.get('fail', 0)}"
     )
 
 
