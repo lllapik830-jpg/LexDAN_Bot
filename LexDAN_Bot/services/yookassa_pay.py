@@ -299,7 +299,16 @@ def handle_webhook_payload(body: dict) -> dict[str, Any] | None:
     return None
 
 
-def plan_amount_for_user(user: dict, plan: str) -> int:
+def plan_amount_for_user(user: dict, plan: str, *, with_discount: bool = True) -> int:
+    """Цена для checkout. Автопродление всегда без скидки (базовые 399/799)."""
+    from services.growth import PRICE_CHAT_MONTH, PRICE_FULL_MONTH
+
+    if not with_discount:
+        if plan == PLAN_CHAT:
+            return int(PRICE_CHAT_MONTH)
+        if plan == PLAN_UPGRADE:
+            return int(PRICE_CHAT_MONTH)
+        return int(PRICE_FULL_MONTH)
     if plan == PLAN_CHAT:
         price, _ = chat_price(user)
         return int(price)
@@ -364,7 +373,7 @@ def process_due_autorenewals(*, limit: int = 40) -> list[dict]:
             plan = PLAN_FULL
 
         try:
-            amount = plan_amount_for_user(user, plan)
+            amount = plan_amount_for_user(user, plan, with_discount=False)
             payment = create_recurring_payment(
                 user_id=str(uid),
                 plan=plan,

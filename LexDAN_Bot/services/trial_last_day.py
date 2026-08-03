@@ -117,11 +117,16 @@ def eligible_for_last_day_offer(user: dict, *, ignore_sent: bool = False) -> boo
 
 
 def apply_last_day_discount(user: dict) -> None:
+    # Скидка живёт до конца дня ИЛИ до конца триала — что раньше
+    until = end_of_today_msk_ts()
+    prem = float(user.get("premium_until") or 0)
+    if prem > _now_ts():
+        until = min(until, prem)
     set_discount(
         user,
         OFFER_PERCENT,
         note=OFFER_NOTE,
-        until_ts=end_of_today_msk_ts(),
+        until_ts=until,
     )
     user["trial_last_day_offer_sent"] = _today_msk()
 

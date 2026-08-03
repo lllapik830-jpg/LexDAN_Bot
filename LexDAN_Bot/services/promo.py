@@ -124,6 +124,11 @@ def pop_trial_ended_notice(user: dict) -> str | None:
     user["in_promo_trial"] = False
     user["trial_end_notified"] = True
     user["promo_listening"] = False
+    # Оффер −15% действует только пока жив триал
+    if (user.get("discount_note") or "") == "last_day_trial":
+        from services.pricing import clear_discount
+
+        clear_discount(user)
     maybe_cleanup_expired_trial_voice(user)
     return TRIAL_ENDED_HTML
 
