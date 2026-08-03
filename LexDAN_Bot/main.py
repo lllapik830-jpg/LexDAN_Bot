@@ -22,7 +22,9 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 from services.timing_middleware import TimingMiddleware
+from services.rate_limit_middleware import RateLimitMiddleware
 
+dp.update.middleware(RateLimitMiddleware())
 dp.update.middleware(TimingMiddleware())
 
 dp.include_routers(

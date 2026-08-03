@@ -64,8 +64,15 @@ def ensure_moderation(user: dict) -> dict:
     user.setdefault("rules_accepted", False)
     user.setdefault("swear_strikes", 0)
     user.setdefault("banned_until", 0.0)
+    user.setdefault("ban_reason", "")
     user.setdefault("pending_name", "")
     user.setdefault("name_changed_at", 0.0)
+    try:
+        from services.rate_limit import ensure_rate_fields
+
+        ensure_rate_fields(user)
+    except Exception:
+        pass
     return user
 
 
@@ -75,11 +82,16 @@ def is_banned(user: dict) -> bool:
     if until <= _now_ts():
         if until:
             user["banned_until"] = 0
+            user["ban_reason"] = ""
         return False
     return True
 
 
 def ban_remaining_text(user: dict) -> str:
+    if (user.get("ban_reason") or "").strip() == "flood":
+        from services.rate_limit import flood_ban_remaining_text
+
+        return flood_ban_remaining_text(user)
     until = float(user.get("banned_until") or 0)
     left = max(0, int(until - _now_ts()))
     hours = left // 3600
@@ -114,6 +126,7 @@ def note_swear_violation(user: dict) -> tuple[bool, str]:
 
     if strikes >= SWEAR_STRIKES_LIMIT:
         user["banned_until"] = _now_ts() + BAN_DAYS * 86400
+        user["ban_reason"] = "swear"
         user["swear_strikes"] = 0
         return True, (
             "🦜 <b>Стоп.</b> Слишком много нарушений правил.\n\n"

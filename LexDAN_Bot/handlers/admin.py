@@ -65,6 +65,7 @@ HELP = (
     "/event_deliver [force] — рассылка призов топ-10 в личку\n"
     "/1 /2 /3 /4 — превью приза места 1 / 2 / 3 / 4–10\n"
     "/test_winners — тест эксклюзивных паков 1/2/3 места\n"
+    "/unban <code>id</code> — снять бан / кулдаун флуда\n"
 )
 
 
@@ -84,6 +85,28 @@ def _parse_uid_days(args: str | None, default_days: int = 30) -> tuple[str | Non
         except ValueError:
             days = default_days
     return uid, days
+
+
+@router.message(Command("unban"))
+async def admin_unban(m: Message, command: CommandObject):
+    if not _is_admin(m):
+        return
+    uid, _ = _parse_uid_days(command.args, 0)
+    if not uid:
+        await m.answer("Формат: /unban id")
+        return
+    from services.database import users_for, get_user, save_users
+    from services.moderation import ensure_moderation
+    from services.rate_limit import clear_rate_state
+
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ensure_moderation(user)
+    user["banned_until"] = 0.0
+    user["ban_reason"] = ""
+    clear_rate_state(user, uid)
+    save_users(users, only=uid)
+    await m.answer(f"✅ Снят бан/кулдаун для <code>{uid}</code>", parse_mode="HTML")
 
 
 @router.message(Command("admin"))
