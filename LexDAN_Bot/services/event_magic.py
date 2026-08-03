@@ -107,6 +107,8 @@ def _default_state() -> dict:
         "frozen_top": [],
         "hall_of_fame": [],
         "announce_sent": False,
+        "prizes_delivered": False,
+        "place3_sticker_file_ids": [],
     }
 
 
@@ -476,7 +478,7 @@ def profile_title_line(user: dict) -> str:
     title = (user.get("profile_title") or "").strip()
     if not title:
         return ""
-    return f"🎖 {title}\n"
+    return f"🏷️ <b>{title}</b>\n"
 
 
 def grant_prize_to_user(user: dict, place: int, *, event_id: str = EVENT_ID) -> dict:

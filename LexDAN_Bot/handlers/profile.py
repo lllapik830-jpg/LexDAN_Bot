@@ -154,6 +154,7 @@ async def profile_promo_enter(m: Message):
     from services.secret_missions import BTN_SECRET
     from services.collection import BTN_COLLECTION
     from services.event_magic import BTN_HALL_OF_FAME, BTN_LEADERBOARD
+    from services.event_prize_delivery import BTN_LEGEND_TASK, BTN_MASTER_TASK, BTN_HUNTER_TASK
     from services.rewards import BTN_STREAK, BTN_REFERRAL
     from aiogram.dispatcher.event.bases import SkipHandler
 
@@ -179,6 +180,9 @@ async def profile_promo_enter(m: Message):
         BTN_COLLECTION,
         BTN_LEADERBOARD,
         BTN_HALL_OF_FAME,
+        BTN_LEGEND_TASK,
+        BTN_MASTER_TASK,
+        BTN_HUNTER_TASK,
         "✏️ Изменить имя",
         "⬅️ В профиль",
     }
@@ -255,15 +259,19 @@ async def restore_streak_btn(m: Message):
 @router.message(ModeFilter(MODE_PROFILE))
 async def profile_foolproof(m: Message):
     from services.collection import BTN_COLLECTION
-    from services.event_magic import BTN_HALL_OF_FAME, BTN_LEADERBOARD
+    from services.event_magic import BTN_HALL_OF_FAME, BTN_LEADERBOARD, is_event_active
+    from services.event_prize_delivery import BTN_LEGEND_TASK, BTN_MASTER_TASK, BTN_HUNTER_TASK
     from aiogram.dispatcher.event.bases import SkipHandler
 
     text = (m.text or "").strip()
-    # альбом / гонка / зал / цифры — другим хендлерам
+    # альбом / гонка / зал / призовые задания / цифры — другим хендлерам
     if text in (
         BTN_COLLECTION,
         BTN_LEADERBOARD,
         BTN_HALL_OF_FAME,
+        BTN_LEGEND_TASK,
+        BTN_MASTER_TASK,
+        BTN_HUNTER_TASK,
         "⬅️ В профиль",
     ) or text.isdigit():
         raise SkipHandler
@@ -272,8 +280,11 @@ async def profile_foolproof(m: Message):
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
     save_users(users, only=str(m.from_user.id))
+    bits = ["Подписка", "Гонка лидеров", "Зал славы"]
+    if is_event_active():
+        bits.insert(1, "Магические элементы")
     await m.answer(
-        "🙂 В профиле: Подписка, Магические элементы, Гонка лидеров, Зал славы, "
+        "🙂 В профиле: " + ", ".join(bits) + ", "
         "Изменить имя, Промокод, Серия дней, Пригласить друга.",
         reply_markup=profile_menu(user, user_id=m.from_user.id),
     )

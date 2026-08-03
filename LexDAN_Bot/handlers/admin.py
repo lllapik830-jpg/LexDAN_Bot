@@ -62,6 +62,7 @@ HELP = (
     "/event_force on|off — форс-активация (тест)\n"
     "/event_announce [force] — рассылка «ивент начался»\n"
     "/event_finalize — подвести итоги и выдать призы\n"
+    "/event_deliver [force] — рассылка призов топ-10 в личку\n"
     "/test_winners — тест эксклюзивных паков 1/2/3 места\n"
 )
 
@@ -734,12 +735,14 @@ async def admin_event_finalize(m: Message, command: CommandObject):
     if not _is_admin(m):
         return
     from services.event_magic import finalize_event, format_points
+    from services.event_prize_delivery import deliver_all_prizes
 
     force = (command.args or "").strip().lower() in {"force", "redo", "1"}
     result = finalize_event(force=force)
     if result.get("already"):
         await m.answer(
-            "Итоги уже были подведены. Чтобы пересчитать: /event_finalize force"
+            "Итоги уже были подведены. Чтобы пересчитать: /event_finalize force\n"
+            "Рассылка призов: /event_deliver [force]"
         )
         return
     top = result.get("top") or []
@@ -753,3 +756,34 @@ async def admin_event_finalize(m: Message, command: CommandObject):
             f"{r.get('place')}. {who} — {format_points(float(r.get('points') or 0))}"
         )
     await m.answer("\n".join(lines))
+    delivery = await deliver_all_prizes(m.bot, top)
+    await m.answer(
+        f"📬 Рассылка призов: отправлено {delivery.get('sent', 0)}, "
+        f"ошибок {delivery.get('fail', 0)}"
+    )
+
+
+@router.message(Command("event_deliver"))
+async def admin_event_deliver(m: Message, command: CommandObject):
+    """Повторно разослать призы топ-10 (после финала)."""
+    if not _is_admin(m):
+        return
+    from services.event_magic import load_event_state, save_event_state
+    from services.event_prize_delivery import deliver_all_prizes
+
+    force = (command.args or "").strip().lower() in {"force", "redo", "1"}
+    st = load_event_state()
+    if not st.get("finalized"):
+        await m.answer("Сначала подведи итоги: /event_finalize")
+        return
+    if force:
+        st["force_deliver"] = True
+        st["prizes_delivered"] = False
+        save_event_state(st)
+    delivery = await deliver_all_prizes(m.bot)
+    if delivery.get("already"):
+        await m.answer("Рассылка уже была. Повторить: /event_deliver force")
+        return
+    await m.answer(
+        f"📬 Готово. Отправлено: {delivery.get('sent', 0)}, ошибок: {delivery.get('fail', 0)}"
+    )

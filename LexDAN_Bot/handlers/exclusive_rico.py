@@ -14,6 +14,7 @@ from handlers.keyboards import main_menu
 from services.database import (
     MODE_EXCLUSIVE,
     MODE_MENU,
+    MODE_PROFILE,
     users_for,
     get_user,
     save_users,
@@ -66,6 +67,12 @@ from services.event_congrats import (
     BTN_CONGRATS_TRANSLATE,
     BTN_CONGRATS_BACK,
     congrats_kb,
+)
+from services.event_prize_delivery import (
+    BTN_LEGEND_TASK,
+    BTN_MASTER_TASK,
+    BTN_HUNTER_TASK,
+    PLACE_TASK_BUTTON,
 )
 from services.elevenlabs import send_voice_reply
 from services.stt import recognize_english
@@ -235,6 +242,65 @@ async def _resume_story_into(m: Message, user: dict) -> None:
         parse_mode="HTML",
     )
     await _send_story_scene(m, user, current_scene(user))
+
+
+async def _launch_winner_pack(m: Message, place: int) -> None:
+    """Старт/продолжение эксклюзива победителя из профиля."""
+    uid = _uid(m)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ensure_growth(user)
+    ep = user.get("event_prizes") if isinstance(user.get("event_prizes"), dict) else {}
+    if int(ep.get("place") or 0) != int(place) and m.from_user.id != MANAGER_ID:
+        await m.answer("Этот приз не твой 🙂", reply_markup=main_menu(user))
+        return
+
+    park_active(user)
+    set_mode(uid, MODE_EXCLUSIVE)
+    users = users_for(uid)
+    user = get_user(users, uid)
+
+    if has_resumable_progress(user, place):
+        resume_checkpoint(user, place)
+        save_users(users, only=uid)
+        users = users_for(uid)
+        user = get_user(users, uid)
+        if place == 1:
+            await m.answer("▶️ Продолжаем легенду…", parse_mode="HTML")
+            await _send_story_scene(m, user, current_scene(user))
+        else:
+            await _send_pack_task(m, user, resumed=True)
+        return
+
+    # test_mode=True — не перезаписываем уже выданный приз
+    start_pack(user, place, test_mode=True)
+    if place in (1, 2):
+        user["rico_alt_voice_unlocked"] = True
+    save_users(users, only=uid)
+
+    if place == 1:
+        await m.answer(ready_html(), reply_markup=_ready_kb(), parse_mode="HTML")
+        return
+    pack = get_pack(place)
+    await m.answer(pack.get("intro_html") or pack.get("title") or "Старт!", parse_mode="HTML")
+    users = users_for(uid)
+    user = get_user(users, uid)
+    await _send_pack_task(m, user)
+
+
+@router.message(ModeFilter(MODE_PROFILE), F.text == BTN_LEGEND_TASK)
+async def profile_legend_task(m: Message):
+    await _launch_winner_pack(m, 1)
+
+
+@router.message(ModeFilter(MODE_PROFILE), F.text == BTN_MASTER_TASK)
+async def profile_master_task(m: Message):
+    await _launch_winner_pack(m, 2)
+
+
+@router.message(ModeFilter(MODE_PROFILE), F.text == BTN_HUNTER_TASK)
+async def profile_hunter_task(m: Message):
+    await _launch_winner_pack(m, 3)
 
 
 @router.message(Command("test_winners"))

@@ -56,16 +56,23 @@ def profile_menu(
     from services.rewards import BTN_STREAK, BTN_REFERRAL
     from services.promo import BTN_ENTER_PROMO
     from services.collection import BTN_COLLECTION, collection_allowed
-    from services.event_magic import BTN_HALL_OF_FAME, BTN_LEADERBOARD
+    from services.event_magic import BTN_HALL_OF_FAME, BTN_LEADERBOARD, is_event_active
+    from services.event_prize_delivery import prize_task_button_for
 
     rows = [
         [KeyboardButton(text="💎 Подписка")],
     ]
     if collection_allowed(user_id):
-        rows.append([KeyboardButton(text=BTN_COLLECTION)])
+        # Кнопка ивента только пока ивент активен
+        if is_event_active():
+            rows.append([KeyboardButton(text=BTN_COLLECTION)])
+        # Гонка и зал славы — всегда (после финала показывают итоги)
         rows.append(
             [KeyboardButton(text=BTN_LEADERBOARD), KeyboardButton(text=BTN_HALL_OF_FAME)]
         )
+    task_btn = prize_task_button_for(user)
+    if task_btn:
+        rows.append([KeyboardButton(text=task_btn)])
     rows.append([KeyboardButton(text="✏️ Изменить имя"), KeyboardButton(text=BTN_ENTER_PROMO)])
     rows.append([KeyboardButton(text=BTN_STREAK), KeyboardButton(text=BTN_REFERRAL)])
     if user is not None and can_restore_streak(user):

@@ -177,8 +177,9 @@ async def _reminder_loop():
 
 
 async def _event_finalize_loop():
-    """Раз в 15 мин — авто-итоги ивента после EVENT_END."""
-    from services.event_magic import maybe_auto_finalize
+    """Раз в 15 мин — авто-итоги ивента после EVENT_END + рассылка призов."""
+    from services.event_magic import maybe_auto_finalize, load_event_state
+    from services.event_prize_delivery import deliver_all_prizes
 
     await asyncio.sleep(60)
     while True:
@@ -189,6 +190,14 @@ async def _event_finalize_loop():
                     "Magic event auto-finalized, top=%s",
                     len(result.get("top") or []),
                 )
+                delivery = await deliver_all_prizes(bot, result.get("top") or [])
+                logging.info("Prize delivery: %s", delivery)
+            else:
+                # если финал уже был, а рассылка ещё нет — дослать
+                st = await asyncio.to_thread(load_event_state)
+                if st.get("finalized") and not st.get("prizes_delivered"):
+                    delivery = await deliver_all_prizes(bot)
+                    logging.info("Prize delivery (catch-up): %s", delivery)
         except Exception as e:
             logging.error(f"Event finalize loop error: {e}")
         await asyncio.sleep(900)
