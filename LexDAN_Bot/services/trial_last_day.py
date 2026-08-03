@@ -65,7 +65,7 @@ def trial_offer_html() -> str:
 
 
 def trial_offer_kb() -> InlineKeyboardMarkup:
-    """Кнопки с перечёркнутой старой ценой в тексте (HTML в кнопках нельзя)."""
+    """Кнопки с ценой оффера (HTML в кнопках нельзя)."""
     chat_btn = (
         f"💬 Общение — {PRICE_CHAT_OFFER}₽  "
         f"(было {PRICE_CHAT_MONTH})"
@@ -82,16 +82,33 @@ def trial_offer_kb() -> InlineKeyboardMarkup:
     )
 
 
+def _is_paid_subscriber(user: dict) -> bool:
+    """Реально платил через ЮKassa (не триал)."""
+    if user.get("yookassa_last_payment_id"):
+        return True
+    if user.get("sub_plan") in ("chat", "full") and user.get(
+        "yookassa_payment_method_id"
+    ):
+        return True
+    return False
+
+
 def is_trial_access_user(user: dict) -> bool:
-    """Промокод / 3-дневный рег-триал (не оплативший подписку)."""
+    """
+    Промокод / рег-триал / ручной грант премиума без оплаты.
+    «premium дней ≈ 1» при 11ч — только отображение, на отбор не влияет.
+    """
     ensure_growth(user)
-    if user.get("sub_plan") in ("chat", "full", "upgrade"):
+    if _is_paid_subscriber(user):
         return False
     if user.get("in_promo_trial"):
         return True
-    if user.get("promo_trial_code") and is_premium(user):
+    if user.get("promo_trial_code"):
         return True
-    if user.get("reg_full_trial_granted") and is_premium(user):
+    if user.get("reg_full_trial_granted"):
+        return True
+    # Премиум без следов оплаты = пробный доступ
+    if is_premium(user):
         return True
     return False
 
@@ -101,19 +118,34 @@ def premium_seconds_left(user: dict) -> float:
     return max(0.0, float(user.get("premium_until") or 0) - _now_ts())
 
 
-def eligible_for_last_day_offer(user: dict, *, ignore_sent: bool = False) -> bool:
-    if not is_trial_access_user(user):
-        return False
-    if not is_premium(user):
-        return False
-    if user.get("tg_blocked"):
-        return False
+def explain_eligibility(user: dict, *, ignore_sent: bool = False) -> tuple[bool, str]:
+    """(ok, reason) — почему подходит / не подходит."""
+    ensure_growth(user)
     left = premium_seconds_left(user)
-    if left <= 0 or left > MAX_LEFT_SEC:
-        return False
+    hours = left / 3600
+    if _is_paid_subscriber(user):
+        return False, "платный подписчик (ЮKassa), оффер только для триала"
+    if not is_premium(user):
+        return False, "премиум уже закончился"
+    if user.get("tg_blocked"):
+        return False, "пользователь заблокировал бота"
+    if left <= 0:
+        return False, "остаток ≤ 0"
+    if left > MAX_LEFT_SEC:
+        return (
+            False,
+            f"осталось ≈{hours:.1f} ч (>24 ч) — рано для оффера",
+        )
     if not ignore_sent and user.get("trial_last_day_offer_sent") == _today_msk():
-        return False
-    return True
+        return False, "уже отправляли сегодня"
+    if not is_trial_access_user(user):
+        return False, "не похож на триал-доступ"
+    return True, f"ок, осталось ≈{hours:.1f} ч"
+
+
+def eligible_for_last_day_offer(user: dict, *, ignore_sent: bool = False) -> bool:
+    ok, _ = explain_eligibility(user, ignore_sent=ignore_sent)
+    return ok
 
 
 def apply_last_day_discount(user: dict) -> None:
@@ -141,30 +173,53 @@ async def send_last_day_offer(bot, chat_id: int, user: dict) -> None:
     )
 
 
-def collect_last_day_offer_targets() -> list[tuple[str, dict]]:
+def scan_near_expiry(*, within_sec: float = MAX_LEFT_SEC) -> list[dict]:
+    """Все с премиумом ≤ within_sec + причина eligibility."""
     from services.database import load_users, get_user
     from config import MANAGER_ID
 
     users = load_users()
-    out: list[tuple[str, dict]] = []
+    rows: list[dict] = []
     for uid, raw in (users or {}).items():
         if not isinstance(raw, dict) or str(uid).startswith("__"):
             continue
         if str(uid) == str(MANAGER_ID):
             continue
         user = get_user(users, str(uid))
-        if eligible_for_last_day_offer(user):
-            out.append((str(uid), user))
+        left = premium_seconds_left(user)
+        if left <= 0 or left > within_sec:
+            continue
+        ok, reason = explain_eligibility(user)
+        rows.append(
+            {
+                "uid": str(uid),
+                "ok": ok,
+                "reason": reason,
+                "hours": left / 3600,
+                "user": user,
+            }
+        )
+    rows.sort(key=lambda r: r["hours"])
+    return rows
+
+
+def collect_last_day_offer_targets(*, force: bool = False) -> list[tuple[str, dict]]:
+    out: list[tuple[str, dict]] = []
+    for row in scan_near_expiry():
+        ok, _ = explain_eligibility(row["user"], ignore_sent=force)
+        if ok:
+            out.append((row["uid"], row["user"]))
     return out
 
 
-async def send_due_last_day_offers(bot) -> dict:
-    """Разослать оффер всем, у кого ≤24ч триала и ещё не слали сегодня."""
+async def send_due_last_day_offers(bot, *, force: bool = False) -> dict:
+    """Разослать оффер всем, у кого ≤24ч триала."""
     import asyncio
 
     from services.database import save_users
 
-    targets = collect_last_day_offer_targets()
+    near = scan_near_expiry()
+    targets = collect_last_day_offer_targets(force=force)
     sent = 0
     fail = 0
     for uid, user in targets:
@@ -176,4 +231,16 @@ async def send_due_last_day_offers(bot) -> dict:
             log.warning("last-day offer fail uid=%s: %s", uid, e)
             fail += 1
         await asyncio.sleep(0.05)
-    return {"sent": sent, "fail": fail, "candidates": len(targets)}
+
+    skipped = [
+        f"{r['uid']} · {r['hours']:.1f}ч · {r['reason']}"
+        for r in near
+        if not r["ok"]
+    ]
+    return {
+        "sent": sent,
+        "fail": fail,
+        "candidates": len(targets),
+        "near": len(near),
+        "skipped": skipped,
+    }

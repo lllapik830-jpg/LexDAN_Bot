@@ -67,7 +67,7 @@ HELP = (
     "/test_winners — тест эксклюзивных паков 1/2/3 места\n"
     "/unban <code>id</code> — снять бан / кулдаун флуда\n"
     "/67 — превью оффера последнего дня триала (−15%)\n"
-    "/trial_offer_send — разослать оффер тем, у кого ≤24ч триала\n"
+    "/trial_offer_send — оффер ≤24ч ([force] | user_id)\n"
 )
 
 
@@ -119,16 +119,61 @@ async def admin_preview_trial_offer(m: Message):
 
 
 @router.message(Command("trial_offer_send"))
-async def admin_trial_offer_send(m: Message):
+async def admin_trial_offer_send(m: Message, command: CommandObject):
+    """
+    /trial_offer_send — всем подходящим
+    /trial_offer_send force — игнорировать «уже слали сегодня»
+    /trial_offer_send <user_id> — одному
+    """
     if not _is_admin(m):
         return
-    from services.trial_last_day import send_due_last_day_offers
+    from services.database import users_for, get_user, save_users
+    from services.trial_last_day import (
+        explain_eligibility,
+        send_due_last_day_offers,
+        send_last_day_offer,
+        scan_near_expiry,
+    )
 
-    await m.answer("Рассылаю оффер тем, у кого ≤24ч триала…")
-    result = await send_due_last_day_offers(m.bot)
+    args = (command.args or "").strip()
+    if args and args.split()[0].lstrip("@").isdigit():
+        uid = args.split()[0].lstrip("@")
+        users = users_for(uid)
+        user = get_user(users, uid)
+        ok, reason = explain_eligibility(user, ignore_sent=True)
+        if not ok and "уже отправляли" not in reason:
+            await m.answer(
+                f"❌ <code>{uid}</code> не подходит:\n{reason}",
+                parse_mode="HTML",
+            )
+            return
+        try:
+            await send_last_day_offer(m.bot, int(uid), user)
+            save_users(users, only=uid)
+            await m.answer(f"✅ Оффер отправлен <code>{uid}</code>\n{reason}", parse_mode="HTML")
+        except Exception as e:
+            await m.answer(f"Ошибка отправки: {e}")
+        return
+
+    force = args.lower() in {"force", "redo", "1"}
+    await m.answer("Сканирую тех, у кого ≤24ч премиума…")
+    near = scan_near_expiry()
+    if near:
+        lines = ["Близкие к концу (≤24ч):"]
+        for r in near[:20]:
+            mark = "✅" if r["ok"] else "⏭"
+            lines.append(
+                f"{mark} <code>{r['uid']}</code> · {r['hours']:.1f}ч · {r['reason']}"
+            )
+        await m.answer("\n".join(lines), parse_mode="HTML")
+    else:
+        await m.answer("Сейчас ни у кого премиум не кончается в ближайшие 24ч.")
+
+    result = await send_due_last_day_offers(m.bot, force=force)
     await m.answer(
-        f"Готово: кандидатов {result.get('candidates', 0)}, "
+        f"Рассылка: кандидатов {result.get('candidates', 0)}, "
         f"отправлено {result.get('sent', 0)}, ошибок {result.get('fail', 0)}"
+        + (" (force)" if force else "")
     )
 
 

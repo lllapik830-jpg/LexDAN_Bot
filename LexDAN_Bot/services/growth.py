@@ -200,12 +200,13 @@ def has_chat_pass(user: dict) -> bool:
 
 
 def premium_days_left(user: dict) -> int:
-    """Сколько полных суток осталось (по реальному времени timestamp)."""
+    """Полные сутки до конца премиума (11 ч → 0, не «1 день»)."""
     ensure_growth(user)
     until = float(user.get("premium_until") or 0)
-    if until <= _now_ts():
+    left = until - _now_ts()
+    if left <= 0:
         return 0
-    return max(1, int((until - _now_ts()) / 86400) + 1)
+    return int(left // 86400)
 
 
 def premium_time_label(user: dict) -> str:
@@ -841,7 +842,7 @@ def subscription_blurb(user: dict) -> str:
     from services.pricing import discount_blurb, lottery_status_lines
 
     if is_premium(user):
-        status = f"✅ Полный доступ ещё ≈ <b>{premium_days_left(user)}</b> дн."
+        status = f"✅ Полный доступ ещё <b>{premium_time_label(user)}</b>"
     elif has_chat_pass(user):
         status = "✅ Безлимит «Общение» активен"
     else:
