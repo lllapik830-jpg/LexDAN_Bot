@@ -82,7 +82,7 @@ for _p in range(4, 11):
         "custom_rico_art": False,
         "exclusive_voice": False,
         "voice_congrats": False,
-        "sticker_pack": False,
+        "sticker_pack": True,
         "sticker_single": True,
         "hall_of_fame": False,
     }
@@ -109,6 +109,7 @@ def _default_state() -> dict:
         "announce_sent": False,
         "prizes_delivered": False,
         "place3_sticker_file_ids": [],
+        "place4_sticker_file_ids": [],
     }
 
 

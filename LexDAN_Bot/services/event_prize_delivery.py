@@ -28,6 +28,12 @@ _ASSETS = Path(__file__).resolve().parent.parent / "assets"
 HALL_ART = _ASSETS / "legends_lexdan_hall.png"
 THANKS_STICKER_IMG = _ASSETS / "stickers" / "sticker_thanks_champion.png"
 PACK3_DIR = _ASSETS / "stickers" / "pack3"
+# Стикерпак 3 места (MC_Hunter via @fStikBot)
+PLACE3_STICKER_SET_NAME = "t_me_LexDan_MC_Hunter_by_fStikBot"
+PLACE3_STICKER_SET_URL = f"https://t.me/addstickers/{PLACE3_STICKER_SET_NAME}"
+# Стикерпак 4–10 мест (MC_Collectoin via @fStikBot) — 1 стикер
+PLACE4_STICKER_SET_NAME = "t_me_LexDan_MC_Collectoin_by_fStikBot"
+PLACE4_STICKER_SET_URL = f"https://t.me/addstickers/{PLACE4_STICKER_SET_NAME}"
 
 BTN_LEGEND_TASK = "🏆 Задание для легенды"
 BTN_MASTER_TASK = "🥈 Задание для мастера"
@@ -64,6 +70,58 @@ async def _send_photo(bot: Bot, chat_id: int, path: Path, caption: str = "") -> 
         caption=caption or None,
         parse_mode="HTML" if caption else None,
     )
+
+
+async def _resolve_sticker_file_ids(
+    bot: Bot,
+    *,
+    set_name: str,
+    state_key: str,
+) -> list[str]:
+    """file_id из стейта или getStickerSet (кэш в magic_event state)."""
+    state = load_event_state()
+    file_ids = [fid for fid in (state.get(state_key) or []) if fid]
+    if file_ids:
+        return file_ids
+    try:
+        sticker_set = await bot.get_sticker_set(set_name)
+        file_ids = [s.file_id for s in (sticker_set.stickers or []) if s.file_id]
+        if file_ids:
+            state[state_key] = file_ids
+            state[f"{state_key}_set"] = set_name
+            save_event_state(state)
+    except Exception as e:
+        log.warning("getStickerSet %s failed: %s", set_name, e)
+    return file_ids
+
+
+async def _send_sticker_pack(
+    bot: Bot,
+    chat_id: int,
+    *,
+    title: str,
+    set_name: str,
+    set_url: str,
+    state_key: str,
+    fallback_photo: Path | None = None,
+    fallback_caption: str = "",
+) -> None:
+    await _send_text(
+        bot,
+        chat_id,
+        f"🎟 Твой стикерпак <b>{title}</b>:\n"
+        f"👉 <a href=\"{set_url}\">Добавить стикеры</a>",
+    )
+    file_ids = await _resolve_sticker_file_ids(bot, set_name=set_name, state_key=state_key)
+    if file_ids:
+        for fid in file_ids:
+            try:
+                await bot.send_sticker(chat_id, sticker=fid)
+            except Exception as e:
+                log.warning("sticker send fail: %s", e)
+        return
+    if fallback_photo and fallback_photo.exists():
+        await _send_photo(bot, chat_id, fallback_photo, caption=fallback_caption)
 
 
 async def _send_congrats_voice(bot: Bot, chat_id: int, place: int) -> None:
@@ -178,33 +236,27 @@ async def deliver_place_3(bot: Bot, chat_id: int) -> None:
         chat_id,
         f"🎖 Титул <b>{TITLE_PLACE_3}</b> закреплён табличкой рядом с ником в профиле.",
     )
-    # Стикерпак: если есть file_id в стейте — шлём стикеры; иначе картинки-заготовки
-    state = load_event_state()
-    file_ids = list(state.get("place3_sticker_file_ids") or [])
-    if file_ids:
-        await _send_text(bot, chat_id, "🎟 Твой стикерпак охотника:")
-        for fid in file_ids:
-            try:
-                await bot.send_sticker(chat_id, sticker=fid)
-            except Exception as e:
-                log.warning("sticker send fail: %s", e)
-    elif PACK3_DIR.exists():
-        await _send_text(
-            bot,
-            chat_id,
-            "🎟 Стикеры охотника (пока как картинки — после пака в @Stickers "
-            "подключим настоящие стикеры):",
-        )
-        for p in sorted(PACK3_DIR.glob("pack3_sticker_*.png")):
-            await _send_photo(bot, chat_id, p)
+    await _send_sticker_pack(
+        bot,
+        chat_id,
+        title="MC_Hunter",
+        set_name=PLACE3_STICKER_SET_NAME,
+        set_url=PLACE3_STICKER_SET_URL,
+        state_key="place3_sticker_file_ids",
+    )
 
 
 async def deliver_place_4_10(bot: Bot, chat_id: int) -> None:
-    await _send_photo(
+    """Приз мест 4…N (до 10): если в топе 7 человек — выдаём 4–7."""
+    await _send_sticker_pack(
         bot,
         chat_id,
-        THANKS_STICKER_IMG,
-        caption="🎟 Спасибо за участие, чемпион LexDan!",
+        title="MC_Collectoin",
+        set_name=PLACE4_STICKER_SET_NAME,
+        set_url=PLACE4_STICKER_SET_URL,
+        state_key="place4_sticker_file_ids",
+        fallback_photo=THANKS_STICKER_IMG,
+        fallback_caption="🎟 Thanks for joining, LexDan champion!",
     )
     await _send_text(
         bot,
@@ -247,8 +299,11 @@ async def deliver_all_prizes(bot: Bot, top: list[dict] | None = None) -> dict:
                 await deliver_place_2(bot, chat_id)
             elif place == 3:
                 await deliver_place_3(bot, chat_id)
-            else:
+            elif 4 <= place <= 10:
+                # Если топ короче 10 (напр. 7) — стикер/титул уходят местам 4–7
                 await deliver_place_4_10(bot, chat_id)
+            else:
+                continue
             sent += 1
         except Exception as e:
             log.error("Prize deliver fail uid=%s place=%s: %s", uid, place, e)

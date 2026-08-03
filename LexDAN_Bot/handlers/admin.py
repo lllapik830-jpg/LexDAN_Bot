@@ -63,6 +63,7 @@ HELP = (
     "/event_announce [force] — рассылка «ивент начался»\n"
     "/event_finalize — подвести итоги и выдать призы\n"
     "/event_deliver [force] — рассылка призов топ-10 в личку\n"
+    "/1 /2 /3 /4 — превью приза места 1 / 2 / 3 / 4–10\n"
     "/test_winners — тест эксклюзивных паков 1/2/3 места\n"
 )
 
@@ -787,3 +788,50 @@ async def admin_event_deliver(m: Message, command: CommandObject):
     await m.answer(
         f"📬 Готово. Отправлено: {delivery.get('sent', 0)}, ошибок: {delivery.get('fail', 0)}"
     )
+
+
+@router.message(Command("1"))
+async def admin_preview_place_1(m: Message):
+    """Превью приза 1 места — то, что уйдёт победителю."""
+    if not _is_admin(m):
+        return
+    from services.event_prize_delivery import deliver_place_1
+
+    un = (m.from_user.username or "").strip() if m.from_user else ""
+    await m.answer("🧪 <b>Превью приза · 1 место</b>", parse_mode="HTML")
+    await deliver_place_1(m.bot, m.chat.id, username=un or "champion")
+
+
+@router.message(Command("2"))
+async def admin_preview_place_2(m: Message):
+    if not _is_admin(m):
+        return
+    from services.event_prize_delivery import deliver_place_2
+
+    await m.answer("🧪 <b>Превью приза · 2 место</b>", parse_mode="HTML")
+    await deliver_place_2(m.bot, m.chat.id)
+
+
+@router.message(Command("3"))
+async def admin_preview_place_3(m: Message):
+    if not _is_admin(m):
+        return
+    from services.event_prize_delivery import deliver_place_3
+
+    await m.answer("🧪 <b>Превью приза · 3 место</b>", parse_mode="HTML")
+    await deliver_place_3(m.bot, m.chat.id)
+
+
+@router.message(Command("4"))
+async def admin_preview_place_4(m: Message):
+    """Превью приза мест 4–10 (если топ короче — с 4 до последнего)."""
+    if not _is_admin(m):
+        return
+    from services.event_prize_delivery import deliver_place_4_10
+
+    await m.answer(
+        "🧪 <b>Превью приза · места 4–10</b>\n"
+        "<i>Если в топе меньше 10 человек — тот же приз уходит с 4-го до последнего места.</i>",
+        parse_mode="HTML",
+    )
+    await deliver_place_4_10(m.bot, m.chat.id)
