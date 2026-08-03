@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 from typing import Any
 
@@ -227,6 +228,33 @@ def format_line_html(scene: dict) -> str:
     return f"{label}\n\n🇬🇧 {en}"
 
 
+def scramble_words_display(task: dict) -> str:
+    """Слова вразнобой (стабильно по id задания, но не в правильном порядке)."""
+    words = [str(w) for w in (task.get("words") or []) if str(w).strip()]
+    if not words:
+        return ""
+    order = list(range(len(words)))
+    rng = random.Random(str(task.get("id") or "scramble"))
+    rng.shuffle(order)
+    # гарантируем, что не совпало с исходным порядком
+    if order == list(range(len(words))) and len(words) > 1:
+        order[0], order[-1] = order[-1], order[0]
+    # ещё одна перестановка, если всё ещё «почти по порядку»
+    shuffled = [words[i] for i in order]
+    if shuffled == words and len(words) > 2:
+        shuffled = words[1:] + words[:1]
+    return " · ".join(shuffled)
+
+
+def _task_body_html(task: dict) -> str:
+    body = (task.get("prompt_html") or "").strip()
+    if (task.get("kind") or "") == "scramble":
+        bank = scramble_words_display(task)
+        if bank:
+            body = f"{body}\n\n<code>{bank}</code>"
+    return body
+
+
 def format_story_task_card(user: dict, task: dict) -> str:
     active = get_active(user) or {}
     done = int(active.get("tasks_done") or 0)
@@ -234,7 +262,7 @@ def format_story_task_card(user: dict, task: dict) -> str:
     n = done + 1
     chapter = task.get("chapter_title") or ""
     title = task.get("title_ru") or ""
-    body = task.get("prompt_html") or ""
+    body = _task_body_html(task)
     kind = task.get("kind") or "write"
     kind_hint = {
         "write": "✍️ Напиши ответ текстом",
@@ -348,7 +376,7 @@ def format_task_card(user: dict, task: dict) -> str:
     place_title = active.get("title") or ""
     chapter = task.get("chapter_title") or ""
     title = task.get("title_ru") or ""
-    body = task.get("prompt_html") or ""
+    body = _task_body_html(task)
     kind = task.get("kind") or "write"
     kind_hint = {
         "write": "✍️ Напиши ответ текстом",
@@ -409,11 +437,16 @@ def check_answer(task: dict, user_text: str) -> dict[str, Any]:
 
     if kind == "voice":
         target = task.get("voice_text") or ""
-        if _norm(raw) == _norm(target):
+        accept = list(task.get("accept") or [])
+        if _norm(raw) == _norm(target) or any(_norm(raw) == _norm(a) for a in accept):
             return {"correct": True, "explain_ru": ""}
         tw = set(_norm(target).split())
         uw = set(_norm(raw).split())
-        if tw and len(tw & uw) / max(1, len(tw)) >= 0.7:
+        if tw and len(tw & uw) / max(1, len(tw)) >= 0.55:
+            return {"correct": True, "explain_ru": ""}
+        tw2 = {w for w in tw if len(w) > 2}
+        uw2 = {w for w in uw if len(w) > 2}
+        if tw2 and len(tw2 & uw2) / max(1, len(tw2)) >= 0.6:
             return {"correct": True, "explain_ru": ""}
         gpt = _gpt_fix_or_write(task, raw, mode="voice")
         if gpt.get("correct"):
@@ -421,7 +454,7 @@ def check_answer(task: dict, user_text: str) -> dict[str, Any]:
         return {
             "correct": False,
             "explain_ru": gpt.get("explain_ru")
-            or f"Давай ближе к фразе:\n<b>{target}</b>",
+            or f"Услышал: <i>{raw}</i>\nДавай ближе к:\n<b>{target}</b>",
         }
 
     check = task.get("check") or "free_write"

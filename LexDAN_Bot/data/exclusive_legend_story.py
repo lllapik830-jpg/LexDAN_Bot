@@ -5,15 +5,15 @@
 
 from __future__ import annotations
 
-# Голоса (ElevenLabs ids из services.voices)
-VOICE_NARRATOR = "av1BMOR1GPgThz9p4fLo"  # Joe · British — строгий рассказчик
+# Голоса (ElevenLabs voice library)
+VOICE_NARRATOR = "ktrGUw7rURIQyMrQZqCu"  # выбранный голос рассказчика
 VOICE_RICO = None  # → RICO_VOICE_ID в рантайме
 VOICE_BUNNY = "nDJIICjR9zfJExIFeSCN"  # Emmaline · British
 VOICE_FOX = "dHd5gvgSOzSfduK4CvEg"  # Ed · American
 VOICE_OWL = "NfUrCNRReUL9RXS9upG1"  # Scotty · British
 VOICE_SQUIRREL = "b8gbDO0ybjX1VA89pBdX"  # Ruby · Australian
 VOICE_HEDGEHOG = "YLbQE9U7P1K6rBNJWNSv"  # Jimbo · Australian
-VOICE_DRAGON = "wSqOdjeNqDrHcoK0zorF"  # Lucas · American (глуховатый)
+VOICE_DRAGON = "ktrGUw7rURIQyMrQZqCu"  # тот же голос, что у рассказчика (по запросу)
 VOICE_BUTTERFLY = "TC0Zp7WVFzhA8zpTlRqV"  # Aria · American (мягкий)
 
 READY_HTML = (
@@ -69,10 +69,9 @@ T1 = {
     "prompt_html": (
         "🐰 Зайчик держится за камень из последних сил.\n"
         "Рико чувствует: сила английского отвечает на верные слова.\n\n"
-        "🧩 Собери предложение из слов (про терпение и учёбу).\n"
+        "🧩 Собери предложение из слов ниже (про терпение и учёбу).\n"
         "В правильной фразе должно появиться слово <b>rope</b> — "
-        "тогда Рико наколдует верёвку!\n\n"
-        "<code>patience · is · the · rope · that · lifts · every · English · learner</code>"
+        "тогда Рико наколдует верёвку!"
     ),
     "words": [
         "patience",
@@ -144,10 +143,7 @@ T5 = {
     "id": "leg_t05",
     "kind": "scramble",
     "title_ru": "Шёпот ветра",
-    "prompt_html": (
-        "Ветер приносит обрывок заклинания. Собери его:\n\n"
-        "<code>clues · hide · where · brave · hearts · look</code>"
-    ),
+    "prompt_html": "Ветер приносит обрывок заклинания. Собери предложение из слов ниже:",
     "words": ["clues", "hide", "where", "brave", "hearts", "look"],
     "answer": "Clues hide where brave hearts look.",
     "accept": ["Clues hide where brave hearts look"],
@@ -206,11 +202,16 @@ T9 = {
     "kind": "voice",
     "title_ru": "Заклинание тумана",
     "prompt_html": (
-        "Туман закрывает тропу. Произнеси (голосом или текстом):\n"
-        "<b>Clear the mist with honest English.</b>"
+        "Туман закрывает тропу. Произнеси <b>голосом</b> или напиши текстом:\n"
+        "<b>Clear the mist with English.</b>"
     ),
-    "voice_text": "Clear the mist with honest English.",
-    "hint_ru": "Повтори фразу как есть — чётко.",
+    "voice_text": "Clear the mist with English.",
+    "accept": [
+        "Clear the mist with English",
+        "Clear the mist with honest English",
+        "clear mist with English",
+    ],
+    "hint_ru": "Clear the mist with English — можно чуть короче, смысл тот же.",
 }
 
 T10 = {
@@ -232,10 +233,7 @@ T11 = {
     "id": "leg_t11",
     "kind": "scramble",
     "title_ru": "Мост из слов",
-    "prompt_html": (
-        "Мост строится из фразы:\n\n"
-        "<code>courage · builds · bridges · where · fear · digs · holes</code>"
-    ),
+    "prompt_html": "Мост строится из фразы. Собери предложение из слов ниже:",
     "words": ["courage", "builds", "bridges", "where", "fear", "digs", "holes"],
     "answer": "Courage builds bridges where fear digs holes.",
     "accept": ["Courage builds bridges where fear digs holes"],
@@ -307,8 +305,7 @@ T16 = {
     "title_ru": "Меч из букв",
     "prompt_html": (
         "В зале дракона вспыхивает свет — рождается <b>Sword of Sentences</b>.\n"
-        "Собери заклинание меча:\n\n"
-        "<code>the · sword · of · words · cuts · through · fear</code>"
+        "Собери заклинание меча из слов ниже:"
     ),
     "words": ["the", "sword", "of", "words", "cuts", "through", "fear"],
     "answer": "The sword of words cuts through fear.",
@@ -499,6 +496,20 @@ LEGEND_SCENES: list[dict] = [
         "Вывески пусты. В песнях не было слов. Чего-то драгоценного не хватало.",
     ),
     _line(
+        "rico",
+        "Hello? Is anyone here? Why is everyone whispering?",
+        "Эй? Есть кто-нибудь? Почему все шепчут?",
+        voice="rico",
+        label="🦜 Рико",
+    ),
+    _line(
+        "narrator",
+        "From behind a broken market stall, a red fox stepped out, trembling, "
+        "and ran straight to Rico.",
+        "Из-за сломанного прилавка вышла рыжая лиса — дрожала "
+        "и сразу побежала к Рико.",
+    ),
+    _line(
         "fox",
         "Rico! While you were away, a dragon came. He stole every English word "
         "from our village! We cannot learn, cannot greet, cannot dream aloud!",
@@ -514,21 +525,72 @@ LEGEND_SCENES: list[dict] = [
         voice="rico",
         label="🦜 Рико",
     ),
+    _line(
+        "fox",
+        "First, fix my cry — fear twisted my English. Then we can ask the owl.",
+        "Сначала почини мой крик — страх скрутил мой английский. Потом спросим сову.",
+        voice="fox",
+        label="🦊 Лиса",
+    ),
     _task(T2, chapter="map_hunt", chapter_title="🗺 Путь к карте · 2/20"),
     _line(
+        "fox",
+        "Thank you. Come — the old owl lives in the tall pine. She sees what others miss.",
+        "Спасибо. Идём — старая сова живёт на высокой сосне. Она видит то, что другие пропускают.",
+        voice="fox",
+        label="🦊 Лиса",
+    ),
+    _line(
+        "narrator",
+        "They walked to the pine. Soft wings opened above them, and a grey owl "
+        "landed on a branch like a quiet judge.",
+        "Они дошли до сосны. Мягкие крылья раскрылись сверху, и серая сова "
+        "села на ветку, словно тихий судья.",
+    ),
+    _line(
         "owl",
-        "Wise bird, listen well. The dragon hides behind riddles. Answer me.",
-        "Мудрая птица, слушай внимательно. Дракон прячется за загадками. Ответь мне.",
+        "I heard the fox. Wise bird, listen well. The dragon hides behind riddles. Answer me.",
+        "Я слышала лису. Мудрая птица, слушай внимательно. Дракон прячется за загадками. Ответь мне.",
         voice="owl",
         label="🦉 Сова",
     ),
     _task(T3, chapter="map_hunt", chapter_title="🗺 Путь к карте · 3/20"),
     _line(
+        "owl",
+        "Correct. Now seek the squirrel in the oak market — she stole a scrap of the map "
+        "to keep it safe from the dragon.",
+        "Верно. Теперь ищи белку на дубовом рынке — она спрятала клочок карты, "
+        "чтобы дракон его не забрал.",
+        voice="owl",
+        label="🦉 Сова",
+    ),
+    _line(
+        "rico",
+        "Thank you, Owl. Fox, will you wait here while I climb?",
+        "Спасибо, Сова. Лиса, подождёшь здесь, пока я залезу?",
+        voice="rico",
+        label="🦜 Рико",
+    ),
+    _line(
+        "fox",
+        "I will wait. Be gentle — she is brave, but very shy.",
+        "Подожду. Будь мягче — она храбрая, но очень стеснительная.",
+        voice="fox",
+        label="🦊 Лиса",
+    ),
+    _line(
         "narrator",
         "High in an oak, a nervous squirrel held a scrap of parchment. "
-        "She would speak only to a polite request.",
+        "She peeked down and almost dropped it.",
         "Высоко на дубе нервная белка держала клочок пергамента. "
-        "Она ответит только на вежливую просьбу.",
+        "Она выглянула вниз и чуть не уронила его.",
+    ),
+    _line(
+        "squirrel",
+        "W-who are you? If you want the paper, ask politely. Dragons shout. Heroes ask.",
+        "К-кто ты? Если хочешь бумажку — проси вежливо. Драконы орют. Герои просят.",
+        voice="squirrel",
+        label="🐿️ Белка",
     ),
     _task(T4, chapter="map_hunt", chapter_title="🗺 Путь к карте · 4/20"),
     _line(
@@ -538,7 +600,35 @@ LEGEND_SCENES: list[dict] = [
         voice="squirrel",
         label="🐿️ Белка",
     ),
+    _line(
+        "rico",
+        "You are braver than you think. We will bring English back — for you too.",
+        "Ты храбрее, чем думаешь. Мы вернём английский — и для тебя тоже.",
+        voice="rico",
+        label="🦜 Рико",
+    ),
+    _line(
+        "narrator",
+        "Rico flew down to the fox. Together they followed the river toward the singing stones, "
+        "where the wind itself seemed to spell.",
+        "Рико спустился к лисе. Вместе они пошли вдоль реки к поющим камням, "
+        "где сам ветер будто складывал буквы.",
+    ),
+    _line(
+        "fox",
+        "Listen — the wind is trying to speak. Catch the words before they blow away!",
+        "Слушай — ветер хочет говорить. Поймай слова, пока их не унесло!",
+        voice="fox",
+        label="🦊 Лиса",
+    ),
     _task(T5, chapter="map_hunt", chapter_title="🗺 Путь к карте · 5/20"),
+    _line(
+        "owl",
+        "Well done. One more step: read the bark writing and say it in your own words.",
+        "Отлично. Ещё шаг: прочти надпись на коре и скажи своими словами.",
+        voice="owl",
+        label="🦉 Сова",
+    ),
     _task(T6, chapter="map_hunt", chapter_title="🗺 Путь к карте · 6/20"),
     _line(
         "narrator",
@@ -548,6 +638,20 @@ LEGEND_SCENES: list[dict] = [
         "путь к Замку Дракона через тишину и тень.",
     ),
     _line(
+        "squirrel",
+        "You did it! Go carefully. We will cheer from the trees!",
+        "У вас получилось! Идите осторожно. Мы будем болеть с деревьев!",
+        voice="squirrel",
+        label="🐿️ Белка",
+    ),
+    _line(
+        "fox",
+        "Bring our words home, Rico. We believe in you.",
+        "Верни наши слова домой, Рико. Мы в тебя верим.",
+        voice="fox",
+        label="🦊 Лиса",
+    ),
+    _line(
         "rico",
         "I see the road. Courage first, fear later. Let's go!",
         "Я вижу дорогу. Сначала смелость, страх — потом. Вперёд!",
@@ -555,6 +659,11 @@ LEGEND_SCENES: list[dict] = [
         label="🦜 Рико",
     ),
     # Путь к замку — 9 заданий
+    _line(
+        "narrator",
+        "The map pointed to a fork of three paths. An old stone whispered choices into the dusk.",
+        "Карта указывала на развилку из трёх троп. Старый камень шептал выборы в сумерки.",
+    ),
     _task(T7, chapter="road", chapter_title="🛤 Дорога к замку · 7/20"),
     _line(
         "narrator",
@@ -567,7 +676,21 @@ LEGEND_SCENES: list[dict] = [
         "Fog rose like a wall. Only a spoken charm could open a way.",
         "Туман встал стеной. Лишь произнесённое заклинание откроет путь.",
     ),
+    _line(
+        "rico",
+        "I will speak the charm clear and strong. Join me if you can!",
+        "Я скажу заклинание ясно и сильно. Присоединяйся, если можешь!",
+        voice="rico",
+        label="🦜 Рико",
+    ),
     _task(T9, chapter="road", chapter_title="🛤 Дорога к замку · 9/20"),
+    _line(
+        "narrator",
+        "The mist opened onto a rocky ridge. Spikes of quills glittered — "
+        "a hedgehog guard blocked the only bridge.",
+        "Туман раскрылся на каменистый хребет. Блестели иглы — "
+        "ёж-страж перекрыл единственный мост.",
+    ),
     _line(
         "hedgehog",
         "Halt! I guard this ridge. Speak your purpose, parrot.",
@@ -585,6 +708,13 @@ LEGEND_SCENES: list[dict] = [
     ),
     _task(T11, chapter="road", chapter_title="🛤 Дорога к замку · 11/20"),
     _line(
+        "hedgehog",
+        "The bridge holds. Pass, teacher-bird. A raven ahead loves riddles more than worms.",
+        "Мост держит. Проходи, птица-учитель. Впереди ворон любит загадки больше червей.",
+        voice="hedgehog",
+        label="🦔 Ёж",
+    ),
+    _line(
         "narrator",
         "A raven circled above, black as ink, and tossed a riddle into the wind.",
         "Над головой кружил ворон, чёрный как чернила, и бросил загадку в ветер.",
@@ -592,10 +722,15 @@ LEGEND_SCENES: list[dict] = [
     _task(T12, chapter="road", chapter_title="🛤 Дорога к замку · 12/20"),
     _line(
         "narrator",
-        "On a cliff wall someone had scratched a tired sentence. It needed healing.",
-        "На скале кто-то выцарапал усталую фразу. Ей нужно было исцеление.",
+        "Beyond the raven, on a cliff wall, someone had scratched a tired sentence. It needed healing.",
+        "За вороном на скале кто-то выцарапал усталую фразу. Ей нужно было исцеление.",
     ),
     _task(T13, chapter="road", chapter_title="🛤 Дорога к замку · 13/20"),
+    _line(
+        "narrator",
+        "Soft wings returned — the owl had followed from afar, proud and quiet.",
+        "Снова мягкие крылья — сова шла следом издалека, гордая и тихая.",
+    ),
     _line(
         "owl",
         "Traveller, seal your promise before the castle gates appear.",
@@ -611,6 +746,11 @@ LEGEND_SCENES: list[dict] = [
     ),
     _task(T15, chapter="road", chapter_title="🛤 Дорога к замку · 15/20"),
     # Битва с драконом — 5 заданий
+    _line(
+        "narrator",
+        "Inside the hall, fire painted the walls. Scales scraped stone. The dragon woke.",
+        "В зале огонь рисовал стены. Чешуя скребла камень. Дракон проснулся.",
+    ),
     _line(
         "dragon",
         "Who dares enter my hall? Your village words belong to ME now!",
@@ -633,6 +773,18 @@ LEGEND_SCENES: list[dict] = [
         "Меч Предложений.",
     ),
     _task(T16, chapter="dragon", chapter_title="⚔️ Замок дракона · 16/20"),
+    _line(
+        "dragon",
+        "Ha! Your grammar cannot hurt me!",
+        "Ха! Твоя грамматика меня не ранит!",
+        voice="dragon",
+        label="🐉 Дракон",
+    ),
+    _line(
+        "narrator",
+        "But the dragon's own broken English gave Rico an opening — fix the taunt, break the spell.",
+        "Но собственный ломаный английский дракона дал Рико шанс — исправь насмешку, сломай чары.",
+    ),
     _task(T17, chapter="dragon", chapter_title="⚔️ Замок дракона · 17/20"),
     _line(
         "narrator",
@@ -663,6 +815,20 @@ LEGEND_SCENES: list[dict] = [
         "Учитель Рико! Ты вернул нам голоса. Будешь учить нас каждый день?",
         voice="fox",
         label="🦊 Лиса",
+    ),
+    _line(
+        "owl",
+        "And I will help with the hard questions.",
+        "А я помогу со сложными вопросами.",
+        voice="owl",
+        label="🦉 Сова",
+    ),
+    _line(
+        "squirrel",
+        "And I will bring nuts for every good answer!",
+        "А я буду носить орехи за каждый хороший ответ!",
+        voice="squirrel",
+        label="🐿️ Белка",
     ),
     _line(
         "rico",

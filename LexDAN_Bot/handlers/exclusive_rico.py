@@ -365,13 +365,16 @@ async def exclusive_voice(m: Message):
     if (task.get("kind") or "") != "voice":
         await m.answer("Здесь пока текстом 🙂", reply_markup=_play_kb(task))
         return
+    await m.answer("🎧 Слушаю…", reply_markup=_play_kb(task))
     try:
-        heard = await recognize_english(m.bot, m.voice)
+        file = await m.bot.get_file(m.voice.file_id)
+        buf = await m.bot.download_file(file.file_path)
+        heard = (recognize_english(buf.read()) or "").strip()
     except Exception:
         heard = ""
-    if not (heard or "").strip():
+    if not heard:
         await m.answer(
-            "Не разобрал голос 😅 Попробуй ещё раз или напиши текстом.",
+            "Не разобрал голос 😅 Попробуй ещё раз чуть чётче или напиши текстом.",
             reply_markup=_play_kb(task),
         )
         return
