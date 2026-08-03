@@ -206,12 +206,12 @@ def tariffs_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
         chat_p, chat_d = chat_price(user)
         full_p, full_d = full_price(user)
         chat_label = (
-            f"💬 Общение — {chat_p}₽/мес (−{chat_d}%)"
+            f"💬 Общение — {chat_p}₽ (было {PRICE_CHAT_MONTH})"
             if chat_d
             else f"💬 Только общение — {PRICE_CHAT_MONTH}₽/мес"
         )
         full_label = (
-            f"🚀 Всё — {full_p}₽/мес (−{full_d}%)"
+            f"🚀 Полный — {full_p}₽ (было {PRICE_FULL_MONTH})"
             if full_d
             else f"🚀 Безлимит ко всему — {PRICE_FULL_MONTH}₽/мес"
         )

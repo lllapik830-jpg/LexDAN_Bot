@@ -27,6 +27,13 @@ def _now_ts() -> float:
 
 def discount_percent(user: dict) -> int:
     ensure_growth(user)
+    until = float(user.get("discount_until") or 0)
+    if until and until <= _now_ts():
+        # Срок скидки вышел — сбрасываем
+        user["discount_percent"] = 0
+        user["discount_note"] = ""
+        user["discount_until"] = 0
+        return 0
     return max(0, min(90, int(user.get("discount_percent") or 0)))
 
 
@@ -66,16 +73,27 @@ def discount_blurb(user: dict) -> str:
     )
 
 
-def set_discount(user: dict, percent: int, note: str = "admin") -> None:
+def set_discount(
+    user: dict,
+    percent: int,
+    note: str = "admin",
+    *,
+    until_ts: float | None = None,
+) -> None:
     ensure_growth(user)
     user["discount_percent"] = max(0, min(90, int(percent)))
     user["discount_note"] = note
     user["discount_set_at"] = _today()
+    if until_ts is not None:
+        user["discount_until"] = float(until_ts)
+    elif "discount_until" not in user:
+        user["discount_until"] = 0.0
 
 
 def clear_discount(user: dict) -> None:
     user["discount_percent"] = 0
     user["discount_note"] = ""
+    user["discount_until"] = 0.0
 
 
 def consume_discount(user: dict) -> int:

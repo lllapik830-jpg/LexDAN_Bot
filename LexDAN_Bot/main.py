@@ -164,8 +164,9 @@ async def _event_announce_once():
 
 
 async def _reminder_loop():
-    """Раз в час проверяем, кому напомнить про занятие."""
+    """Раз в час: напоминания + оффер последнего дня триала."""
     from services.reminders import send_due_reminders
+    from services.trial_last_day import send_due_last_day_offers
 
     await asyncio.sleep(45)  # дать боту подняться
     while True:
@@ -175,6 +176,12 @@ async def _reminder_loop():
                 logging.info(f"Reminders sent: {n}")
         except Exception as e:
             logging.error(f"Reminder loop error: {e}")
+        try:
+            offer = await send_due_last_day_offers(bot)
+            if offer.get("sent"):
+                logging.info("Trial last-day offers: %s", offer)
+        except Exception as e:
+            logging.error(f"Trial last-day offer loop error: {e}")
         await asyncio.sleep(3600)
 
 

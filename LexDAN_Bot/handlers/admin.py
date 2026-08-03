@@ -66,6 +66,8 @@ HELP = (
     "/1 /2 /3 /4 — превью приза места 1 / 2 / 3 / 4–10\n"
     "/test_winners — тест эксклюзивных паков 1/2/3 места\n"
     "/unban <code>id</code> — снять бан / кулдаун флуда\n"
+    "/67 — превью оффера последнего дня триала (−15%)\n"
+    "/trial_offer_send — разослать оффер тем, у кого ≤24ч триала\n"
 )
 
 
@@ -85,6 +87,49 @@ def _parse_uid_days(args: str | None, default_days: int = 30) -> tuple[str | Non
         except ValueError:
             days = default_days
     return uid, days
+
+
+@router.message(Command("67"))
+async def admin_preview_trial_offer(m: Message):
+    """Превью сообщения последнего дня триала + кнопки 340/680."""
+    if not _is_admin(m):
+        return
+    from services.database import users_for, get_user, save_users
+    from services.trial_last_day import (
+        apply_last_day_discount,
+        trial_offer_html,
+        trial_offer_kb,
+    )
+
+    uid = str(m.from_user.id)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    apply_last_day_discount(user)
+    # превью себе можно слать повторно
+    save_users(users, only=uid)
+    await m.answer(
+        "🧪 <b>Превью · последний день триала</b>",
+        parse_mode="HTML",
+    )
+    await m.answer(
+        trial_offer_html(),
+        reply_markup=trial_offer_kb(),
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("trial_offer_send"))
+async def admin_trial_offer_send(m: Message):
+    if not _is_admin(m):
+        return
+    from services.trial_last_day import send_due_last_day_offers
+
+    await m.answer("Рассылаю оффер тем, у кого ≤24ч триала…")
+    result = await send_due_last_day_offers(m.bot)
+    await m.answer(
+        f"Готово: кандидатов {result.get('candidates', 0)}, "
+        f"отправлено {result.get('sent', 0)}, ошибок {result.get('fail', 0)}"
+    )
 
 
 @router.message(Command("unban"))
