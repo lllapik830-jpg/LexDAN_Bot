@@ -768,11 +768,11 @@ async def vocab_word_button(m: Message):
     card = rico_word_card(level, topic_title, word)
     await m.answer(card, reply_markup=vocab_practice_kb(), parse_mode="HTML")
     from services.elevenlabs import send_voice_reply
-    from services.voices import RICO_VOICE_ID
+    from services.voices import resolve_rico_voice_id
 
     speak = (word.get("en") or "").strip()
     if speak:
-        await send_voice_reply(m, speak, title=f"Rico · {speak}", voice_id=RICO_VOICE_ID)
+        await send_voice_reply(m, speak, title=f"Rico · {speak}", voice_id=resolve_rico_voice_id(user))
 
 
 def _vocab_check_reply(result: dict) -> str:
@@ -977,11 +977,11 @@ async def vocab_phrase_flow(m: Message):
         )
         await m.answer(rico_phrase_card(level, topic_title, phrase), reply_markup=vocab_practice_kb(), parse_mode="HTML")
         from services.elevenlabs import send_voice_reply
-        from services.voices import RICO_VOICE_ID
+        from services.voices import resolve_rico_voice_id
 
         speak = (phrase.get("en") or "").strip()
         if speak:
-            await send_voice_reply(m, speak, title="Rico · phrase", voice_id=RICO_VOICE_ID)
+            await send_voice_reply(m, speak, title="Rico · phrase", voice_id=resolve_rico_voice_id(user))
         return
 
     if hub != "vocab_phrase_practice":

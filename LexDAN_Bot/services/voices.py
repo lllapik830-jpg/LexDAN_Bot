@@ -14,6 +14,17 @@ DEFAULT_VOICE_ID = (os.getenv("ELEVENLABS_VOICE_ID") or "pNInz6obpgDQGcFmaJgB").
 # Голос Рико — для уроков (всегда)
 RICO_VOICE_ID = (os.getenv("RICO_VOICE_ID") or "fBD19tfE58bkETeiwUoC").strip()
 RICO_VOICE_NAME = "Rico 🦜"
+# Призовой второй голос Рико (1–2 место ивента)
+RICO_VOICE_ALT_ID = (os.getenv("RICO_VOICE_ALT_ID") or "XsmrVB66q3D4TaXVaWNF").strip()
+RICO_VOICE_ALT_NAME = "Rico · Legend 👑"
+
+BTN_RICO_VOICE = "🦜 Голос Рико"
+
+RICO_VOICE_CHOICES = (
+    {"key": "classic", "name": RICO_VOICE_NAME, "voice_id": RICO_VOICE_ID},
+    {"key": "legend", "name": RICO_VOICE_ALT_NAME, "voice_id": RICO_VOICE_ALT_ID},
+)
+
 
 # Чат:
 # free → только Adam (дефолт)
@@ -214,4 +225,77 @@ def voices_help_text(user: dict) -> str:
         )
 
     lines.append("\nКнопки ниже: 🎧 прослушать · ✅ выбрать")
+    return "\n".join(lines)
+
+
+def rico_alt_voice_unlocked(user: dict | None) -> bool:
+    """Второй голос Рико — приз 1–2 места (или явный флаг / менеджер)."""
+    if not user:
+        return False
+    if user.get("rico_alt_voice_unlocked") or user.get("dev_unlock"):
+        return True
+    try:
+        from config import MANAGER_ID
+
+        uid = user.get("telegram_id") or user.get("id")
+        if uid is not None and int(uid) == int(MANAGER_ID):
+            return True
+    except Exception:
+        pass
+    ep = user.get("event_prizes")
+    if isinstance(ep, dict) and ep.get("exclusive_voice"):
+        return True
+    place = int(ep.get("place") or 0) if isinstance(ep, dict) else 0
+    return place in {1, 2}
+
+
+def resolve_rico_voice_id(user: dict | None = None) -> str:
+    """Какой Voice ID Рико использовать в уроках/озвучке."""
+    if user and rico_alt_voice_unlocked(user) and (user.get("rico_voice_key") or "") == "legend":
+        return RICO_VOICE_ALT_ID or RICO_VOICE_ID
+    return RICO_VOICE_ID
+
+
+def current_rico_voice_label(user: dict | None = None) -> str:
+    if user and (user.get("rico_voice_key") or "") == "legend" and rico_alt_voice_unlocked(user):
+        return RICO_VOICE_ALT_NAME
+    return RICO_VOICE_NAME
+
+
+def toggle_rico_voice(user: dict) -> tuple[bool, str]:
+    """
+    Переключить classic ↔ legend.
+    Returns (ok, html_message).
+    """
+    if not rico_alt_voice_unlocked(user):
+        return (
+            False,
+            "🔒 Второй голос Рико — приз для <b>1 и 2 места</b> ивента. "
+            "Пока доступен классический Rico 🦜",
+        )
+    cur = (user.get("rico_voice_key") or "classic").strip()
+    nxt = "legend" if cur != "legend" else "classic"
+    user["rico_voice_key"] = nxt
+    label = RICO_VOICE_ALT_NAME if nxt == "legend" else RICO_VOICE_NAME
+    return True, f"🦜 Голос Рико: <b>{label}</b>"
+
+
+def rico_voice_help_html(user: dict) -> str:
+    unlocked = rico_alt_voice_unlocked(user)
+    cur = current_rico_voice_label(user)
+    lines = [
+        "🦜 <b>Голос Рико в уроках</b>\n",
+        f"Сейчас: <b>{cur}</b>\n",
+    ]
+    if unlocked:
+        lines.append(
+            "Тебе открыт второй голос-приз.\n"
+            "Нажми кнопку ещё раз — переключится classic ↔ legend.\n"
+            "Ниже — короткое превью выбранного голоса 🎧"
+        )
+    else:
+        lines.append(
+            "Пока только классический Rico.\n"
+            "Второй голос откроется победителям <b>1 и 2 места</b> ивента 👑"
+        )
     return "\n".join(lines)

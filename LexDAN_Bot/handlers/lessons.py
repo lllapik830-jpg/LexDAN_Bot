@@ -141,6 +141,7 @@ async def send_lessons_home(
     users = load_users()
     user = get_user(users, user_id)
     ensure_user_fields(user)
+    user["telegram_id"] = user_id
 
     from services.growth import ensure_growth
     from services.database import save_users
@@ -443,6 +444,48 @@ async def choose_level(m: Message):
     from handlers.lessons_grammar import open_level_hub
 
     await open_level_hub(m, selected)
+
+
+@router.message(ModeFilter(MODE_LESSONS), F.text.func(lambda t: bool(t) and "Голос Рико" in t))
+async def switch_rico_voice(m: Message):
+    from services.database import users_for, save_users
+    from services.voices import (
+        BTN_RICO_VOICE,
+        toggle_rico_voice,
+        rico_voice_help_html,
+        resolve_rico_voice_id,
+        rico_alt_voice_unlocked,
+    )
+    from services.elevenlabs import send_voice_reply
+
+    uid = str(m.from_user.id)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ensure_user_fields(user)
+    user["telegram_id"] = uid
+    if not rico_alt_voice_unlocked(user):
+        await m.answer(
+            rico_voice_help_html(user),
+            reply_markup=lessons_keyboard_for(user),
+            parse_mode="HTML",
+        )
+        return
+    ok, msg = toggle_rico_voice(user)
+    save_users(users, only=uid)
+    await m.answer(
+        rico_voice_help_html(user) + "\n\n" + msg,
+        reply_markup=lessons_keyboard_for(user),
+        parse_mode="HTML",
+    )
+    preview = (
+        "Hello! I'm Rico. Let's learn English together with patience and courage."
+    )
+    await send_voice_reply(
+        m,
+        preview,
+        title="Rico voice preview",
+        voice_id=resolve_rico_voice_id(user),
+    )
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text)

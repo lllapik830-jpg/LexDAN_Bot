@@ -32,6 +32,11 @@ from services.exclusive_rico import (
     BTN_EX_READY,
     BTN_EX_RESUME,
     BTN_EX_RESTART,
+    BTN_EX_CONGRATS_1,
+    BTN_EX_CONGRATS_2,
+    BTN_EX_CONGRATS_3,
+    BTN_EX_HALL_ART,
+    BTN_EX_STICKER_4_10,
     PLACE_BUTTONS,
     get_pack,
     start_pack,
@@ -55,11 +60,22 @@ from services.exclusive_rico import (
     advance,
     grant_task_vocab,
 )
+from services.event_congrats import (
+    send_place_congrats,
+    congrats_translate_html,
+    BTN_CONGRATS_TRANSLATE,
+    BTN_CONGRATS_BACK,
+    congrats_kb,
+)
 from services.elevenlabs import send_voice_reply
 from services.stt import recognize_english
+from pathlib import Path
 
 router = Router()
 
+_ASSETS = Path(__file__).resolve().parent.parent / "assets"
+_HALL_ART = _ASSETS / "legends_lexdan_hall.png"
+_STICKER_4_10 = _ASSETS / "stickers" / "sticker_thanks_champion.png"
 
 def _uid(m: Message) -> str:
     return str(m.from_user.id)
@@ -79,6 +95,12 @@ def _hub_kb() -> ReplyKeyboardMarkup:
             [KeyboardButton(text=BTN_EX_PLACE_1)],
             [KeyboardButton(text=BTN_EX_PLACE_2)],
             [KeyboardButton(text=BTN_EX_PLACE_3)],
+            [
+                KeyboardButton(text=BTN_EX_CONGRATS_1),
+                KeyboardButton(text=BTN_EX_CONGRATS_2),
+                KeyboardButton(text=BTN_EX_CONGRATS_3),
+            ],
+            [KeyboardButton(text=BTN_EX_HALL_ART), KeyboardButton(text=BTN_EX_STICKER_4_10)],
             [KeyboardButton(text="🔙 Вернуться в меню")],
         ],
         resize_keyboard=True,
@@ -152,7 +174,7 @@ async def _send_story_scene(m: Message, user: dict, scene: dict | None) -> None:
                     m,
                     line,
                     title="Легенда · задание",
-                    voice_id=resolve_voice_id("rico"),
+                    voice_id=resolve_voice_id("rico", user),
                 )
         return
 
@@ -165,7 +187,7 @@ async def _send_story_scene(m: Message, user: dict, scene: dict | None) -> None:
             m,
             en,
             title=scene.get("label") or speaker,
-            voice_id=resolve_voice_id(speaker),
+            voice_id=resolve_voice_id(speaker, user),
         )
 
 
@@ -191,9 +213,11 @@ async def _send_pack_task(m: Message, user: dict, *, resumed: bool = False) -> N
     if (task.get("kind") or "") == "voice":
         line = (task.get("voice_text") or "").strip()
         if line:
-            from services.voices import RICO_VOICE_ID
+            from services.voices import resolve_rico_voice_id
 
-            await send_voice_reply(m, line, title="Эксклюзив Рико", voice_id=RICO_VOICE_ID)
+            await send_voice_reply(
+                m, line, title="Эксклюзив Рико", voice_id=resolve_rico_voice_id(user)
+            )
 
 
 async def _resume_story_into(m: Message, user: dict) -> None:
@@ -252,6 +276,10 @@ async def pick_place(m: Message):
 
     park_active(user)
     ensure_exclusive(user)
+
+    if place in (1, 2):
+        # тестовый доступ ко второму голосу Рико
+        user["rico_alt_voice_unlocked"] = True
 
     if place == 1 and has_resumable_progress(user, 1):
         user["exclusive_rico"]["pending_place"] = 1
@@ -330,6 +358,72 @@ async def restart_place(m: Message):
     users = users_for(uid)
     user = get_user(users, uid)
     await _send_pack_task(m, user)
+
+
+@router.message(ModeFilter(MODE_EXCLUSIVE), F.text.in_({BTN_EX_CONGRATS_1, BTN_EX_CONGRATS_2, BTN_EX_CONGRATS_3}))
+async def preview_congrats(m: Message):
+    uid = _uid(m)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    place = {BTN_EX_CONGRATS_1: 1, BTN_EX_CONGRATS_2: 2, BTN_EX_CONGRATS_3: 3}.get(
+        (m.text or "").strip(), 0
+    )
+    if place in (1, 2):
+        user["rico_alt_voice_unlocked"] = True
+    ok = await send_place_congrats(m, user, place)
+    save_users(users, only=uid)
+    if not ok:
+        await m.answer("Поздравление не найдено.", reply_markup=_hub_kb())
+
+
+@router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_CONGRATS_TRANSLATE)
+async def congrats_translate(m: Message):
+    uid = _uid(m)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    html = congrats_translate_html(user)
+    if not html:
+        await m.answer("Сначала открой поздравление 🎙", reply_markup=_hub_kb())
+        return
+    await m.answer(html, reply_markup=congrats_kb(), parse_mode="HTML")
+
+
+@router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_CONGRATS_BACK)
+async def congrats_back(m: Message):
+    await m.answer("Выбери место или превью приза 👇", reply_markup=_hub_kb())
+
+
+@router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_HALL_ART)
+async def preview_hall_art(m: Message):
+    from aiogram.types import FSInputFile
+
+    if not _HALL_ART.exists():
+        await m.answer("Картинка зала славы ещё не на месте.", reply_markup=_hub_kb())
+        return
+    await m.answer_photo(
+        FSInputFile(str(_HALL_ART)),
+        caption=(
+            "🖼 <b>Зал славы · легенды LexDan</b>\n"
+            "Табличка пока пустая — сюда позже встанет имя/арт победителя 1 места."
+        ),
+        parse_mode="HTML",
+        reply_markup=_hub_kb(),
+    )
+
+
+@router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_STICKER_4_10)
+async def preview_sticker_4_10(m: Message):
+    from aiogram.types import FSInputFile
+
+    if not _STICKER_4_10.exists():
+        await m.answer("Стикер ещё не на месте.", reply_markup=_hub_kb())
+        return
+    await m.answer_photo(
+        FSInputFile(str(_STICKER_4_10)),
+        caption="🎟 Стикер для мест <b>4–10</b>: спасибо за участие, чемпион LexDan!",
+        parse_mode="HTML",
+        reply_markup=_hub_kb(),
+    )
 
 
 @router.message(ModeFilter(MODE_EXCLUSIVE), F.text == BTN_EX_READY)
@@ -508,6 +602,13 @@ async def exclusive_answer(m: Message):
         BTN_EX_READY,
         BTN_EX_RESUME,
         BTN_EX_RESTART,
+        BTN_EX_CONGRATS_1,
+        BTN_EX_CONGRATS_2,
+        BTN_EX_CONGRATS_3,
+        BTN_EX_HALL_ART,
+        BTN_EX_STICKER_4_10,
+        BTN_CONGRATS_TRANSLATE,
+        BTN_CONGRATS_BACK,
         "🔙 Вернуться в меню",
     }:
         return

@@ -47,8 +47,8 @@ PRIZE_BY_PLACE: dict[int, dict[str, Any]] = {
         "title": TITLE_PLACE_1,
         "exclusive_tasks": 20,
         "custom_rico_art": True,
-        "exclusive_voice": False,
-        "voice_congrats": False,
+        "exclusive_voice": True,
+        "voice_congrats": True,
         "sticker_pack": False,
         "sticker_single": False,
         "hall_of_fame": True,
@@ -497,6 +497,8 @@ def grant_prize_to_user(user: dict, place: int, *, event_id: str = EVENT_ID) -> 
     ep["voice_congrats"] = bool(prize.get("voice_congrats"))
     ep["sticker_pack"] = bool(prize.get("sticker_pack"))
     ep["sticker_single"] = bool(prize.get("sticker_single"))
+    if prize.get("exclusive_voice"):
+        user["rico_alt_voice_unlocked"] = True
     user["event_prizes"] = ep
     return prize
 

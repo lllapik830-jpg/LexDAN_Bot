@@ -114,6 +114,14 @@ def lessons_home_levels(
         rows.append(row)
     if show_global_tasks:
         rows.append([KeyboardButton(text=BTN_ALL_LEVELS_TASKS)])
+    # Второй голос Рико — приз 1–2 места
+    try:
+        from services.voices import BTN_RICO_VOICE, rico_alt_voice_unlocked
+
+        if user is not None and rico_alt_voice_unlocked(user):
+            rows.append([KeyboardButton(text=BTN_RICO_VOICE)])
+    except Exception:
+        pass
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 

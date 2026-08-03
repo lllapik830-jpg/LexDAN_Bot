@@ -369,11 +369,11 @@ async def _finish_exercise_ok(
             celebration_extra=extra,
         )
         from services.elevenlabs import send_voice_reply
-        from services.voices import RICO_VOICE_ID
+        from services.voices import resolve_rico_voice_id
 
         first = speak_items[0]
         await send_voice_reply(
-            m, first, title="Rico answer", voice_id=RICO_VOICE_ID
+            m, first, title="Rico answer", voice_id=resolve_rico_voice_id(user)
         )
         if len(speak_items) > 1:
             hint = (
@@ -463,9 +463,9 @@ async def _handle_speak_practice_voice(m: Message, user: dict):
         nxt = advance_speak_phrase(uid)
         if nxt:
             from services.elevenlabs import send_voice_reply
-            from services.voices import RICO_VOICE_ID
+            from services.voices import resolve_rico_voice_id
 
-            await send_voice_reply(m, nxt, title="Rico answer", voice_id=RICO_VOICE_ID)
+            await send_voice_reply(m, nxt, title="Rico answer", voice_id=resolve_rico_voice_id(user))
             await m.answer(
                 f"🗣 Теперь произнеси целиком:\n<b>{nxt}</b>",
                 parse_mode="HTML",
@@ -978,7 +978,7 @@ async def _rico_chat_reply(m: Message, user: dict, user_text: str, *, show_heard
 
     from services.tg_out import status
     from services.elevenlabs import send_voice_reply
-    from services.voices import RICO_VOICE_ID
+    from services.voices import resolve_rico_voice_id
     from services.rico_grammar_tutor import ask_rico_grammar, format_rico_grammar_message
     from services.lesson_state import update_lesson
 
@@ -1011,7 +1011,7 @@ async def _rico_chat_reply(m: Message, user: dict, user_text: str, *, show_heard
         text_out = f"🎧 <i>Услышал:</i> {user_text}\n\n" + text_out
     await m.answer(text_out, reply_markup=grammar_rico_chat_kb(), parse_mode="HTML")
     asyncio.create_task(
-        send_voice_reply(m, reply_en, title="Rico grammar", voice_id=RICO_VOICE_ID),
+        send_voice_reply(m, reply_en, title="Rico grammar", voice_id=resolve_rico_voice_id(user)),
         name=f"rico-grammar-voice-{uid}",
     )
 

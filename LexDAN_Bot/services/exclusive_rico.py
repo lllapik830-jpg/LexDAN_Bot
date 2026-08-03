@@ -43,6 +43,11 @@ BTN_EX_TRANSLATE = BTN_STORY_TRANSLATE
 BTN_EX_READY = BTN_READY
 BTN_EX_RESUME = "▶️ Продолжить с места остановки"
 BTN_EX_RESTART = "🔄 Начать сначала"
+BTN_EX_CONGRATS_1 = "🎙 Поздравление · 1"
+BTN_EX_CONGRATS_2 = "🎙 Поздравление · 2"
+BTN_EX_CONGRATS_3 = "🎙 Поздравление · 3"
+BTN_EX_HALL_ART = "🖼 Зал славы"
+BTN_EX_STICKER_4_10 = "🎟 Стикер 4–10"
 
 PLACE_BUTTONS = {
     BTN_EX_PLACE_1: 1,
@@ -189,12 +194,12 @@ def is_story_mode(user: dict) -> bool:
     return bool(active and active.get("mode") == "story")
 
 
-def resolve_voice_id(speaker: str) -> str:
-    from services.voices import RICO_VOICE_ID
+def resolve_voice_id(speaker: str, user: dict | None = None) -> str:
+    from services.voices import resolve_rico_voice_id
 
     key = (speaker or "narrator").lower()
     if key == "rico":
-        return RICO_VOICE_ID
+        return resolve_rico_voice_id(user)
     vid = SPEAKER_VOICE.get(key)
     if vid:
         return vid
@@ -739,6 +744,11 @@ __all__ = [
     "BTN_EX_READY",
     "BTN_EX_RESUME",
     "BTN_EX_RESTART",
+    "BTN_EX_CONGRATS_1",
+    "BTN_EX_CONGRATS_2",
+    "BTN_EX_CONGRATS_3",
+    "BTN_EX_HALL_ART",
+    "BTN_EX_STICKER_4_10",
     "PLACE_BUTTONS",
     "PACKS_BY_PLACE",
     "LEGEND_SCENES",
