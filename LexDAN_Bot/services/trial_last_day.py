@@ -85,7 +85,7 @@ def trial_offer_kb() -> InlineKeyboardMarkup:
 def is_trial_access_user(user: dict) -> bool:
     """Промокод / 3-дневный рег-триал (не оплативший подписку)."""
     ensure_growth(user)
-    if user.get("subscription_plan") in ("chat", "full"):
+    if user.get("sub_plan") in ("chat", "full", "upgrade"):
         return False
     if user.get("in_promo_trial"):
         return True
