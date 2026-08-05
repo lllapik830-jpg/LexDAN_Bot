@@ -14,16 +14,20 @@ def is_dev_unlocked(user: dict | None) -> bool:
     return bool(user and user.get("dev_unlock"))
 
 
-def main_menu(user: dict | None = None) -> ReplyKeyboardMarkup:
+def main_menu(user: dict | None = None, *, user_id: str | int | None = None) -> ReplyKeyboardMarkup:
     from services.secret_missions import BTN_SECRET, has_secret_entry
     from services.daily_fire import BTN_DAILY_FIRE
-    from services.course_placement import BTN_COURSES
+    from services.course_placement import BTN_COURSES, courses_allowed
 
     rows = [
         [KeyboardButton(text="🗣️ Общаться"), KeyboardButton(text="📚 Уроки")],
-        [KeyboardButton(text=BTN_COURSES)],
-        [KeyboardButton(text=BTN_DAILY_FIRE)],
     ]
+    uid = user_id
+    if uid is None and isinstance(user, dict):
+        uid = user.get("tg_id") or user.get("id")
+    if courses_allowed(uid):
+        rows.append([KeyboardButton(text=BTN_COURSES)])
+    rows.append([KeyboardButton(text=BTN_DAILY_FIRE)])
     if user is not None and has_secret_entry(user):
         rows.append([KeyboardButton(text=BTN_SECRET)])
     rows.append(

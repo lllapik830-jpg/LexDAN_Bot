@@ -31,6 +31,19 @@ from data.course_placement_bank import (
 )
 
 BTN_COURSES = "🎓 Курсы"
+
+
+def courses_allowed(user_id: str | int | None) -> bool:
+    """Пока раздел только для менеджера (превью до публичного запуска)."""
+    if user_id is None:
+        return False
+    from config import MANAGER_ID
+
+    try:
+        return int(user_id) == int(MANAGER_ID)
+    except (TypeError, ValueError):
+        return False
+
 BTN_COURSE_START_TEST = "▶️ Пройти вступительный тест"
 BTN_COURSE_CONTINUE = "▶️ Продолжить тест"
 BTN_COURSE_RESULTS = "📋 Мой результат теста"

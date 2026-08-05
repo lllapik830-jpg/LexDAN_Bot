@@ -448,6 +448,7 @@ def get_user(users: dict, user_id: str) -> dict:
     }
     for key, value in defaults.items():
         users[user_id].setdefault(key, value)
+    users[user_id]["tg_id"] = str(user_id)
     return users[user_id]
 
 

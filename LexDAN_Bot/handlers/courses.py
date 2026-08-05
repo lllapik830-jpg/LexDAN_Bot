@@ -30,6 +30,7 @@ from services.course_placement import (
     BTN_COURSE_RESULTS,
     BTN_COURSE_START_TEST,
     BTN_COURSES,
+    courses_allowed,
     BTN_SKIP_SPEAKING,
     INTRO_HTML,
     answer_listening,
@@ -62,6 +63,24 @@ from services.growth import ensure_growth
 
 log = logging.getLogger(__name__)
 router = Router()
+
+async def _deny_if_closed(m: Message) -> bool:
+    """True = доступ закрыт, уже ответили/молчали."""
+    if courses_allowed(m.from_user.id if m.from_user else None):
+        return False
+    from handlers.keyboards import main_menu
+    from services.database import MODE_MENU, set_mode, users_for, get_user, save_users
+
+    uid = str(m.from_user.id)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    set_mode(uid, MODE_MENU)
+    await m.answer(
+        "🎓 Раздел «Курсы» пока в закрытом тесте — скоро откроем.",
+        reply_markup=main_menu(user, user_id=uid),
+    )
+    return True
+
 
 
 def _courses_home_kb(user: dict) -> ReplyKeyboardMarkup:
@@ -241,6 +260,8 @@ async def _finish_and_show(m: Message, user: dict, users: dict, uid: str) -> Non
 
 @router.message(F.text == BTN_COURSES)
 async def open_courses(m: Message):
+    if await _deny_if_closed(m):
+        return
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
@@ -253,6 +274,8 @@ async def open_courses(m: Message):
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_COURSE_ABOUT)
 async def course_about(m: Message):
+    if await _deny_if_closed(m):
+        return
     await m.answer(
         "ℹ️ <b>Как устроен курс</b>\n\n"
         "1) Вступительный тест → уровень и слабые места\n"
@@ -268,6 +291,8 @@ async def course_about(m: Message):
 
 @router.message(ModeFilter(MODE_COURSES), F.text == "⏸ Пауза · в меню курсов")
 async def course_pause(m: Message):
+    if await _deny_if_closed(m):
+        return
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
@@ -280,6 +305,8 @@ async def course_pause(m: Message):
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_COURSE_RESULTS)
 async def course_results(m: Message):
+    if await _deny_if_closed(m):
+        return
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
@@ -292,6 +319,8 @@ async def course_results(m: Message):
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_COURSE_BUY)
 async def course_buy(m: Message):
+    if await _deny_if_closed(m):
+        return
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
@@ -320,6 +349,8 @@ async def course_buy(m: Message):
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_COURSE_START_TEST)
 async def course_test_start(m: Message):
+    if await _deny_if_closed(m):
+        return
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
@@ -338,6 +369,8 @@ async def course_test_start(m: Message):
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_COURSE_CONTINUE)
 async def course_test_continue(m: Message):
+    if await _deny_if_closed(m):
+        return
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
@@ -369,6 +402,8 @@ async def course_test_continue(m: Message):
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_SKIP_SPEAKING)
 async def skip_speak(m: Message):
+    if await _deny_if_closed(m):
+        return
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
@@ -385,6 +420,8 @@ async def skip_speak(m: Message):
 
 @router.message(ModeFilter(MODE_COURSES), F.voice)
 async def course_voice(m: Message):
+    if await _deny_if_closed(m):
+        return
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
@@ -423,6 +460,8 @@ async def course_voice(m: Message):
 
 @router.message(ModeFilter(MODE_COURSES), F.text)
 async def course_text(m: Message):
+    if await _deny_if_closed(m):
+        return
     text = (m.text or "").strip()
     if not text or text in {
         BTN_COURSES,
