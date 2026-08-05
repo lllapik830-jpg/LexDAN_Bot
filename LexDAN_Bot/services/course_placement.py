@@ -56,7 +56,8 @@ INTRO_HTML = (
     "· аудирование — 25 аудио + вопросы на понимание\n"
     "· письмо — 8 предложений на тему\n"
     "· говорение — собеседование (до 20 ответов)\n\n"
-    "Можно поставить паузу. По результату — уровень, слабые темы, срок и цена."
+    "Можно поставить паузу. По результату — уровень, слабые темы, "
+    "срок при ~60 мин/день и цена одного курса до B2."
 )
 
 PRICE_BY_LEVEL = {
@@ -150,7 +151,6 @@ def _blank_state() -> dict:
         "weak_topics": [],
         "strong_topics": [],
         "skill_details": {},
-        "months_45": None,
         "months_60": None,
         "price": None,
         "start_topic_id": None,
@@ -927,20 +927,13 @@ def finalize_placement(p: dict) -> dict:
 
     h = float(HOURS_TO_B2.get(entry) or 0)
     weak_mult = 1.0 + 0.05 * len(weak_topics) + 0.06 * len(weak)
-
-    def _months(mins_per_day: float) -> int:
-        if h <= 0:
-            return 0
-        # ~22 дня занятий в месяц
-        hours_per_month = (mins_per_day / 60.0) * 22.0
-        m = math.ceil((h * weak_mult) / max(0.1, hours_per_month))
-        return int(max(3, min(36, m)))
-
-    p["months_45"] = _months(45)
-    p["months_60"] = _months(60)
-    # 60 мин/день всегда не дольше, чем 45
-    if p["months_60"] > p["months_45"]:
-        p["months_60"] = p["months_45"]
+    # один темп курса: ~60 мин/день, ~22 учебных дня в месяц
+    if h <= 0:
+        p["months_60"] = 0
+    else:
+        hours_per_month = 22.0  # 60 мин × 22
+        m = math.ceil((h * weak_mult) / hours_per_month)
+        p["months_60"] = int(max(3, min(36, m)))
     p["price"] = int(PRICE_BY_LEVEL.get(entry) or 12900)
     p["start_topic_id"] = START_TOPIC.get(entry) or "A2.T1"
     p["phase"] = "done"
@@ -990,7 +983,6 @@ def results_html(p: dict) -> str:
     overall = p.get("overall_score")
     overall_s = f"{int(round(float(overall)*100))}%" if overall is not None else "—"
     price = int(p.get("price") or 0)
-    m45 = p.get("months_45")
     m60 = p.get("months_60")
 
     head = (
@@ -1010,12 +1002,12 @@ def results_html(p: dict) -> str:
             "можно качать навыки в уроках и общении с Рико."
         )
 
+    months_s = f"~{m60} мес" if m60 is not None else "—"
     return (
         head
         + f"Старт программы: тема <code>{p.get('start_topic_id')}</code>\n\n"
-        f"⏱ До B2 ориентировочно:\n"
-        f"· ~45 мин/день → <b>~{m45} мес</b>\n"
-        f"· ~60 мин/день → <b>~{m60} мес</b>\n\n"
+        f"⏱ Один курс · темп <b>~60 мин/день</b>\n"
+        f"До B2 ориентировочно: <b>{months_s}</b>\n\n"
         f"💳 Курс с твоего уровня: <b>{price}₽</b>\n"
         "<i>полный путь до B2 под твои слабые места</i>"
     )

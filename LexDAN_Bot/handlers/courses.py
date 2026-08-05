@@ -463,8 +463,9 @@ async def course_about(m: Message):
         return
     await m.answer(
         "ℹ️ <b>Как устроен курс</b>\n\n"
+        "Один курс до <b>B2</b>, темп ~<b>60 мин/день</b>.\n\n"
         "1) Вступительный тест → уровень и слабые места\n"
-        "2) Персональный план до <b>B2</b>\n"
+        "2) Персональный план от твоего старта до B2\n"
         "3) Темы по 4-дневному циклу: изучение → закрепление → "
         "практика → экзамен (≥80%)\n"
         "4) Дальше только после сдачи темы\n\n"
@@ -539,9 +540,11 @@ async def course_buy(m: Message):
     from config import SUPPORT_USERNAME
 
     contact = f"@{SUPPORT_USERNAME}" if SUPPORT_USERNAME else "поддержку"
+    months = p.get("months_60")
+    months_bit = f" · ~{months} мес" if months else ""
     await m.answer(
-        f"💳 Курс до B2 с уровня <b>{p.get('entry_level')}</b> — "
-        f"<b>{price}₽</b>.\n\n"
+        f"💳 Один курс до B2 · темп ~60 мин/день\n"
+        f"С уровня <b>{p.get('entry_level')}</b> — <b>{price}₽</b>{months_bit}.\n\n"
         "Автооплату курса подключим сразу после теста (в работе).\n"
         f"Пока напиши {contact} код <code>COURSE-{uid}</code> — "
         "активируем вручную.",
