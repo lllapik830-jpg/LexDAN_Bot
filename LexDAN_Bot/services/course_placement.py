@@ -202,40 +202,68 @@ def _build_vocab_queue(max_level: str) -> list[str]:
     return ids
 
 
-def _build_reading_flat(max_level: str) -> list[dict]:
-    cap = _level_idx(max_level)
-    flat = []
+def _passage_by_id(pid: str) -> dict | None:
     for pass_ in READING_PASSAGES:
-        if _level_idx(pass_.get("level") or "A0") > cap + 1:
-            # оставляем чуть выше ceiling для честного потолка, но не всё B2 при A0
-            if cap <= 1 and _level_idx(pass_.get("level") or "A0") >= 3:
-                continue
-        for q in pass_.get("questions") or []:
+        if pass_.get("id") == pid:
+            return pass_
+    return None
+
+
+def _build_reading_flat(max_level: str) -> list[dict]:
+    """Только ссылки на пассаж/вопрос — без копий текста (иначе JSON раздувается и может теряться)."""
+    cap = _level_idx(max_level)
+    flat: list[dict] = []
+    for pass_ in READING_PASSAGES:
+        pl = _level_idx(pass_.get("level") or "A0")
+        if pl > cap + 1 and not (cap >= 2):
+            continue
+        for qi, q in enumerate(pass_.get("questions") or []):
             flat.append(
                 {
                     "passage_id": pass_["id"],
+                    "q_index": qi,
                     "passage_level": pass_.get("level"),
                     "passage_topic": pass_.get("topic"),
-                    "passage_title": pass_.get("title") or "",
-                    "passage_text": pass_.get("text") or "",
-                    "q": q,
                 }
             )
     if len(flat) < 15:
         flat = []
         for pass_ in READING_PASSAGES:
-            for q in pass_.get("questions") or []:
+            for qi, q in enumerate(pass_.get("questions") or []):
                 flat.append(
                     {
                         "passage_id": pass_["id"],
+                        "q_index": qi,
                         "passage_level": pass_.get("level"),
                         "passage_topic": pass_.get("topic"),
-                        "passage_title": pass_.get("title") or "",
-                        "passage_text": pass_.get("text") or "",
-                        "q": q,
                     }
                 )
     return flat
+
+
+def hydrate_reading_item(ref: dict) -> dict | None:
+    """Восстановить текст пассажа и вопрос из банка по ссылке."""
+    if not ref:
+        return None
+    # уже старый формат с полным текстом
+    if ref.get("q") and ref.get("passage_text") is not None:
+        return ref
+    pass_ = _passage_by_id(str(ref.get("passage_id") or ""))
+    if not pass_:
+        return None
+    qs = pass_.get("questions") or []
+    qi = int(ref.get("q_index") or 0)
+    if qi < 0 or qi >= len(qs):
+        return None
+    return {
+        "passage_id": pass_["id"],
+        "q_index": qi,
+        "passage_level": pass_.get("level"),
+        "passage_topic": pass_.get("topic"),
+        "passage_title": pass_.get("title") or "",
+        "passage_text": pass_.get("text") or "",
+        "q": qs[qi],
+    }
 
 
 def _build_listening_queue(max_level: str) -> list[str]:
@@ -247,6 +275,33 @@ def _build_listening_queue(max_level: str) -> list[str]:
     if len(ids) < 12:
         ids = [it["id"] for it in LISTENING_ITEMS]
     return ids
+
+
+def repair_placement_queues(p: dict) -> None:
+    """Если очередь секции потерялась — восстановить из банка, не сбрасывая прогресс."""
+    phase = p.get("phase")
+    adapt = p.get("adapt_max_level") or "B2"
+    if phase == "grammar":
+        if not p.get("grammar_queue"):
+            p["grammar_queue"] = _build_adaptive_grammar_queue("B2")
+    elif phase == "vocab":
+        if not p.get("vocab_queue"):
+            p["vocab_queue"] = _build_vocab_queue(adapt)
+            if int(p.get("vocab_i") or 0) > len(p["vocab_queue"]):
+                p["vocab_i"] = 0
+    elif phase == "reading":
+        if not p.get("reading_flat"):
+            p["reading_flat"] = _build_reading_flat(adapt)
+            if int(p.get("reading_i") or 0) > len(p["reading_flat"]):
+                p["reading_i"] = 0
+    elif phase == "listening":
+        if not p.get("listening_queue"):
+            p["listening_queue"] = _build_listening_queue(adapt)
+            if int(p.get("listening_i") or 0) > len(p["listening_queue"]):
+                p["listening_i"] = 0
+    elif phase == "speaking":
+        if not p.get("speaking_queue"):
+            p["speaking_queue"] = [s["id"] for s in SPEAKING_INTERVIEW]
 
 
 def start_placement(user: dict) -> dict:
@@ -362,7 +417,10 @@ def answer_vocab(p: dict, choice_idx: int) -> bool:
 
 
 def vocab_done(p: dict) -> bool:
-    return int(p.get("vocab_i") or 0) >= len(p.get("vocab_queue") or [])
+    q = p.get("vocab_queue") or []
+    if not q:
+        return False
+    return int(p.get("vocab_i") or 0) >= len(q)
 
 
 def begin_reading(p: dict) -> None:
@@ -377,7 +435,7 @@ def current_reading(p: dict) -> dict | None:
     i = int(p.get("reading_i") or 0)
     if i < 0 or i >= len(flat):
         return None
-    return flat[i]
+    return hydrate_reading_item(flat[i])
 
 
 def answer_reading(p: dict, choice_idx: int) -> bool:
@@ -398,7 +456,10 @@ def answer_reading(p: dict, choice_idx: int) -> bool:
 
 
 def reading_done(p: dict) -> bool:
-    return int(p.get("reading_i") or 0) >= len(p.get("reading_flat") or [])
+    flat = p.get("reading_flat") or []
+    if not flat:
+        return False
+    return int(p.get("reading_i") or 0) >= len(flat)
 
 
 def begin_listening(p: dict) -> None:
@@ -434,7 +495,10 @@ def answer_listening(p: dict, choice_idx: int) -> bool:
 
 
 def listening_done(p: dict) -> bool:
-    return int(p.get("listening_i") or 0) >= len(p.get("listening_queue") or [])
+    q = p.get("listening_queue") or []
+    if not q:
+        return False
+    return int(p.get("listening_i") or 0) >= len(q)
 
 
 def _provisional_level(p: dict) -> str:
@@ -611,10 +675,29 @@ def _skill_ratio(p: dict, skill: str) -> float | None:
 
 
 def _weighted_ratio(p: dict, skill: str) -> float | None:
-    mx = float(p["weight_max"].get(skill) or 0)
+    mx = float((p.get("weight_max") or {}).get(skill) or 0)
     if mx <= 0:
         return _skill_ratio(p, skill)
-    return float(p["weighted"].get(skill) or 0) / mx
+    return float((p.get("weighted") or {}).get(skill) or 0) / mx
+
+
+def _skill_attempts(p: dict, skill: str) -> tuple[int, int]:
+    ok, tot = p["skill_scores"].get(skill) or [0, 0]
+    try:
+        return int(ok or 0), int(tot or 0)
+    except (TypeError, ValueError):
+        return 0, 0
+
+
+def _detail_num(detail: dict, skill: str, default: float = 0.0) -> float:
+    """Безопасно читать skill_details: None (не пройдено) → default."""
+    v = detail.get(skill)
+    if v is None:
+        return default
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
 
 
 def finalize_placement(p: dict) -> dict:
@@ -628,21 +711,36 @@ def finalize_placement(p: dict) -> dict:
         "speaking": 0.1,
     }
     detail = {}
+    attempts = {}
     for skill, w in weights.items():
+        ok_n, tot_n = _skill_attempts(p, skill)
+        attempts[skill] = [ok_n, tot_n]
         if skill == "writing":
-            r = float(p.get("writing_score") or 0)
+            # если письмо не писали — не считаем как 0 в среднем «сдано»
+            if tot_n <= 0 and not p.get("writing_score"):
+                r = None
+            else:
+                r = float(p.get("writing_score") or 0)
         elif skill == "speaking":
-            r = float(p.get("speaking_score") or 0)
+            if tot_n <= 0 and not p.get("speaking_score"):
+                r = None
+            else:
+                r = float(p.get("speaking_score") or 0)
         else:
-            r = _weighted_ratio(p, skill)
+            # главный источник правды — skill_scores (ok/tot)
+            r = _skill_ratio(p, skill)
             if r is None:
-                r = _skill_ratio(p, skill) or 0.0
-        detail[skill] = round(float(r), 3)
-        parts.append(float(r) * w)
+                r = _weighted_ratio(p, skill)
+        detail[skill] = None if r is None else round(float(r), 3)
+        # в overall учитываем только реально пройденные секции
+        if r is not None:
+            parts.append(float(r) * w)
 
-    overall = sum(parts)
+    wsum = sum(weights[s] for s, r in detail.items() if r is not None) or 1.0
+    overall = (sum(parts) / wsum) if parts else 0.0
     p["overall_score"] = round(overall, 3)
     p["skill_details"] = detail
+    p["skill_attempts"] = attempts
 
     entry = "A0"
     for thr, lvl in SCORE_TO_LEVEL:
@@ -657,55 +755,65 @@ def finalize_placement(p: dict) -> dict:
     speak_n = int(p.get("speaking_answers") or 0)
     if speak_n < SPEAKING_TARGET * 0.5 or skipped >= 10:
         entry = LEVEL_ORDER[min(_level_idx(entry), _level_idx("A2"))]
-    elif skipped >= 5 or (detail.get("speaking") or 0) < 0.35:
+    elif skipped >= 5 or _detail_num(detail, "speaking") < 0.35:
         entry = LEVEL_ORDER[min(_level_idx(entry), _level_idx("B1"))]
 
     # B2 только если всё достаточно ровно и speaking не провален
     if entry == "B2":
-        if (detail.get("speaking") or 0) < 0.55:
+        if _detail_num(detail, "speaking") < 0.55:
             entry = "B1"
-        if min(detail.get("grammar", 0), detail.get("reading", 0), detail.get("listening", 0)) < 0.5:
+        # None (не пройдено) тоже блокирует B2
+        if min(
+            _detail_num(detail, "grammar"),
+            _detail_num(detail, "reading"),
+            _detail_num(detail, "listening"),
+        ) < 0.5:
             entry = "B1"
         if skipped >= 3:
             entry = "B1"
 
     # если grammar/vocab совсем слабые — не выше A1/A2
-    g = detail.get("grammar") or 0
-    v = detail.get("vocab") or 0
-    if g < 0.3 and v < 0.35:
+    g = detail.get("grammar")
+    v = detail.get("vocab")
+    if g is not None and v is not None and g < 0.3 and v < 0.35:
         entry = LEVEL_ORDER[min(_level_idx(entry), _level_idx("A1"))]
-    elif g < 0.45:
+    elif g is not None and g < 0.45:
         entry = LEVEL_ORDER[min(_level_idx(entry), _level_idx("A2"))]
 
     p["entry_level"] = entry
 
-    # skills weak/strong
-    skill_ru_order = sorted(detail.items(), key=lambda x: x[1])
+    # skills weak/strong — игнорируем не пройденные (None)
+    taken = [(s, r) for s, r in detail.items() if r is not None]
+    skill_ru_order = sorted(taken, key=lambda x: x[1])
     weak = [s for s, r in skill_ru_order if r < 0.55][:3]
     if not weak and skill_ru_order:
         weak = [skill_ru_order[0][0]]
-    strong = [s for s, r in sorted(detail.items(), key=lambda x: -x[1]) if r >= 0.7][:3]
+    strong = [s for s, r in sorted(taken, key=lambda x: -x[1]) if r >= 0.7][:3]
     p["weak_skills"] = weak
     p["strong_skills"] = strong
 
-    # topics
+    # topics: нужен tot >= 3, формат label: ok/tot (pct%)
     topic_ratios = []
-    for topic, (ok, tot) in (p.get("topic_scores") or {}).items():
-        if tot >= 2:
-            topic_ratios.append((topic, ok / tot, tot))
+    for topic, pair in (p.get("topic_scores") or {}).items():
+        try:
+            ok, tot = int(pair[0]), int(pair[1])
+        except Exception:
+            continue
+        if tot >= 3:
+            topic_ratios.append((topic, ok / tot, ok, tot))
     topic_ratios.sort(key=lambda x: x[1])
     weak_topics = []
-    for topic, r, tot in topic_ratios:
+    for topic, r, ok, tot in topic_ratios:
         if r < 0.55:
             label = TOPIC_LABELS_RU.get(topic) or topic
-            weak_topics.append(f"{label} ({int(r*100)}%)")
+            weak_topics.append(f"{label}: {ok}/{tot} ({int(r*100)}%)")
         if len(weak_topics) >= 6:
             break
     strong_topics = []
-    for topic, r, tot in sorted(topic_ratios, key=lambda x: -x[1]):
+    for topic, r, ok, tot in sorted(topic_ratios, key=lambda x: -x[1]):
         if r >= 0.75:
             label = TOPIC_LABELS_RU.get(topic) or topic
-            strong_topics.append(f"{label} ({int(r*100)}%)")
+            strong_topics.append(f"{label}: {ok}/{tot} ({int(r*100)}%)")
         if len(strong_topics) >= 4:
             break
     p["weak_topics"] = weak_topics
@@ -714,14 +822,19 @@ def finalize_placement(p: dict) -> dict:
     h = float(HOURS_TO_B2.get(entry) or 0)
     weak_mult = 1.0 + 0.05 * len(weak_topics) + 0.06 * len(weak)
 
-    def _months(hours_per_month: float) -> int:
+    def _months(mins_per_day: float) -> int:
         if h <= 0:
             return 0
-        m = math.ceil((h * weak_mult) / hours_per_month)
-        return int(max(4, min(18, m)))
+        # ~22 дня занятий в месяц
+        hours_per_month = (mins_per_day / 60.0) * 22.0
+        m = math.ceil((h * weak_mult) / max(0.1, hours_per_month))
+        return int(max(3, min(36, m)))
 
-    p["months_45"] = _months(22)
-    p["months_60"] = _months(30)
+    p["months_45"] = _months(45)
+    p["months_60"] = _months(60)
+    # 60 мин/день всегда не дольше, чем 45
+    if p["months_60"] > p["months_45"]:
+        p["months_60"] = p["months_45"]
     p["price"] = int(PRICE_BY_LEVEL.get(entry) or 12900)
     p["start_topic_id"] = START_TOPIC.get(entry) or "A2.T1"
     p["phase"] = "done"
@@ -740,11 +853,26 @@ def results_html(p: dict) -> str:
         "writing": "письмо",
         "speaking": "говорение",
     }
+    attempts = p.get("skill_attempts") or {}
     lines = []
     for k in ("grammar", "vocab", "reading", "listening", "writing", "speaking"):
-        if k in detail:
-            pct = int(round(float(detail[k]) * 100))
-            lines.append(f"· {skill_ru[k]}: <b>{pct}%</b>")
+        if k not in detail:
+            continue
+        r = detail[k]
+        ok_n, tot_n = 0, 0
+        if k in attempts:
+            try:
+                ok_n, tot_n = int(attempts[k][0]), int(attempts[k][1])
+            except Exception:
+                ok_n, tot_n = 0, 0
+        if r is None or (tot_n <= 0 and k not in ("writing", "speaking")):
+            lines.append(f"· {skill_ru[k]}: <b>не пройдено</b> <i>({ok_n}/{tot_n})</i>")
+        else:
+            pct = int(round(float(r) * 100))
+            if tot_n > 0:
+                lines.append(f"· {skill_ru[k]}: <b>{pct}%</b> <i>({ok_n}/{tot_n})</i>")
+            else:
+                lines.append(f"· {skill_ru[k]}: <b>{pct}%</b>")
     skills_block = "\n".join(lines) or "—"
 
     weak_topics = p.get("weak_topics") or []

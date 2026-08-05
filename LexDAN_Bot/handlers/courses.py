@@ -62,6 +62,7 @@ from services.course_placement import (
     progress_label,
     reading_done,
     reading_progress,
+    repair_placement_queues,
     results_html,
     score_speaking_utterance,
     score_writing,
@@ -361,6 +362,7 @@ async def _send_speaking(m: Message, p: dict) -> bool:
 
 async def _resume_phase(m: Message, user: dict, users: dict, uid: str) -> None:
     p = placement(user)
+    repair_placement_queues(p)
     phase = p.get("phase")
     if phase == "analyzing" or (phase == "speaking" and speaking_done(p)):
         await _finish_and_show(m, user, users, uid)
@@ -386,6 +388,9 @@ async def _resume_phase(m: Message, user: dict, users: dict, uid: str) -> None:
 async def _finish_and_show(m: Message, user: dict, users: dict, uid: str) -> None:
     p = placement(user)
     if p.get("finished"):
+        # пересчёт отображения (месяцы / «не пройдено») без потери ответов
+        finalize_placement(p)
+        save_users(users, only=uid)
         await m.answer(results_html(p), parse_mode="HTML", reply_markup=_courses_home_kb(user))
         return
 
@@ -475,6 +480,9 @@ async def course_results(m: Message):
     if not p.get("finished"):
         await m.answer("Сначала пройди тест.", reply_markup=_courses_home_kb(user))
         return
+    # пересчёт из skill_scores — старые 0% / одинаковые месяцы правятся
+    finalize_placement(p)
+    save_users(users, only=uid)
     await m.answer(results_html(p), parse_mode="HTML", reply_markup=_courses_home_kb(user))
 
 
@@ -562,6 +570,8 @@ async def course_test_continue(m: Message):
             reply_markup=_courses_home_kb(user),
         )
         return
+    repair_placement_queues(p)
+    save_users(users, only=uid)
     if p.get("phase") == "analyzing":
         await m.answer("Досчитываю результат…")
         await _finish_and_show(m, user, users, uid)
