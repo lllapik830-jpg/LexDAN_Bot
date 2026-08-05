@@ -65,6 +65,8 @@ from services.course_placement import (
     repair_placement_queues,
     reopen_mcq_sections_after_zero_bug,
     results_html,
+    mcq_display_options,
+    mcq_original_index,
     score_speaking_utterance,
     score_writing,
     skip_speaking_item,
@@ -227,7 +229,8 @@ async def _send_grammar(m: Message, p: dict) -> None:
     )
     if subtype in _GRAMMAR_MCQ:
         opts = list(item.get("options") or [])
-        await m.answer(head, parse_mode="HTML", reply_markup=_mcq_kb(opts))
+        disp = mcq_display_options(p, f"g:{item.get('id')}", opts)
+        await m.answer(head, parse_mode="HTML", reply_markup=_mcq_kb(disp))
         return
     if subtype == "order":
         words = list(item.get("words") or [])
@@ -245,6 +248,7 @@ async def _send_vocab(m: Message, p: dict) -> None:
         return
     cur, total = vocab_progress(p)
     opts = _vocab_options(item)
+    disp = mcq_display_options(p, f"v:{item.get('id')}", opts)
     direction = item.get("direction") or "en_ru"
     label = "EN → RU" if direction == "en_ru" else "RU → EN"
     await m.answer(
@@ -252,7 +256,7 @@ async def _send_vocab(m: Message, p: dict) -> None:
         f"Вопрос {cur}/{total}\n\n"
         f"<b>{_vocab_prompt(item)}</b>",
         parse_mode="HTML",
-        reply_markup=_mcq_kb(opts),
+        reply_markup=_mcq_kb(disp),
     )
 
 
@@ -275,9 +279,11 @@ async def _send_reading(m: Message, p: dict, *, users: dict | None = None, uid: 
     q = cur.get("q") or {}
     ri, total = reading_progress(p)
     opts = list(q.get("options") or [])
+    qid = q.get("id") or f"{pid}:{cur.get('q_index')}"
+    disp = mcq_display_options(p, f"r:{qid}", opts)
     await m.answer(
         f"Вопрос {ri}/{total}\n\n{q.get('prompt') or ''}",
-        reply_markup=_mcq_kb(opts),
+        reply_markup=_mcq_kb(disp),
     )
 
 
@@ -324,9 +330,10 @@ async def _send_listening(
     q = item.get("question") or {}
     li, total = listening_progress(p)
     opts = list(q.get("options") or [])
+    disp = mcq_display_options(p, f"l:{lid}", opts)
     await m.answer(
         f"Вопрос {li}/{total}\n\n{q.get('prompt') or ''}",
-        reply_markup=_mcq_kb(opts),
+        reply_markup=_mcq_kb(disp),
     )
 
 
@@ -714,11 +721,17 @@ async def course_text(m: Message):
         subtype = item.get("subtype") or "mcq"
         if subtype in _GRAMMAR_MCQ:
             opts = list(item.get("options") or [])
-            idx = _resolve_choice(text, opts)
+            key = f"g:{item.get('id')}"
+            disp = mcq_display_options(p, key, opts)
+            idx = _resolve_choice(text, disp)
             if idx is None:
                 await m.answer("Выбери вариант кнопкой (1, 2, 3…).")
                 return
-            answer_grammar_mcq(p, idx)
+            orig = mcq_original_index(p, key, idx, len(opts))
+            if orig is None:
+                await m.answer("Выбери вариант кнопкой (1, 2, 3…).")
+                return
+            answer_grammar_mcq(p, orig)
         elif subtype in _GRAMMAR_TEXT:
             answer_grammar_text(p, text)
         else:
@@ -739,11 +752,17 @@ async def course_text(m: Message):
         if not item:
             return
         opts = _vocab_options(item)
-        idx = _resolve_choice(text, opts)
+        key = f"v:{item.get('id')}"
+        disp = mcq_display_options(p, key, opts)
+        idx = _resolve_choice(text, disp)
         if idx is None:
             await m.answer("Выбери вариант кнопкой.")
             return
-        answer_vocab(p, idx)
+        orig = mcq_original_index(p, key, idx, len(opts))
+        if orig is None:
+            await m.answer("Выбери вариант кнопкой.")
+            return
+        answer_vocab(p, orig)
         save_users(users, only=uid)
         if vocab_done(p):
             begin_reading(p)
@@ -760,11 +779,18 @@ async def course_text(m: Message):
             return
         q = cur.get("q") or {}
         opts = list(q.get("options") or [])
-        idx = _resolve_choice(text, opts)
+        qid = q.get("id") or f"{cur.get('passage_id')}:{cur.get('q_index')}"
+        key = f"r:{qid}"
+        disp = mcq_display_options(p, key, opts)
+        idx = _resolve_choice(text, disp)
         if idx is None:
             await m.answer("Выбери вариант кнопкой.")
             return
-        answer_reading(p, idx)
+        orig = mcq_original_index(p, key, idx, len(opts))
+        if orig is None:
+            await m.answer("Выбери вариант кнопкой.")
+            return
+        answer_reading(p, orig)
         save_users(users, only=uid)
         if reading_done(p):
             begin_listening(p)
@@ -782,11 +808,17 @@ async def course_text(m: Message):
             return
         q = item.get("question") or {}
         opts = list(q.get("options") or [])
-        idx = _resolve_choice(text, opts)
+        key = f"l:{item.get('id')}"
+        disp = mcq_display_options(p, key, opts)
+        idx = _resolve_choice(text, disp)
         if idx is None:
             await m.answer("Выбери вариант кнопкой.")
             return
-        answer_listening(p, idx)
+        orig = mcq_original_index(p, key, idx, len(opts))
+        if orig is None:
+            await m.answer("Выбери вариант кнопкой.")
+            return
+        answer_listening(p, orig)
         save_users(users, only=uid)
         if listening_done(p):
             begin_writing(p)

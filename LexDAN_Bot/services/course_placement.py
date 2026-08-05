@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import math
+import random
 import re
 from typing import Any
 
@@ -315,14 +316,67 @@ def start_placement(user: dict) -> dict:
     return p
 
 
-def _mcq_ok(choice_idx: int, correct) -> bool:
-    """Сравнение индекса ответа с correct. Нельзя писать `correct or -1`: 0 — валидный индекс."""
-    if correct is None:
+def _correct_indices(item_or_q: dict) -> set[int]:
+    """Индексы верных вариантов: correct + correct_any (синонимы)."""
+    out: set[int] = set()
+    if not item_or_q:
+        return out
+    c = item_or_q.get("correct")
+    if c is not None:
+        try:
+            out.add(int(c))
+        except (TypeError, ValueError):
+            pass
+    for x in item_or_q.get("correct_any") or []:
+        try:
+            out.add(int(x))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def _mcq_ok(choice_idx: int, item_or_q) -> bool:
+    """choice_idx — индекс в исходном (неперемешанном) списке options."""
+    if isinstance(item_or_q, dict):
+        try:
+            return int(choice_idx) in _correct_indices(item_or_q)
+        except (TypeError, ValueError):
+            return False
+    # backward compat: сырой int
+    if item_or_q is None:
         return False
     try:
-        return int(choice_idx) == int(correct)
+        return int(choice_idx) == int(item_or_q)
     except (TypeError, ValueError):
         return False
+
+
+def mcq_display_options(p: dict, key: str, options: list[str]) -> list[str]:
+    """Перемешать варианты стабильно для вопроса; порядок хранится в placement."""
+    opts = list(options or [])
+    n = len(opts)
+    if n <= 1:
+        return opts
+    store = p.setdefault("mcq_order", {})
+    order = store.get(key)
+    if not isinstance(order, list) or len(order) != n or sorted(order) != list(range(n)):
+        order = list(range(n))
+        random.Random(f"mcq:{key}").shuffle(order)
+        # если после shuffle correct всё ещё на 0 и есть выбор — ещё раз
+        store[key] = order
+    return [opts[i] for i in order]
+
+
+def mcq_original_index(p: dict, key: str, display_idx: int, n: int) -> int | None:
+    store = p.get("mcq_order") or {}
+    order = store.get(key)
+    if not isinstance(order, list) or len(order) != n:
+        if 0 <= display_idx < n:
+            return display_idx
+        return None
+    if display_idx < 0 or display_idx >= n:
+        return None
+    return int(order[display_idx])
 
 
 def _looks_like_correct_zero_bug(p: dict) -> bool:
@@ -418,7 +472,7 @@ def answer_grammar_mcq(p: dict, choice_idx: int) -> bool:
     item = current_grammar(p)
     if not item:
         return False
-    ok = _mcq_ok(choice_idx, item.get("correct"))
+    ok = _mcq_ok(choice_idx, item)
     _bump(p, "grammar", ok, topic=item.get("topic"), level=item.get("level"))
     _note_recent(p, ok)
     p["grammar_i"] = int(p.get("grammar_i") or 0) + 1
@@ -460,7 +514,7 @@ def answer_vocab(p: dict, choice_idx: int) -> bool:
     item = current_vocab(p)
     if not item:
         return False
-    ok = _mcq_ok(choice_idx, item.get("correct"))
+    ok = _mcq_ok(choice_idx, item)
     _bump(p, "vocab", ok, topic=item.get("topic"), level=item.get("level"))
     _note_recent(p, ok)
     p["vocab_i"] = int(p.get("vocab_i") or 0) + 1
@@ -495,7 +549,7 @@ def answer_reading(p: dict, choice_idx: int) -> bool:
     if not cur:
         return False
     q = cur["q"]
-    ok = _mcq_ok(choice_idx, q.get("correct"))
+    ok = _mcq_ok(choice_idx, q)
     _bump(
         p,
         "reading",
@@ -540,7 +594,7 @@ def answer_listening(p: dict, choice_idx: int) -> bool:
     if not item:
         return False
     q = item.get("question") or {}
-    ok = _mcq_ok(choice_idx, q.get("correct"))
+    ok = _mcq_ok(choice_idx, q)
     _bump(p, "listening", ok, topic=item.get("topic"), level=item.get("level"))
     p["listening_i"] = int(p.get("listening_i") or 0) + 1
     return ok

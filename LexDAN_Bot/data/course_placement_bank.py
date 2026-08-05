@@ -497,6 +497,7 @@ VOCAB: list[dict] = [
         "prompt_en": "cloudy",
         "options_ru": ["облачный", "облако", "облачность", "пасмурный"],
         "correct": 0,
+        "correct_any": [0, 3],
     },
     {
         "id": "v10",
@@ -506,6 +507,7 @@ VOCAB: list[dict] = [
         "prompt_en": "office",
         "options_ru": ["офис", "офицер", "кабинет", "приемная"],
         "correct": 0,
+        "correct_any": [0, 2],
     },
     {
         "id": "v11",
@@ -524,6 +526,7 @@ VOCAB: list[dict] = [
         "prompt_en": "homework",
         "options_ru": ["домашнее задание", "домашняя работа", "домашка", "задание"],
         "correct": 0,
+        "correct_any": [0, 1, 2],
     },
     {
         "id": "v13",
@@ -542,6 +545,7 @@ VOCAB: list[dict] = [
         "prompt_en": "tradition",
         "options_ru": ["традиция", "традиционный", "обычай", "ритуал"],
         "correct": 0,
+        "correct_any": [0, 2],
     },
     {
         "id": "v15",
@@ -551,6 +555,7 @@ VOCAB: list[dict] = [
         "prompt_en": "password",
         "options_ru": ["пароль", "парольная", "код", "ключ"],
         "correct": 0,
+        "correct_any": [0, 2],
     },
     {
         "id": "v16",
@@ -558,8 +563,9 @@ VOCAB: list[dict] = [
         "topic": "work",
         "direction": "en_ru",
         "prompt_en": "deadline",
-        "options_ru": ["срок сдачи", "срочность", "дедлайн-день", "расписание"],
+        "options_ru": ["срок сдачи", "срочность", "дедлайн", "расписание"],
         "correct": 0,
+        "correct_any": [0, 2],
     },
     {
         "id": "v17",
