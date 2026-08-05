@@ -492,26 +492,30 @@ def _normalize_text(s: str) -> str:
     import re
 
     t = (s or "").strip().lower().replace("ё", "е")
-    t = t.replace("’", "'").replace("`", "'")
+    t = t.replace("’", "'").replace("`", "'").replace("ʻ", "'")
+    # не придираемся к апострофам: don't == dont
+    t = t.replace("'", "")
     t = re.sub(r"[.!?,;:\"«»()\[\]{}]", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
     return t
 
 
 def _answer_aliases(text: str) -> set[str]:
-    """Варианты написания одного ответа (can't/cannot, there's/there is)."""
+    """Варианты написания одного ответа (cant/cannot, theres/there is)."""
     n = _normalize_text(text)
     out = {n}
     if not n:
         return out
-    out.add(n.replace("cannot", "can't").replace("can not", "can't"))
-    out.add(n.replace("can't", "cannot"))
-    out.add(n.replace("there's", "there is"))
-    out.add(n.replace("there is", "there's"))
-    out.add(n.replace("there're", "there are"))
-    out.add(n.replace("there are", "there're"))
-    out.add(n.replace("i am", "i'm"))
-    out.add(n.replace("i'm", "i am"))
+    out.add(n.replace("cannot", "cant").replace("can not", "cant"))
+    out.add(n.replace("cant", "cannot"))
+    out.add(n.replace("theres", "there is"))
+    out.add(n.replace("there is", "theres"))
+    out.add(n.replace("therere", "there are"))
+    out.add(n.replace("there are", "therere"))
+    out.add(n.replace("i am", "im"))
+    out.add(n.replace("im", "i am"))
+    out.add(n.replace("it is", "its"))
+    out.add(n.replace("its", "it is"))
     return {x for x in out if x}
 
 
@@ -562,7 +566,9 @@ def check_write_answer(
     subtype: str = "write",
     accept: list[str] | None = None,
 ) -> dict:
-    # Локальная проверка — без GPT (быстрее и справедливее к синонимам)
+    import re
+
+    raw = (user_answer or "").strip()
     if answers_equivalent(model_answer, user_answer, accept):
         return {"correct": True, "feedback_ru": "Верно!"}
 
@@ -572,29 +578,81 @@ def check_write_answer(
             "feedback_ru": f"Нужна форма: <b>{model_answer}</b>",
         }
 
+    words = re.findall(r"[A-Za-zА-Яа-яЁё]+", raw)
+    if len(raw) < 3 or len(words) < 2:
+        return {
+            "correct": False,
+            "feedback_ru": "Нужно целое предложение, а не набор символов. Попробуй ещё раз.",
+        }
+
+    latin = len(re.findall(r"[A-Za-z]", raw))
+    cyr = len(re.findall(r"[А-Яа-яЁё]", raw))
+
+    if subtype == "translate_en":
+        if latin < 4 or cyr > latin:
+            return {
+                "correct": False,
+                "feedback_ru": "Нужен перевод <b>на английский</b>. Напиши английское предложение.",
+            }
+    elif subtype == "translate_ru":
+        if cyr < 4 or latin > cyr * 2:
+            return {
+                "correct": False,
+                "feedback_ru": "Нужен перевод <b>на русский</b>. Напиши русское предложение.",
+            }
+
+    # Грубый анти-бред: почти нет пересечения значимых слов с эталоном/accept
+    def _content_tokens(s: str) -> set[str]:
+        stop = {
+            "a", "an", "the", "to", "of", "in", "on", "at", "for", "and", "or",
+            "is", "are", "am", "be", "и", "в", "на", "с", "по", "к", "из", "это",
+        }
+        toks = set(_normalize_text(s).split())
+        return {x for x in toks if len(x) > 2 and x not in stop}
+
+    model_toks: set[str] = set()
+    for a in [model_answer, *(accept or [])]:
+        model_toks |= _content_tokens(a)
+    user_toks = _content_tokens(raw)
+    if model_toks and user_toks:
+        overlap = len(model_toks & user_toks) / max(1, len(model_toks))
+        if overlap < 0.2 and len(user_toks) >= 2:
+            return {
+                "correct": False,
+                "feedback_ru": (
+                    "По смыслу далеко от нужного перевода. "
+                    f"Ориентир: <b>{model_answer}</b>"
+                ),
+            }
+
     task_hint = ""
     if subtype == "translate_en":
         task_hint = (
-            "Student must translate Russian to English using topic grammar. "
-            "Accept minor wording differences if grammar and meaning match. "
-            "Accept a/the variants when both are natural."
+            "Student must translate Russian→English with correct topic grammar. "
+            "Accept only real translations that keep the same meaning. "
+            "Accept a/the and natural contractions. "
+            "Reject gibberish, random words, unrelated sentences, or wrong language."
         )
     elif subtype == "translate_ru":
         task_hint = (
-            "Student must translate English to Russian. "
-            "Accept natural synonyms (ученики/студенты, сумка/пакет, etc.). "
-            "Do NOT reject for punctuation or capitalization."
+            "Student must translate English→Russian with the same meaning. "
+            "Accept natural synonyms. "
+            "Reject gibberish, random words, unrelated sentences, or English-only answers."
         )
+    else:
+        task_hint = "Reject nonsense. Accept only answers that match meaning and grammar."
 
     data = _ask_json(
         [
             {
                 "role": "system",
                 "content": (
-                    "Check student's answer for a grammar exercise. "
-                    "Be FAIR and LENIENT with synonyms and natural wording. "
-                    "Meaning + target grammar matter more than exact wording. "
-                    "If the student answer is essentially correct, correct=true. "
+                    "You are a STRICT English grammar tutor checking one exercise. "
+                    "correct=true ONLY if the student answer clearly matches the model "
+                    "meaning and uses acceptable grammar for the task. "
+                    "If unsure, or answer is junk/unrelated/wrong language → correct=false. "
+                    "Do NOT be lenient with random text. "
+                    "Ignore capitalization, punctuation, and apostrophe style. "
                     f"{task_hint} "
                     'Return ONLY JSON: {"correct":bool,"feedback_ru":"short friendly Russian"}'
                 ),
@@ -610,10 +668,22 @@ def check_write_answer(
                 ),
             },
         ],
-        {"correct": False, "feedback_ru": "Попробуй ещё раз, чуть точнее по теме."},
+        {"correct": False, "feedback_ru": "Попробуй ещё раз, ближе к правильному переводу."},
         temperature=0.0,
     )
-    # страховка: если модель снова придралась к почти точному ответу
+    if not isinstance(data, dict):
+        data = {"correct": False, "feedback_ru": "Попробуй ещё раз."}
+    # GPT не должен принимать бред: повторная локальная страховка
+    if data.get("correct") and model_toks and user_toks:
+        overlap = len(model_toks & user_toks) / max(1, len(model_toks))
+        if overlap < 0.2:
+            return {
+                "correct": False,
+                "feedback_ru": (
+                    "Пока неверно. Нужен перевод по смыслу задания. "
+                    f"Пример: <b>{model_answer}</b>"
+                ),
+            }
     if not data.get("correct") and answers_equivalent(model_answer, user_answer, accept):
         return {"correct": True, "feedback_ru": "Верно!"}
     return data

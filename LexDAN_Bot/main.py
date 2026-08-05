@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher
 from flask import Flask, jsonify, request
 
 from config import BOT_TOKEN, PUBLIC_BASE_URL
-from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses
+from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +35,7 @@ dp.include_routers(
     daily_fire.router,  # Огонь дня до catch-all меню
     secret_missions.router,  # кнопка секрета до catch-all меню
     courses.router,  # курсы / placement до catch-all меню
+    daily_reviews.router,  # офферы повторения grammar/vocab
     menu.router,
     payments.router,
     voice.router,
@@ -135,6 +136,7 @@ async def main():
         else:
             logging.info("PUBLIC_BASE_URL пуст — укажи его в env для уведомлений ЮKassa")
         asyncio.create_task(_reminder_loop())
+        asyncio.create_task(_daily_review_loop())
         asyncio.create_task(_trial_last_day_offer_loop())
         asyncio.create_task(_autorenew_loop())
         asyncio.create_task(_event_finalize_loop())
@@ -163,6 +165,26 @@ async def _event_announce_once():
             )
     except Exception as e:
         logging.error(f"Event announce error: {e}")
+
+
+
+
+async def _daily_review_loop():
+    """Каждые 5 мин: grammar-оффер в 12:00 МСК, vocab-оффер в 16:00 МСК."""
+    from services.daily_reviews import send_grammar_review_offers, send_vocab_review_offers
+
+    await asyncio.sleep(70)
+    while True:
+        try:
+            g = await send_grammar_review_offers(bot)
+            if g.get("sent"):
+                logging.info("Grammar review offers: %s", g)
+            v = await send_vocab_review_offers(bot)
+            if v.get("sent"):
+                logging.info("Vocab review offers: %s", v)
+        except Exception as e:
+            logging.error(f"Daily review loop error: {e}")
+        await asyncio.sleep(300)
 
 
 async def _reminder_loop():

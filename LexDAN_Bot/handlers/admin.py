@@ -951,3 +951,106 @@ async def admin_preview_place_4(m: Message):
         parse_mode="HTML",
     )
     await deliver_place_4_10(m.bot, m.chat.id)
+
+@router.message(Command("promo_scan"))
+async def admin_promo_scan(m: Message, command: CommandObject):
+    if not _is_admin(m):
+        return
+    code = (command.args or "").strip() or "ENGRICO77"
+    from services.promo import scan_promo_users, normalize_promo
+    from services.growth import is_premium, premium_days_left
+
+    key = normalize_promo(code)
+    rows = scan_promo_users(key)
+    if not rows:
+        await m.answer(f"Промо <b>{key}</b>: никого в базе.", parse_mode="HTML")
+        return
+    lines = [f"🎟 <b>{key}</b> — найдено: {len(rows)}\n"]
+    for uid, user in rows[:60]:
+        cur = (user.get("promo_trial_code") or "")
+        active = bool(user.get("in_promo_trial")) and is_premium(user)
+        days = premium_days_left(user) if is_premium(user) else 0
+        flag = "🟢 ACTIVE" if active else ("🟡 flagged" if user.get("in_promo_trial") or cur == key else "⚪️ used")
+        lines.append(
+            f"• <code>{uid}</code> {user.get('name') or ''} — {flag}"
+            f" trial={user.get('in_promo_trial')} code={cur or '—'} prem_days={days}"
+        )
+    await m.answer("\n".join(lines), parse_mode="HTML")
+
+
+@router.message(Command("promo_revoke"))
+async def admin_promo_revoke(m: Message, command: CommandObject):
+    if not _is_admin(m):
+        return
+    code = (command.args or "").strip() or "ENGRICO77"
+    from services.promo import scan_promo_users, revoke_promo_trial, normalize_promo
+
+    key = normalize_promo(code)
+    users = load_users()
+    rows = scan_promo_users(key)
+    revoked = 0
+    listed = 0
+    for uid, _ in rows:
+        listed += 1
+        user = get_user(users, uid)
+        if revoke_promo_trial(user, key):
+            revoked += 1
+            save_users(users, only=uid)
+    await m.answer(
+        f"Промо <b>{key}</b>: проверено {listed}, снято активных: <b>{revoked}</b>.\n"
+        "Новые активации и так закрыты (active=False).",
+        parse_mode="HTML",
+    )
+
+@router.message(Command("review_test"))
+async def admin_review_test(m: Message, command: CommandObject):
+    """Тест оффера только себе (не рассылка)."""
+    if not _is_admin(m):
+        return
+    kind = ((command.args or "").strip().lower() or "grammar")
+    from services.daily_reviews import grammar_offer_kb, vocab_offer_kb
+    from services.grammar_review import completed_practice_topics
+    import random
+
+    uid = str(m.from_user.id)
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_growth(user)
+    name = user.get("name") or "друг"
+    if kind.startswith("v"):
+        user["vocab_review_offer_date"] = ""
+        text = (
+            f"🦜 <b>{name}, время освежить слова!</b>\n\n"
+            "Заглянем в изученные слова и фразы? Короткая сессия повторения "
+            "очень помогает памяти — я рядом, без давления 😊\n\n"
+            "Жми «Повторить» — открою раздел заданий по всем уровням."
+        )
+        await m.answer(text, parse_mode="HTML", reply_markup=vocab_offer_kb())
+        save_users(users, only=uid)
+        await m.answer("Тест vocab-оффера отправлен себе.")
+        return
+
+    topics = completed_practice_topics(user)
+    if not topics:
+        await m.answer(
+            "Нет пройденных practice-тем Grammar — пройди тему с заданиями, "
+            "потом /review_test grammar"
+        )
+        return
+    level, tid, title = random.choice(topics)
+    user["grammar_review_offer_date"] = ""
+    user["grammar_review_offer_topic"] = {
+        "level": level,
+        "topic_id": tid,
+        "title": title,
+    }
+    text = (
+        f"🦜 <b>Эй, {name}!</b>\n\n"
+        f"Давай закрепим материал? Тема <b>{title}</b> — для памяти лучше "
+        f"повторить пройденное 💚\n\n"
+        "Жми «Повторить материал» — 5 свежих заданий."
+    )
+    await m.answer(text, parse_mode="HTML", reply_markup=grammar_offer_kb())
+    save_users(users, only=uid)
+    await m.answer(f"Тест grammar-оффера · тема <code>{level}:{tid}</code>", parse_mode="HTML")
+

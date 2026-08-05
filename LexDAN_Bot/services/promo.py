@@ -156,3 +156,52 @@ def collect_trial_ended_users() -> list[tuple[str, str]]:
     if touched:
         save_users(users, only=touched)
     return out
+
+def scan_promo_users(code: str) -> list[tuple[str, dict]]:
+    """Пользователи с этим промокодом (текущий trial или used_promos)."""
+    from services.database import load_users, get_user
+    from services.growth import ensure_growth
+
+    key = normalize_promo(code)
+    users = load_users()
+    out: list[tuple[str, dict]] = []
+    for uid, raw in users.items():
+        if not isinstance(raw, dict):
+            continue
+        user = get_user(users, str(uid))
+        ensure_growth(user)
+        used = [normalize_promo(x) for x in list(user.get("used_promos") or []) if x]
+        cur = normalize_promo(str(user.get("promo_trial_code") or ""))
+        if key in used or cur == key:
+            out.append((str(uid), user))
+    return out
+
+
+def revoke_promo_trial(user: dict, code: str) -> bool:
+    """
+    Снять активный триал этого промокода.
+    premium_until обнуляем только если in_promo_trial ещё True
+    (чтобы не снести оплаченную подписку).
+    """
+    from services.growth import ensure_growth
+
+    ensure_growth(user)
+    key = normalize_promo(code)
+    cur = normalize_promo(str(user.get("promo_trial_code") or ""))
+    used = [normalize_promo(x) for x in list(user.get("used_promos") or []) if x]
+    if cur != key and not (user.get("in_promo_trial") and key in used):
+        return False
+    changed = False
+    if user.get("in_promo_trial") and (cur == key or not cur):
+        user["premium_until"] = 0
+        user["in_promo_trial"] = False
+        user["trial_end_notified"] = True
+        changed = True
+    if cur == key:
+        user["promo_trial_code"] = ""
+        user["promo_listening"] = False
+        changed = True
+    if changed:
+        maybe_cleanup_expired_trial_voice(user)
+    return changed
+
