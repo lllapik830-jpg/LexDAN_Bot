@@ -315,6 +315,58 @@ def start_placement(user: dict) -> dict:
     return p
 
 
+def _mcq_ok(choice_idx: int, correct) -> bool:
+    """Сравнение индекса ответа с correct. Нельзя писать `correct or -1`: 0 — валидный индекс."""
+    if correct is None:
+        return False
+    try:
+        return int(choice_idx) == int(correct)
+    except (TypeError, ValueError):
+        return False
+
+
+def _looks_like_correct_zero_bug(p: dict) -> bool:
+    """Исторический баг: correct:0 считался неверным → целые секции 0/N."""
+    for skill, expected_tot in (("vocab", 50), ("reading", 30), ("listening", 25)):
+        ok, tot = _skill_attempts(p, skill)
+        if tot >= max(10, expected_tot // 2) and ok == 0:
+            return True
+    return False
+
+
+def reopen_mcq_sections_after_zero_bug(p: dict) -> bool:
+    """
+    Сбросить только лексику/чтение/аудирование и вернуть к vocab,
+    сохранив грамматику / письмо / говорение.
+    """
+    if not p.get("finished"):
+        return False
+    if not _looks_like_correct_zero_bug(p):
+        return False
+    adapt = p.get("adapt_max_level") or "B2"
+    for skill in ("vocab", "reading", "listening"):
+        p.setdefault("skill_scores", {})[skill] = [0, 0]
+        p.setdefault("weighted", {})[skill] = 0.0
+        p.setdefault("weight_max", {})[skill] = 0.0
+    # темы от MCQ-секций были ложными нулями
+    p["topic_scores"] = {}
+    p["vocab_queue"] = _build_vocab_queue(adapt)
+    p["vocab_i"] = 0
+    p["reading_flat"] = []
+    p["reading_i"] = 0
+    p["listening_queue"] = []
+    p["listening_i"] = 0
+    p["listening_audio_sent"] = None
+    p["finished"] = False
+    p["phase"] = "vocab"
+    p["entry_level"] = None
+    p["overall_score"] = None
+    p["skill_details"] = {}
+    p["weak_topics"] = []
+    p["strong_topics"] = []
+    return True
+
+
 def _bump(p: dict, skill: str, ok: bool, *, topic: str | None = None, level: str | None = None) -> None:
     sc = p["skill_scores"].setdefault(skill, [0, 0])
     sc[1] += 1
@@ -366,7 +418,7 @@ def answer_grammar_mcq(p: dict, choice_idx: int) -> bool:
     item = current_grammar(p)
     if not item:
         return False
-    ok = int(choice_idx) == int(item.get("correct") or -1)
+    ok = _mcq_ok(choice_idx, item.get("correct"))
     _bump(p, "grammar", ok, topic=item.get("topic"), level=item.get("level"))
     _note_recent(p, ok)
     p["grammar_i"] = int(p.get("grammar_i") or 0) + 1
@@ -408,7 +460,7 @@ def answer_vocab(p: dict, choice_idx: int) -> bool:
     item = current_vocab(p)
     if not item:
         return False
-    ok = int(choice_idx) == int(item.get("correct") or -1)
+    ok = _mcq_ok(choice_idx, item.get("correct"))
     _bump(p, "vocab", ok, topic=item.get("topic"), level=item.get("level"))
     _note_recent(p, ok)
     p["vocab_i"] = int(p.get("vocab_i") or 0) + 1
@@ -443,7 +495,7 @@ def answer_reading(p: dict, choice_idx: int) -> bool:
     if not cur:
         return False
     q = cur["q"]
-    ok = int(choice_idx) == int(q.get("correct") or -1)
+    ok = _mcq_ok(choice_idx, q.get("correct"))
     _bump(
         p,
         "reading",
@@ -488,7 +540,7 @@ def answer_listening(p: dict, choice_idx: int) -> bool:
     if not item:
         return False
     q = item.get("question") or {}
-    ok = int(choice_idx) == int(q.get("correct") or -1)
+    ok = _mcq_ok(choice_idx, q.get("correct"))
     _bump(p, "listening", ok, topic=item.get("topic"), level=item.get("level"))
     p["listening_i"] = int(p.get("listening_i") or 0) + 1
     return ok

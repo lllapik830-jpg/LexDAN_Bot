@@ -63,6 +63,7 @@ from services.course_placement import (
     reading_done,
     reading_progress,
     repair_placement_queues,
+    reopen_mcq_sections_after_zero_bug,
     results_html,
     score_speaking_utterance,
     score_writing,
@@ -388,6 +389,17 @@ async def _resume_phase(m: Message, user: dict, users: dict, uid: str) -> None:
 async def _finish_and_show(m: Message, user: dict, users: dict, uid: str) -> None:
     p = placement(user)
     if p.get("finished"):
+        if reopen_mcq_sections_after_zero_bug(p):
+            save_users(users, only=uid)
+            await m.answer(
+                "⚠️ Ошибка проверки MCQ: вариант №1 всегда считался неверным. "
+                "Лексику/чтение/аудирование нужно пройти заново "
+                "(грамматика, письмо и говорение сохранены).",
+                reply_markup=_courses_home_kb(user),
+            )
+            await m.answer("Дальше — <b>словарь</b> (50 слов).", parse_mode="HTML")
+            await _send_vocab(m, p)
+            return
         # пересчёт отображения (месяцы / «не пройдено») без потери ответов
         finalize_placement(p)
         save_users(users, only=uid)
@@ -477,6 +489,21 @@ async def course_results(m: Message):
     users = users_for(uid)
     user = get_user(users, uid)
     p = placement(user)
+    if reopen_mcq_sections_after_zero_bug(p):
+        save_users(users, only=uid)
+        await m.answer(
+            "⚠️ Нашлась ошибка в проверке тестов с вариантами: правильный ответ №1 "
+            "всегда считался неверным. Из‑за этого лексика/чтение/аудирование "
+            "получили 0%, хотя ты мог отвечать правильно.\n\n"
+            "Грамматику, письмо и говорение сохранили. "
+            "Сейчас нужно заново пройти <b>словарь → чтение → аудирование</b> "
+            "(потом результат пересчитается).",
+            parse_mode="HTML",
+            reply_markup=_courses_home_kb(user),
+        )
+        await m.answer("Дальше — <b>словарь</b> (50 слов).", parse_mode="HTML")
+        await _send_vocab(m, p)
+        return
     if not p.get("finished"):
         await m.answer("Сначала пройди тест.", reply_markup=_courses_home_kb(user))
         return
