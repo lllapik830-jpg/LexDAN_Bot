@@ -1054,3 +1054,18 @@ async def admin_review_test(m: Message, command: CommandObject):
     save_users(users, only=uid)
     await m.answer(f"Тест grammar-оффера · тема <code>{level}:{tid}</code>", parse_mode="HTML")
 
+@router.message(Command("grant_batch_3d"))
+async def admin_grant_batch_3d(m: Message):
+    if not _is_admin(m):
+        return
+    from services.reg_campaign import deliver_batch_3d_trials
+
+    await m.answer("⏳ Раздаю 3 дня безлимита списку…")
+    result = await deliver_batch_3d_trials(m.bot)
+    await m.answer(
+        "✅ Batch 3d: "
+        f"granted={result.get('granted')} sent={result.get('sent')} "
+        f"skipped={result.get('skipped')} fail={result.get('fail')} "
+        f"total={result.get('total')}"
+    )
+

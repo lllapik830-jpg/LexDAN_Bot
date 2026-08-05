@@ -141,9 +141,23 @@ async def main():
         asyncio.create_task(_autorenew_loop())
         asyncio.create_task(_event_finalize_loop())
         asyncio.create_task(_event_announce_once())
+        asyncio.create_task(_batch_3d_grant_once())
         await dp.start_polling(bot, handle_as_tasks=True)
     finally:
         release_bot_lock()
+
+
+
+async def _batch_3d_grant_once():
+    """Разовый грант 3 дней безлимита списку + DM."""
+    from services.reg_campaign import deliver_batch_3d_trials
+
+    await asyncio.sleep(25)
+    try:
+        result = await deliver_batch_3d_trials(bot)
+        logging.info("Batch 3d trial grant: %s", result)
+    except Exception as e:
+        logging.error(f"Batch 3d grant error: {e}")
 
 
 async def _event_announce_once():
