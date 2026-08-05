@@ -1,40 +1,39 @@
 """
-Вступительный placement-тест курса «до B2».
+Вступительный placement-тест курса «до B2» (~30+ мин).
 
-Логика близка к Cambridge CEPT (~30 мин):
-1) Language Knowledge (2 раунда MCQ, адаптивный второй раунд)
-2) Reading
-3) Listening (+ TTS)
-4) Writing
-5) Speaking (голос + STT)
-
-Результат: CEFR A0–B2, weak/strong skills, старт темы, срок, цена.
+Порядок: Grammar(40) → Vocab(50) → Reading(30) → Listening(25) → Writing → Speaking-интервью(до 20 ответов).
+Строгий скоринг, адаптив по ошибкам, слабые места по темам.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
 from data.course_placement_bank import (
+    GRAMMAR,
     LEVEL_ORDER,
-    LISTENING,
-    LK_ROUND1_IDS,
-    LK_ROUND2_HIGH_IDS,
-    LK_ROUND2_LOW_IDS,
-    READING,
-    SPEAKING,
-    WRITING,
-    lk_by_id,
-    nearest_listening_level,
-    nearest_reading_level,
+    LISTENING_ITEMS,
+    READING_PASSAGES,
+    SPEAKING_INTERVIEW,
+    TOPIC_LABELS_RU,
+    VOCAB,
+    WRITING_PROMPTS,
+    grammar_by_id,
+    vocab_by_id,
 )
 
 BTN_COURSES = "🎓 Курсы"
+BTN_COURSE_START_TEST = "▶️ Пройти вступительный тест"
+BTN_COURSE_CONTINUE = "▶️ Продолжить тест"
+BTN_COURSE_RESULTS = "📋 Мой результат теста"
+BTN_COURSE_BUY = "💳 Купить курс"
+BTN_COURSE_ABOUT = "ℹ️ Как устроен курс"
+BTN_SKIP_SPEAKING = "⏭ Пропустить вопрос"
 
 
 def courses_allowed(user_id: str | int | None) -> bool:
-    """Пока раздел только для менеджера (превью до публичного запуска)."""
     if user_id is None:
         return False
     from config import MANAGER_ID
@@ -44,26 +43,18 @@ def courses_allowed(user_id: str | int | None) -> bool:
     except (TypeError, ValueError):
         return False
 
-BTN_COURSE_START_TEST = "▶️ Пройти вступительный тест"
-BTN_COURSE_CONTINUE = "▶️ Продолжить тест"
-BTN_COURSE_RESULTS = "📋 Мой результат теста"
-BTN_COURSE_BUY = "💳 Купить курс"
-BTN_COURSE_ABOUT = "ℹ️ Как устроен курс"
-BTN_SKIP_SPEAKING = "⏭ Пропустить говорение"
 
 INTRO_HTML = (
     "🎓 <b>Курс LexDAN · путь до B2</b>\n\n"
-    "Персональная программа от твоего уровня до уверенного B2.\n"
-    "Рико ведёт как репетитор: тема → практика → экзамен (≥80%), "
-    "без прыжков вперёд.\n\n"
-    "Сначала — <b>вступительный тест</b> (ориентир Cambridge Placement):\n"
-    "· язык (грамматика + лексика)\n"
-    "· чтение\n"
-    "· аудирование\n"
-    "· письмо\n"
-    "· говорение\n\n"
-    "⏱ Обычно <b>25–35 минут</b>. Можно сделать паузу и продолжить позже.\n"
-    "По результату покажем уровень, слабые места, срок и цену."
+    "Персональная программа от твоего уровня до уверенного B2.\n\n"
+    "Сначала — <b>полный вступительный тест</b> (~30–40 мин):\n"
+    "· грамматика — 40 заданий (от лёгких к сложным)\n"
+    "· словарь — 50 слов (EN↔RU)\n"
+    "· чтение — 30 вопросов по разным текстам\n"
+    "· аудирование — 25 аудио + вопросы на понимание\n"
+    "· письмо — 8 предложений на тему\n"
+    "· говорение — собеседование (до 20 ответов)\n\n"
+    "Можно поставить паузу. По результату — уровень, слабые темы, срок и цена."
 )
 
 PRICE_BY_LEVEL = {
@@ -71,18 +62,10 @@ PRICE_BY_LEVEL = {
     "A1": 12900,
     "A2": 10900,
     "B1": 9900,
-    "B2": 0,  # курс «до B2» не нужен
-}
-
-HOURS_TO_B2 = {
-    "A0": 550,
-    "A1": 450,
-    "A2": 320,
-    "B1": 200,
     "B2": 0,
 }
 
-# Старт программы (id тем — логические; контент тем подключим позже)
+HOURS_TO_B2 = {"A0": 550, "A1": 450, "A2": 320, "B1": 200, "B2": 0}
 START_TOPIC = {
     "A0": "A0.T1",
     "A1": "A1.T1",
@@ -91,17 +74,60 @@ START_TOPIC = {
     "B2": "DONE",
 }
 
-LEVEL_POINTS = {"A0": 1, "A1": 2, "A2": 3, "B1": 4, "B2": 5}
+SPEAKING_TARGET = 20
+LEVEL_WEIGHT = {"A0": 1.0, "A1": 1.2, "A2": 1.5, "B1": 1.9, "B2": 2.4}
+
+# пороги итогового weighted score → CEFR (строже)
+SCORE_TO_LEVEL = (
+    (0.22, "A0"),
+    (0.38, "A1"),
+    (0.55, "A2"),
+    (0.72, "B1"),
+    (1.01, "B2"),
+)
+
+
+def _norm(s: str) -> str:
+    t = (s or "").strip().lower().replace("ё", "е")
+    t = t.replace("’", "'").replace("`", "'").replace("'", "")
+    t = re.sub(r"[.!?,;:\"«»()\[\]{}]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def answers_match(model: str, user: str, accept: list[str] | None = None) -> bool:
+    u = _norm(user)
+    if not u:
+        return False
+    cands = {_norm(model)}
+    for a in accept or []:
+        cands.add(_norm(a))
+    if u in cands:
+        return True
+    # can't/cannot
+    alts = {u.replace("cannot", "cant").replace("can not", "cant"), u.replace("cant", "cannot")}
+    return bool(alts & cands)
 
 
 def _blank_state() -> dict:
     return {
-        "phase": None,  # intro|lk1|lk2|reading|listening|writing|speaking|done
-        "lk_ids": [],
-        "lk_i": 0,
-        "lk_correct": 0,
-        "lk_answered": 0,
-        "lk_by_skill": {"grammar": [0, 0], "vocab": [0, 0]},  # ok, total
+        "phase": None,
+        "version": 2,
+        "grammar_queue": [],
+        "grammar_i": 0,
+        "vocab_queue": [],
+        "vocab_i": 0,
+        "reading_flat": [],
+        "reading_i": 0,
+        "listening_queue": [],
+        "listening_i": 0,
+        "writing_level": "A2",
+        "speaking_queue": [],
+        "speaking_i": 0,
+        "speaking_answers": 0,
+        "speaking_skipped_n": 0,
+        "adapt_max_level": "B2",
+        "recent_results": [],
         "skill_scores": {
             "grammar": [0, 0],
             "vocab": [0, 0],
@@ -110,38 +136,33 @@ def _blank_state() -> dict:
             "writing": [0, 0],
             "speaking": [0, 0],
         },
-        "provisional": "A2",
-        "reading_level": "A2",
-        "reading_i": 0,
-        "listening_level": "A2",
-        "listening_i": 0,
-        "listening_script": "",
-        "writing_level": "A2",
-        "speaking_level": "A2",
-        "speaking_i": 0,
+        "topic_scores": {},
+        "weighted": {"grammar": 0.0, "vocab": 0.0, "reading": 0.0, "listening": 0.0},
+        "weight_max": {"grammar": 0.0, "vocab": 0.0, "reading": 0.0, "listening": 0.0},
+        "writing_score": 0.0,
+        "speaking_score": 0.0,
+        "speaking_transcripts": [],
         "entry_level": None,
         "weak_skills": [],
         "strong_skills": [],
+        "weak_topics": [],
+        "strong_topics": [],
+        "skill_details": {},
         "months_45": None,
         "months_60": None,
         "price": None,
         "start_topic_id": None,
         "finished": False,
+        "overall_score": None,
     }
 
 
 def ensure_course(user: dict) -> dict:
     if "course" not in user or not isinstance(user.get("course"), dict):
-        user["course"] = {
-            "placement": _blank_state(),
-            "purchased": False,
-            "active": False,
-        }
+        user["course"] = {"placement": _blank_state(), "purchased": False, "active": False}
     user["course"].setdefault("purchased", False)
     user["course"].setdefault("active", False)
-    if "placement" not in user["course"] or not isinstance(
-        user["course"]["placement"], dict
-    ):
+    if "placement" not in user["course"] or not isinstance(user["course"]["placement"], dict):
         user["course"]["placement"] = _blank_state()
     else:
         blank = _blank_state()
@@ -155,238 +176,414 @@ def placement(user: dict) -> dict:
     return user["course"]["placement"]
 
 
+def _level_idx(lvl: str) -> int:
+    return LEVEL_ORDER.index(lvl) if lvl in LEVEL_ORDER else 2
+
+
+def _build_adaptive_grammar_queue(max_level: str) -> list[str]:
+    cap = _level_idx(max_level)
+    ids = []
+    for g in GRAMMAR:
+        if _level_idx(g.get("level") or "A0") <= cap:
+            ids.append(g["id"])
+    return ids
+
+
+def _build_vocab_queue(max_level: str) -> list[str]:
+    cap = _level_idx(max_level)
+    ids = []
+    for v in VOCAB:
+        if _level_idx(v.get("level") or "A0") <= cap:
+            ids.append(v["id"])
+    # если адаптив срезал слишком много — всё равно минимум 30
+    if len(ids) < 30:
+        ids = [v["id"] for v in VOCAB]
+    return ids
+
+
+def _build_reading_flat(max_level: str) -> list[dict]:
+    cap = _level_idx(max_level)
+    flat = []
+    for pass_ in READING_PASSAGES:
+        if _level_idx(pass_.get("level") or "A0") > cap + 1:
+            # оставляем чуть выше ceiling для честного потолка, но не всё B2 при A0
+            if cap <= 1 and _level_idx(pass_.get("level") or "A0") >= 3:
+                continue
+        for q in pass_.get("questions") or []:
+            flat.append(
+                {
+                    "passage_id": pass_["id"],
+                    "passage_level": pass_.get("level"),
+                    "passage_topic": pass_.get("topic"),
+                    "passage_title": pass_.get("title") or "",
+                    "passage_text": pass_.get("text") or "",
+                    "q": q,
+                }
+            )
+    if len(flat) < 15:
+        flat = []
+        for pass_ in READING_PASSAGES:
+            for q in pass_.get("questions") or []:
+                flat.append(
+                    {
+                        "passage_id": pass_["id"],
+                        "passage_level": pass_.get("level"),
+                        "passage_topic": pass_.get("topic"),
+                        "passage_title": pass_.get("title") or "",
+                        "passage_text": pass_.get("text") or "",
+                        "q": q,
+                    }
+                )
+    return flat
+
+
+def _build_listening_queue(max_level: str) -> list[str]:
+    cap = _level_idx(max_level)
+    ids = []
+    for it in LISTENING_ITEMS:
+        if _level_idx(it.get("level") or "A0") <= cap + 1:
+            ids.append(it["id"])
+    if len(ids) < 12:
+        ids = [it["id"] for it in LISTENING_ITEMS]
+    return ids
+
+
 def start_placement(user: dict) -> dict:
     ensure_course(user)
     p = _blank_state()
-    p["phase"] = "lk1"
-    p["lk_ids"] = list(LK_ROUND1_IDS)
-    p["lk_i"] = 0
+    p["phase"] = "grammar"
+    p["adapt_max_level"] = "B2"
+    p["grammar_queue"] = _build_adaptive_grammar_queue("B2")
+    p["grammar_i"] = 0
     user["course"]["placement"] = p
     return p
 
 
-def current_lk_item(p: dict) -> dict | None:
-    ids = p.get("lk_ids") or []
-    i = int(p.get("lk_i") or 0)
-    if i < 0 or i >= len(ids):
-        return None
-    return lk_by_id(ids[i])
-
-
-def _bump_skill(p: dict, skill: str, ok: bool) -> None:
+def _bump(p: dict, skill: str, ok: bool, *, topic: str | None = None, level: str | None = None) -> None:
     sc = p["skill_scores"].setdefault(skill, [0, 0])
     sc[1] += 1
     if ok:
         sc[0] += 1
-    if skill in ("grammar", "vocab"):
-        lv = p["lk_by_skill"].setdefault(skill, [0, 0])
-        lv[1] += 1
+    if topic:
+        ts = p["topic_scores"].setdefault(topic, [0, 0])
+        ts[1] += 1
         if ok:
-            lv[0] += 1
+            ts[0] += 1
+    if level and skill in ("grammar", "vocab", "reading", "listening"):
+        w = float(LEVEL_WEIGHT.get(level) or 1.0)
+        p["weight_max"][skill] = float(p["weight_max"].get(skill) or 0) + w
+        if ok:
+            p["weighted"][skill] = float(p["weighted"].get(skill) or 0) + w
 
 
-def answer_lk(p: dict, choice_idx: int) -> tuple[bool, str]:
-    item = current_lk_item(p)
+def _note_recent(p: dict, ok: bool) -> None:
+    recent = list(p.get("recent_results") or [])
+    recent.append(1 if ok else 0)
+    p["recent_results"] = recent[-12:]
+
+
+def _maybe_adapt(p: dict) -> None:
+    """Если в начале много ошибок — понижаем потолок сложности."""
+    recent = p.get("recent_results") or []
+    if len(recent) < 6:
+        return
+    ratio = sum(recent) / len(recent)
+    cur = p.get("adapt_max_level") or "B2"
+    if ratio < 0.35 and _level_idx(cur) > 1:
+        p["adapt_max_level"] = LEVEL_ORDER[max(1, _level_idx(cur) - 1)]
+    elif ratio < 0.5 and _level_idx(cur) > 2:
+        p["adapt_max_level"] = LEVEL_ORDER[_level_idx(cur) - 1]
+    elif ratio > 0.85 and _level_idx(cur) < 4:
+        p["adapt_max_level"] = LEVEL_ORDER[min(4, _level_idx(cur) + 1)]
+
+
+def current_grammar(p: dict) -> dict | None:
+    """Все 40 grammar по порядку (легкие→сложные). Адаптив влияет на следующие секции."""
+    q = p.get("grammar_queue") or []
+    i = int(p.get("grammar_i") or 0)
+    if i < 0 or i >= len(q):
+        return None
+    return grammar_by_id(q[i])
+
+
+def answer_grammar_mcq(p: dict, choice_idx: int) -> bool:
+    item = current_grammar(p)
     if not item:
-        return False, "Нет текущего вопроса."
-    ok = int(choice_idx) == int(item["correct"])
-    _bump_skill(p, item.get("skill") or "grammar", ok)
-    p["lk_answered"] = int(p.get("lk_answered") or 0) + 1
-    if ok:
-        p["lk_correct"] = int(p.get("lk_correct") or 0) + 1
-    p["lk_i"] = int(p.get("lk_i") or 0) + 1
-    return ok, "ok"
+        return False
+    ok = int(choice_idx) == int(item.get("correct") or -1)
+    _bump(p, "grammar", ok, topic=item.get("topic"), level=item.get("level"))
+    _note_recent(p, ok)
+    p["grammar_i"] = int(p.get("grammar_i") or 0) + 1
+    _maybe_adapt(p)
+    return ok
 
 
-def lk_round_done(p: dict) -> bool:
-    return int(p.get("lk_i") or 0) >= len(p.get("lk_ids") or [])
+def answer_grammar_text(p: dict, text: str) -> bool:
+    item = current_grammar(p)
+    if not item:
+        return False
+    ok = answers_match(item.get("answer") or "", text, list(item.get("accept") or []))
+    _bump(p, "grammar", ok, topic=item.get("topic"), level=item.get("level"))
+    _note_recent(p, ok)
+    p["grammar_i"] = int(p.get("grammar_i") or 0) + 1
+    _maybe_adapt(p)
+    return ok
 
 
-def after_lk1_choose_round2(p: dict) -> None:
-    """Адаптивный второй раунд как в CEPT: ниже/выше по результатам 1-го."""
-    total = max(1, int(p.get("lk_answered") or 1))
-    ratio = int(p.get("lk_correct") or 0) / total
-    if ratio < 0.45:
-        p["lk_ids"] = list(LK_ROUND2_LOW_IDS)
-        p["provisional"] = "A1"
-    elif ratio < 0.7:
-        p["lk_ids"] = list(LK_ROUND2_LOW_IDS[:3] + LK_ROUND2_HIGH_IDS[:3])
-        p["provisional"] = "A2"
-    else:
-        p["lk_ids"] = list(LK_ROUND2_HIGH_IDS)
-        p["provisional"] = "B1"
-    p["lk_i"] = 0
-    p["phase"] = "lk2"
+def grammar_done(p: dict) -> bool:
+    return int(p.get("grammar_i") or 0) >= len(p.get("grammar_queue") or [])
 
 
-def provisional_from_lk(p: dict) -> str:
-    """Грубая оценка после всех LK (вес по уровню задания)."""
-    # Используем уже накопленные ответы: пересчитаем по id нельзя — храним score proxy
-    correct = int(p.get("lk_correct") or 0)
-    answered = max(1, int(p.get("lk_answered") or 1))
-    ratio = correct / answered
-    if ratio < 0.25:
-        lvl = "A0"
-    elif ratio < 0.4:
-        lvl = "A1"
-    elif ratio < 0.58:
-        lvl = "A2"
-    elif ratio < 0.75:
-        lvl = "B1"
-    else:
-        lvl = "B2"
-    p["provisional"] = lvl
-    return lvl
+def begin_vocab(p: dict) -> None:
+    p["phase"] = "vocab"
+    p["vocab_queue"] = _build_vocab_queue(p.get("adapt_max_level") or "B2")
+    p["vocab_i"] = 0
+
+
+def current_vocab(p: dict) -> dict | None:
+    q = p.get("vocab_queue") or []
+    i = int(p.get("vocab_i") or 0)
+    if i < 0 or i >= len(q):
+        return None
+    return vocab_by_id(q[i])
+
+
+def answer_vocab(p: dict, choice_idx: int) -> bool:
+    item = current_vocab(p)
+    if not item:
+        return False
+    ok = int(choice_idx) == int(item.get("correct") or -1)
+    _bump(p, "vocab", ok, topic=item.get("topic"), level=item.get("level"))
+    _note_recent(p, ok)
+    p["vocab_i"] = int(p.get("vocab_i") or 0) + 1
+    _maybe_adapt(p)
+    return ok
+
+
+def vocab_done(p: dict) -> bool:
+    return int(p.get("vocab_i") or 0) >= len(p.get("vocab_queue") or [])
 
 
 def begin_reading(p: dict) -> None:
-    lvl = nearest_reading_level(provisional_from_lk(p))
-    p["reading_level"] = lvl
-    p["reading_i"] = 0
     p["phase"] = "reading"
+    p["reading_flat"] = _build_reading_flat(p.get("adapt_max_level") or "B2")
+    p["reading_i"] = 0
+    p["reading_last_passage"] = None
 
 
-def current_reading_q(p: dict) -> tuple[dict, dict] | None:
-    block = READING.get(p.get("reading_level") or "A2") or READING["A2"]
-    qs = block["questions"]
+def current_reading(p: dict) -> dict | None:
+    flat = p.get("reading_flat") or []
     i = int(p.get("reading_i") or 0)
-    if i >= len(qs):
+    if i < 0 or i >= len(flat):
         return None
-    return block, qs[i]
+    return flat[i]
 
 
 def answer_reading(p: dict, choice_idx: int) -> bool:
-    cur = current_reading_q(p)
+    cur = current_reading(p)
     if not cur:
         return False
-    _block, q = cur
-    ok = int(choice_idx) == int(q["correct"])
-    _bump_skill(p, "reading", ok)
+    q = cur["q"]
+    ok = int(choice_idx) == int(q.get("correct") or -1)
+    _bump(
+        p,
+        "reading",
+        ok,
+        topic=cur.get("passage_topic"),
+        level=cur.get("passage_level"),
+    )
     p["reading_i"] = int(p.get("reading_i") or 0) + 1
     return ok
 
 
 def reading_done(p: dict) -> bool:
-    block = READING.get(p.get("reading_level") or "A2") or READING["A2"]
-    return int(p.get("reading_i") or 0) >= len(block["questions"])
+    return int(p.get("reading_i") or 0) >= len(p.get("reading_flat") or [])
 
 
 def begin_listening(p: dict) -> None:
-    lvl = nearest_listening_level(p.get("provisional") or "A2")
-    # подстроить по reading
-    r_ok, r_tot = p["skill_scores"].get("reading") or [0, 0]
-    if r_tot and (r_ok / r_tot) < 0.4:
-        idx = max(0, LEVEL_ORDER.index(lvl) - 1)
-        lvl = LEVEL_ORDER[idx]
-    elif r_tot and (r_ok / r_tot) > 0.85:
-        idx = min(len(LEVEL_ORDER) - 1, LEVEL_ORDER.index(lvl) + 1)
-        lvl = LEVEL_ORDER[idx]
-    block = LISTENING.get(lvl) or LISTENING["A2"]
-    p["listening_level"] = lvl
-    p["listening_script"] = block["script"]
-    p["listening_i"] = 0
     p["phase"] = "listening"
+    p["listening_queue"] = _build_listening_queue(p.get("adapt_max_level") or "B2")
+    p["listening_i"] = 0
 
 
-def current_listening_q(p: dict) -> dict | None:
-    block = LISTENING.get(p.get("listening_level") or "A2") or LISTENING["A2"]
-    qs = block["questions"]
+def _listening_by_id(lid: str) -> dict | None:
+    for it in LISTENING_ITEMS:
+        if it["id"] == lid:
+            return it
+    return None
+
+
+def current_listening(p: dict) -> dict | None:
+    q = p.get("listening_queue") or []
     i = int(p.get("listening_i") or 0)
-    if i >= len(qs):
+    if i < 0 or i >= len(q):
         return None
-    return qs[i]
+    return _listening_by_id(q[i])
 
 
 def answer_listening(p: dict, choice_idx: int) -> bool:
-    q = current_listening_q(p)
-    if not q:
+    item = current_listening(p)
+    if not item:
         return False
-    ok = int(choice_idx) == int(q["correct"])
-    _bump_skill(p, "listening", ok)
+    q = item.get("question") or {}
+    ok = int(choice_idx) == int(q.get("correct") or -1)
+    _bump(p, "listening", ok, topic=item.get("topic"), level=item.get("level"))
     p["listening_i"] = int(p.get("listening_i") or 0) + 1
     return ok
 
 
 def listening_done(p: dict) -> bool:
-    block = LISTENING.get(p.get("listening_level") or "A2") or LISTENING["A2"]
-    return int(p.get("listening_i") or 0) >= len(block["questions"])
+    return int(p.get("listening_i") or 0) >= len(p.get("listening_queue") or [])
+
+
+def _provisional_level(p: dict) -> str:
+    scores = []
+    for skill in ("grammar", "vocab", "reading", "listening"):
+        got = float(p["weighted"].get(skill) or 0)
+        mx = float(p["weight_max"].get(skill) or 0)
+        if mx > 0:
+            scores.append(got / mx)
+    if not scores:
+        return "A1"
+    avg = sum(scores) / len(scores)
+    for thr, lvl in SCORE_TO_LEVEL:
+        if avg < thr:
+            return lvl
+    return "B2"
 
 
 def begin_writing(p: dict) -> None:
-    lvl = p.get("provisional") or "A2"
-    p["writing_level"] = lvl if lvl in WRITING else "A2"
+    lvl = _provisional_level(p)
+    if lvl not in WRITING_PROMPTS:
+        lvl = "A2"
+    # при слабом результате не даём B2-промпт
+    if _level_idx(lvl) > _level_idx(p.get("adapt_max_level") or "B2"):
+        lvl = p.get("adapt_max_level") or "A2"
+    p["writing_level"] = lvl
     p["phase"] = "writing"
 
 
 def score_writing(p: dict, text: str) -> float:
-    """0..1 по длине/предложениям (без GPT)."""
-    meta = WRITING.get(p.get("writing_level") or "A2") or WRITING["A2"]
+    meta = WRITING_PROMPTS.get(p.get("writing_level") or "A2") or WRITING_PROMPTS["A2"]
     t = (text or "").strip()
     chars = len(t)
-    sentences = max(1, len([x for x in re.split(r"[.!?]+", t) if x.strip()]))
-    # латиница
+    sentences = [x for x in re.split(r"[.!?]+", t) if x.strip()]
+    n_sent = len(sentences)
     latin = len(re.findall(r"[A-Za-z]", t))
+    cyr = len(re.findall(r"[А-Яа-яЁё]", t))
     latin_ratio = latin / max(1, chars)
+    words = re.findall(r"[A-Za-z']+", t)
+    unique = len({w.lower() for w in words})
 
     score = 0.0
-    if chars >= int(meta["min_chars"]):
-        score += 0.45
-    elif chars >= int(meta["min_chars"]) * 0.6:
-        score += 0.25
-    if sentences >= int(meta["min_sentences"]):
+    need_s = int(meta.get("min_sentences") or 8)
+    need_c = int(meta.get("min_chars") or 120)
+    if n_sent >= need_s:
         score += 0.35
-    elif sentences >= max(1, int(meta["min_sentences"]) - 2):
+    elif n_sent >= max(3, need_s - 3):
+        score += 0.18
+    if chars >= need_c:
+        score += 0.25
+    elif chars >= need_c * 0.6:
+        score += 0.12
+    if latin_ratio >= 0.75 and cyr < latin:
         score += 0.2
-    if latin_ratio >= 0.7:
+    elif latin_ratio >= 0.5:
+        score += 0.08
+    if unique >= 18:
         score += 0.2
-    elif latin_ratio >= 0.45:
+    elif unique >= 10:
         score += 0.1
 
+    # анти-бред: слишком мало разных слов
+    if unique < 6 or len(words) < 12:
+        score = min(score, 0.25)
+
+    p["writing_score"] = round(min(1.0, score), 2)
     ok = score >= 0.55
-    # пишем как ok/total в долях: используем 1 attempt
     p["skill_scores"]["writing"] = [1 if ok else 0, 1]
-    # сохраним сырой score для тонкой настройки уровня
-    p["writing_score"] = round(score, 2)
-    return score
+    return p["writing_score"]
 
 
 def begin_speaking(p: dict) -> None:
-    lvl = p.get("provisional") or "A2"
-    p["speaking_level"] = lvl if lvl in SPEAKING else "A2"
-    p["speaking_i"] = 0
     p["phase"] = "speaking"
+    p["speaking_queue"] = [s["id"] for s in SPEAKING_INTERVIEW]
+    p["speaking_i"] = 0
+    p["speaking_answers"] = 0
+    p["speaking_skipped_n"] = 0
+    p["speaking_transcripts"] = []
+
+
+def _speaking_by_id(sid: str) -> dict | None:
+    for s in SPEAKING_INTERVIEW:
+        if s["id"] == sid:
+            return s
+    return None
 
 
 def current_speaking(p: dict) -> dict | None:
-    items = SPEAKING.get(p.get("speaking_level") or "A2") or SPEAKING["A2"]
-    i = int(p.get("speaking_i") or 0)
-    if i >= len(items):
+    if int(p.get("speaking_answers") or 0) >= SPEAKING_TARGET:
         return None
-    return items[i]
+    q = p.get("speaking_queue") or []
+    i = int(p.get("speaking_i") or 0)
+    while i < len(q):
+        item = _speaking_by_id(q[i])
+        if not item:
+            i += 1
+            p["speaking_i"] = i
+            continue
+        if _level_idx(item.get("level") or "A0") > _level_idx(p.get("adapt_max_level") or "B2") + 1:
+            i += 1
+            p["speaking_i"] = i
+            continue
+        p["speaking_current_id"] = item["id"]
+        return item
+    return None
+
+
+def advance_speaking_pointer(p: dict) -> None:
+    p["speaking_i"] = int(p.get("speaking_i") or 0) + 1
 
 
 def score_speaking_utterance(p: dict, transcript: str | None) -> bool:
-    """Простая проверка: есть распознанный английский текст."""
     t = (transcript or "").strip()
     words = re.findall(r"[A-Za-z]+", t)
-    ok = len(words) >= 3 or (len(words) >= 1 and len(t) >= 8)
+    ok = len(words) >= 4
+    if len(words) >= 8:
+        ok = True
     sc = p["skill_scores"].setdefault("speaking", [0, 0])
     sc[1] += 1
     if ok:
         sc[0] += 1
-    p["speaking_i"] = int(p.get("speaking_i") or 0) + 1
+    p["speaking_answers"] = int(p.get("speaking_answers") or 0) + 1
+    advance_speaking_pointer(p)
+    if t:
+        p.setdefault("speaking_transcripts", []).append(t[:240])
+    # speaking_score = доля + бонус за длину
+    tot = max(1, sc[1])
+    avg_len = sum(len(re.findall(r"[A-Za-z]+", x)) for x in (p.get("speaking_transcripts") or [])) / max(
+        1, len(p.get("speaking_transcripts") or [])
+    )
+    p["speaking_score"] = round(min(1.0, (sc[0] / tot) * 0.75 + min(0.25, avg_len / 40)), 2)
     return ok
 
 
 def skip_speaking_item(p: dict) -> None:
     sc = p["skill_scores"].setdefault("speaking", [0, 0])
     sc[1] += 1
-    p["speaking_i"] = int(p.get("speaking_i") or 0) + 1
+    p["speaking_answers"] = int(p.get("speaking_answers") or 0) + 1
+    p["speaking_skipped_n"] = int(p.get("speaking_skipped_n") or 0) + 1
+    advance_speaking_pointer(p)
+    tot = max(1, sc[1])
+    p["speaking_score"] = round(sc[0] / tot * 0.7, 2)
 
 
 def speaking_done(p: dict) -> bool:
-    items = SPEAKING.get(p.get("speaking_level") or "A2") or SPEAKING["A2"]
-    return int(p.get("speaking_i") or 0) >= len(items)
+    if int(p.get("speaking_answers") or 0) >= SPEAKING_TARGET:
+        return True
+    # вопросы закончились
+    q = p.get("speaking_queue") or []
+    return int(p.get("speaking_i") or 0) >= len(q) and current_speaking(p) is None
 
 
 def _skill_ratio(p: dict, skill: str) -> float | None:
@@ -396,82 +593,118 @@ def _skill_ratio(p: dict, skill: str) -> float | None:
     return ok / tot
 
 
+def _weighted_ratio(p: dict, skill: str) -> float | None:
+    mx = float(p["weight_max"].get(skill) or 0)
+    if mx <= 0:
+        return _skill_ratio(p, skill)
+    return float(p["weighted"].get(skill) or 0) / mx
+
+
 def finalize_placement(p: dict) -> dict:
-    """Итоговый CEFR + слабые/сильные + оффер."""
-    base = p.get("provisional") or "A2"
-    idx = LEVEL_ORDER.index(base) if base in LEVEL_ORDER else 2
+    parts = []
+    weights = {
+        "grammar": 0.25,
+        "vocab": 0.15,
+        "reading": 0.2,
+        "listening": 0.2,
+        "writing": 0.1,
+        "speaking": 0.1,
+    }
+    detail = {}
+    for skill, w in weights.items():
+        if skill == "writing":
+            r = float(p.get("writing_score") or 0)
+        elif skill == "speaking":
+            r = float(p.get("speaking_score") or 0)
+        else:
+            r = _weighted_ratio(p, skill)
+            if r is None:
+                r = _skill_ratio(p, skill) or 0.0
+        detail[skill] = round(float(r), 3)
+        parts.append(float(r) * w)
 
-    # корректировки по skills
-    adjustments = 0
-    for skill, thr_low, thr_high, delta in (
-        ("reading", 0.34, 0.85, 1),
-        ("listening", 0.34, 0.85, 1),
-        ("writing", 0.45, 0.85, 1),
-        ("speaking", 0.4, 0.85, 1),
-    ):
-        r = _skill_ratio(p, skill)
-        if r is None:
-            continue
-        if r < thr_low:
-            adjustments -= 1
-        elif r >= thr_high:
-            adjustments += 0  # не раздуваем выше базы слишком легко
+    overall = sum(parts)
+    p["overall_score"] = round(overall, 3)
+    p["skill_details"] = detail
 
-    # writing_score тонкая подстройка
-    ws = float(p.get("writing_score") or 0)
-    if ws and ws < 0.4:
-        adjustments -= 1
-    elif ws >= 0.85:
-        adjustments += 1
+    entry = "A0"
+    for thr, lvl in SCORE_TO_LEVEL:
+        if overall < thr:
+            entry = lvl
+            break
+    else:
+        entry = "B2"
 
-    # LK overall
-    lk_r = int(p.get("lk_correct") or 0) / max(1, int(p.get("lk_answered") or 1))
-    if lk_r < 0.3:
-        adjustments -= 1
-    elif lk_r >= 0.85:
-        adjustments += 1
+    # жёсткие потолки
+    skipped = int(p.get("speaking_skipped_n") or 0)
+    speak_n = int(p.get("speaking_answers") or 0)
+    if speak_n < SPEAKING_TARGET * 0.5 or skipped >= 10:
+        entry = LEVEL_ORDER[min(_level_idx(entry), _level_idx("A2"))]
+    elif skipped >= 5 or (detail.get("speaking") or 0) < 0.35:
+        entry = LEVEL_ORDER[min(_level_idx(entry), _level_idx("B1"))]
 
-    idx = max(0, min(len(LEVEL_ORDER) - 1, idx + max(-2, min(2, adjustments))))
-    entry = LEVEL_ORDER[idx]
+    # B2 только если всё достаточно ровно и speaking не провален
+    if entry == "B2":
+        if (detail.get("speaking") or 0) < 0.55:
+            entry = "B1"
+        if min(detail.get("grammar", 0), detail.get("reading", 0), detail.get("listening", 0)) < 0.5:
+            entry = "B1"
+        if skipped >= 3:
+            entry = "B1"
+
+    # если grammar/vocab совсем слабые — не выше A1/A2
+    g = detail.get("grammar") or 0
+    v = detail.get("vocab") or 0
+    if g < 0.3 and v < 0.35:
+        entry = LEVEL_ORDER[min(_level_idx(entry), _level_idx("A1"))]
+    elif g < 0.45:
+        entry = LEVEL_ORDER[min(_level_idx(entry), _level_idx("A2"))]
+
     p["entry_level"] = entry
 
-    # weak / strong
-    ratios: list[tuple[str, float]] = []
-    for skill in ("grammar", "vocab", "reading", "listening", "writing", "speaking"):
-        r = _skill_ratio(p, skill)
-        if r is None:
-            continue
-        ratios.append((skill, r))
-    ratios.sort(key=lambda x: x[1])
-    weak = [s for s, r in ratios if r < 0.6][:2]
-    if not weak and ratios:
-        weak = [ratios[0][0]]
-    strong = [s for s, r in sorted(ratios, key=lambda x: -x[1]) if r >= 0.75][:2]
+    # skills weak/strong
+    skill_ru_order = sorted(detail.items(), key=lambda x: x[1])
+    weak = [s for s, r in skill_ru_order if r < 0.55][:3]
+    if not weak and skill_ru_order:
+        weak = [skill_ru_order[0][0]]
+    strong = [s for s, r in sorted(detail.items(), key=lambda x: -x[1]) if r >= 0.7][:3]
     p["weak_skills"] = weak
     p["strong_skills"] = strong
 
-    # срок
+    # topics
+    topic_ratios = []
+    for topic, (ok, tot) in (p.get("topic_scores") or {}).items():
+        if tot >= 2:
+            topic_ratios.append((topic, ok / tot, tot))
+    topic_ratios.sort(key=lambda x: x[1])
+    weak_topics = []
+    for topic, r, tot in topic_ratios:
+        if r < 0.55:
+            label = TOPIC_LABELS_RU.get(topic) or topic
+            weak_topics.append(f"{label} ({int(r*100)}%)")
+        if len(weak_topics) >= 6:
+            break
+    strong_topics = []
+    for topic, r, tot in sorted(topic_ratios, key=lambda x: -x[1]):
+        if r >= 0.75:
+            label = TOPIC_LABELS_RU.get(topic) or topic
+            strong_topics.append(f"{label} ({int(r*100)}%)")
+        if len(strong_topics) >= 4:
+            break
+    p["weak_topics"] = weak_topics
+    p["strong_topics"] = strong_topics
+
     h = float(HOURS_TO_B2.get(entry) or 0)
-    weak_mult = 1.0
-    for w in weak:
-        weak_mult += {
-            "grammar": 0.08,
-            "vocab": 0.04,
-            "reading": 0.04,
-            "listening": 0.1,
-            "writing": 0.06,
-            "speaking": 0.1,
-        }.get(w, 0.05)
-    import math
+    weak_mult = 1.0 + 0.05 * len(weak_topics) + 0.06 * len(weak)
 
     def _months(hours_per_month: float) -> int:
         if h <= 0:
             return 0
         m = math.ceil((h * weak_mult) / hours_per_month)
-        return int(max(4, min(16, m)))
+        return int(max(4, min(18, m)))
 
-    p["months_45"] = _months(22)  # ~45 мин/день
-    p["months_60"] = _months(30)  # ~60 мин/день
+    p["months_45"] = _months(22)
+    p["months_60"] = _months(30)
     p["price"] = int(PRICE_BY_LEVEL.get(entry) or 12900)
     p["start_topic_id"] = START_TOPIC.get(entry) or "A2.T1"
     p["phase"] = "done"
@@ -481,8 +714,7 @@ def finalize_placement(p: dict) -> dict:
 
 def results_html(p: dict) -> str:
     entry = p.get("entry_level") or "?"
-    weak = p.get("weak_skills") or []
-    strong = p.get("strong_skills") or []
+    detail = p.get("skill_details") or {}
     skill_ru = {
         "grammar": "грамматика",
         "vocab": "лексика",
@@ -491,47 +723,90 @@ def results_html(p: dict) -> str:
         "writing": "письмо",
         "speaking": "говорение",
     }
-    weak_s = ", ".join(skill_ru.get(x, x) for x in weak) or "пока ровно"
-    strong_s = ", ".join(skill_ru.get(x, x) for x in strong) or "ещё уточним в курсе"
+    lines = []
+    for k in ("grammar", "vocab", "reading", "listening", "writing", "speaking"):
+        if k in detail:
+            pct = int(round(float(detail[k]) * 100))
+            lines.append(f"· {skill_ru[k]}: <b>{pct}%</b>")
+    skills_block = "\n".join(lines) or "—"
+
+    weak_topics = p.get("weak_topics") or []
+    strong_topics = p.get("strong_topics") or []
+    weak_s = ", ".join(skill_ru.get(x, x) for x in (p.get("weak_skills") or [])) or "—"
+    strong_s = ", ".join(skill_ru.get(x, x) for x in (p.get("strong_skills") or [])) or "—"
+    wt = "\n".join(f"· {x}" for x in weak_topics) or "· пока без явных провалов по темам"
+    st = "\n".join(f"· {x}" for x in strong_topics) or "· уточним в курсе"
+    overall = p.get("overall_score")
+    overall_s = f"{int(round(float(overall)*100))}%" if overall is not None else "—"
     price = int(p.get("price") or 0)
     m45 = p.get("months_45")
     m60 = p.get("months_60")
 
+    head = (
+        "📋 <b>Результат вступительного теста</b>\n\n"
+        f"Итоговый уровень входа: <b>{entry}</b>\n"
+        f"Общий балл: <b>{overall_s}</b>\n\n"
+        f"<b>Навыки</b>\n{skills_block}\n\n"
+        f"Сильные стороны: <b>{strong_s}</b>\n"
+        f"Слабые навыки: <b>{weak_s}</b>\n\n"
+        f"<b>Слабые темы</b>\n{wt}\n\n"
+        f"<b>Сильные темы</b>\n{st}\n\n"
+    )
+
     if entry == "B2" and price <= 0:
-        return (
-            "📋 <b>Результат вступительного теста</b>\n\n"
-            f"Уровень: <b>B2</b> (уже около цели курса)\n"
-            f"Сильные стороны: <b>{strong_s}</b>\n"
-            f"Зоны роста: <b>{weak_s}</b>\n\n"
-            "Курс «путь до B2» тебе как основной пакет не обязателен — "
-            "можешь качать навыки в обычных уроках и общении с Рико."
+        return head + (
+            "Курс «путь до B2» как основной пакет не обязателен — "
+            "можно качать навыки в уроках и общении с Рико."
         )
 
     return (
-        "📋 <b>Результат вступительного теста</b>\n\n"
-        f"Уровень входа: <b>{entry}</b>\n"
-        f"Сильные стороны: <b>{strong_s}</b>\n"
-        f"Слабые места: <b>{weak_s}</b>\n"
-        f"Старт программы: тема <code>{p.get('start_topic_id')}</code>\n\n"
+        head
+        + f"Старт программы: тема <code>{p.get('start_topic_id')}</code>\n\n"
         f"⏱ До B2 ориентировочно:\n"
         f"· ~45 мин/день → <b>~{m45} мес</b>\n"
         f"· ~60 мин/день → <b>~{m60} мес</b>\n\n"
-        f"💳 Курс с твоего уровня: <b>{price:,}₽</b>\n"
-        "<i>(полный путь до B2, персональный план под слабые места)</i>\n\n"
-        "Оплату курса подключим на следующем шаге — "
-        "сейчас можно сохранить результат и вернуться."
-    ).replace(",", " ")
+        f"💳 Курс с твоего уровня: <b>{price}₽</b>\n"
+        "<i>полный путь до B2 под твои слабые места</i>"
+    )
 
 
 def progress_label(p: dict) -> str:
-    phase = p.get("phase") or ""
     names = {
-        "lk1": "Язык · раунд 1",
-        "lk2": "Язык · раунд 2",
+        "grammar": "Грамматика",
+        "vocab": "Словарь",
         "reading": "Чтение",
         "listening": "Аудирование",
         "writing": "Письмо",
-        "speaking": "Говорение",
+        "speaking": "Собеседование",
+        "analyzing": "Анализ",
         "done": "Готово",
     }
-    return names.get(phase, phase)
+    return names.get(p.get("phase") or "", p.get("phase") or "")
+
+
+def grammar_progress(p: dict) -> tuple[int, int]:
+    return int(p.get("grammar_i") or 0) + 1, len(p.get("grammar_queue") or [])
+
+
+def vocab_progress(p: dict) -> tuple[int, int]:
+    return int(p.get("vocab_i") or 0) + 1, len(p.get("vocab_queue") or [])
+
+
+def reading_progress(p: dict) -> tuple[int, int]:
+    return int(p.get("reading_i") or 0) + 1, len(p.get("reading_flat") or [])
+
+
+def listening_progress(p: dict) -> tuple[int, int]:
+    return int(p.get("listening_i") or 0) + 1, len(p.get("listening_queue") or [])
+
+
+PROCESSING_STEPS = [
+    "🦜 Рико обрабатывает лексику…",
+    "🦜 Рико обрабатывает грамматику…",
+    "🦜 Рико обрабатывает чтение…",
+    "🦜 Рико обрабатывает аудирование…",
+    "🦜 Рико обрабатывает письмо…",
+    "🦜 Рико обрабатывает говорение…",
+    "🦜 Рико собирает слабые темы…",
+    "🦜 Почти готово — считаю итоговый уровень…",
+]

@@ -1,5 +1,5 @@
 """
-Раздел «Курсы»: intro + вступительный placement-тест.
+Раздел «Курсы»: intro + вступительный placement-тест (v2).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from services.database import (
     set_mode,
     users_for,
 )
-from data.course_placement_bank import LISTENING, WRITING
+from data.course_placement_bank import WRITING_PROMPTS
 from services.course_placement import (
     BTN_COURSE_ABOUT,
     BTN_COURSE_BUY,
@@ -30,39 +30,65 @@ from services.course_placement import (
     BTN_COURSE_RESULTS,
     BTN_COURSE_START_TEST,
     BTN_COURSES,
-    courses_allowed,
     BTN_SKIP_SPEAKING,
     INTRO_HTML,
+    PROCESSING_STEPS,
+    SPEAKING_TARGET,
+    answer_grammar_mcq,
+    answer_grammar_text,
     answer_listening,
-    answer_lk,
     answer_reading,
-    after_lk1_choose_round2,
+    answer_vocab,
     begin_listening,
     begin_reading,
     begin_speaking,
+    begin_vocab,
     begin_writing,
-    current_listening_q,
-    current_lk_item,
-    current_reading_q,
+    courses_allowed,
+    current_grammar,
+    current_listening,
+    current_reading,
     current_speaking,
+    current_vocab,
     ensure_course,
     finalize_placement,
+    grammar_done,
+    grammar_progress,
     listening_done,
-    lk_round_done,
+    listening_progress,
     placement,
     progress_label,
     reading_done,
+    reading_progress,
     results_html,
     score_speaking_utterance,
     score_writing,
     skip_speaking_item,
     speaking_done,
     start_placement,
+    vocab_done,
+    vocab_progress,
 )
 from services.growth import ensure_growth
 
 log = logging.getLogger(__name__)
 router = Router()
+
+_GRAMMAR_MCQ = {"mcq", "gap_choice"}
+_GRAMMAR_TEXT = {"word_form", "rewrite", "order"}
+
+_NAV_TEXTS = {
+    BTN_COURSES,
+    BTN_COURSE_START_TEST,
+    BTN_COURSE_CONTINUE,
+    BTN_COURSE_RESULTS,
+    BTN_COURSE_BUY,
+    BTN_COURSE_ABOUT,
+    BTN_SKIP_SPEAKING,
+    "⏸ Пауза · в меню курсов",
+    "🔙 Вернуться в меню",
+}
+
 
 async def _deny_if_closed(m: Message) -> bool:
     """True = доступ закрыт, уже ответили/молчали."""
@@ -82,7 +108,6 @@ async def _deny_if_closed(m: Message) -> bool:
     return True
 
 
-
 def _courses_home_kb(user: dict) -> ReplyKeyboardMarkup:
     p = placement(user)
     rows = []
@@ -91,7 +116,7 @@ def _courses_home_kb(user: dict) -> ReplyKeyboardMarkup:
         if int(p.get("price") or 0) > 0:
             rows.append([KeyboardButton(text=BTN_COURSE_BUY)])
         rows.append([KeyboardButton(text=BTN_COURSE_START_TEST)])
-    elif p.get("phase") and p.get("phase") not in (None, "done", "intro"):
+    elif p.get("phase") and p.get("phase") not in (None, "done", "intro", "analyzing"):
         rows.append([KeyboardButton(text=BTN_COURSE_CONTINUE)])
         rows.append([KeyboardButton(text=BTN_COURSE_START_TEST)])
     else:
@@ -101,10 +126,8 @@ def _courses_home_kb(user: dict) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def _mcq_kb(options: list[str], *, extra: list[str] | None = None) -> ReplyKeyboardMarkup:
+def _mcq_kb(options: list[str]) -> ReplyKeyboardMarkup:
     rows = [[KeyboardButton(text=f"{i + 1}. {opt}")] for i, opt in enumerate(options)]
-    if extra:
-        rows.append([KeyboardButton(text=x) for x in extra])
     rows.append([KeyboardButton(text="⏸ Пауза · в меню курсов")])
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
@@ -114,7 +137,6 @@ def _parse_mcq(text: str, n: int) -> int | None:
     t = (text or "").strip()
     if not t:
         return None
-    # "1." / "1" / "1. answer"
     if t[0].isdigit():
         try:
             idx = int(t.split(".", 1)[0].strip()) - 1
@@ -122,6 +144,22 @@ def _parse_mcq(text: str, n: int) -> int | None:
                 return idx
         except ValueError:
             pass
+    return None
+
+
+def _resolve_choice(text: str, options: list[str]) -> int | None:
+    """Match by number or by exact option text (strip leading 'N. ')."""
+    n = len(options)
+    idx = _parse_mcq(text, n)
+    if idx is not None:
+        return idx
+    t = (text or "").strip()
+    stripped = t
+    if t and t[0].isdigit() and "." in t[:5]:
+        stripped = t.split(".", 1)[1].strip()
+    for i, opt in enumerate(options):
+        if t == opt or stripped == opt:
+            return i
     return None
 
 
@@ -135,46 +173,107 @@ def _pause_kb() -> ReplyKeyboardMarkup:
     )
 
 
-async def _send_lk(m: Message, p: dict) -> None:
-    item = current_lk_item(p)
+def _write_kb() -> ReplyKeyboardMarkup:
+    return _pause_kb()
+
+
+def _speaking_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_SKIP_SPEAKING)],
+            [KeyboardButton(text="⏸ Пауза · в меню курсов")],
+            [KeyboardButton(text="🔙 Вернуться в меню")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def _vocab_options(item: dict) -> list[str]:
+    if (item.get("direction") or "en_ru") == "ru_en":
+        return list(item.get("options_en") or [])
+    return list(item.get("options_ru") or [])
+
+
+def _vocab_prompt(item: dict) -> str:
+    if (item.get("direction") or "en_ru") == "ru_en":
+        return str(item.get("prompt_ru") or "")
+    return str(item.get("prompt_en") or "")
+
+
+async def _send_grammar(m: Message, p: dict) -> None:
+    item = current_grammar(p)
     if not item:
         return
-    i = int(p.get("lk_i") or 0) + 1
-    total = len(p.get("lk_ids") or [])
+    cur, total = grammar_progress(p)
+    subtype = item.get("subtype") or "mcq"
+    head = (
+        f"📝 <b>Грамматика</b> · {progress_label(p)}\n"
+        f"Вопрос {cur}/{total}\n\n"
+        f"{item.get('prompt') or ''}"
+    )
+    if subtype in _GRAMMAR_MCQ:
+        opts = list(item.get("options") or [])
+        await m.answer(head, parse_mode="HTML", reply_markup=_mcq_kb(opts))
+        return
+    if subtype == "order":
+        words = list(item.get("words") or [])
+        head += f"\n\n<code>{' / '.join(words)}</code>"
     await m.answer(
-        f"📝 <b>Language Knowledge</b> · {progress_label(p)}\n"
-        f"Вопрос {i}/{total}\n\n"
-        f"{item['prompt']}",
+        head + "\n\nНапиши ответ <b>одним сообщением</b>.",
         parse_mode="HTML",
-        reply_markup=_mcq_kb(item["options"]),
+        reply_markup=_write_kb(),
     )
 
 
-async def _send_reading(m: Message, p: dict) -> None:
-    cur = current_reading_q(p)
+async def _send_vocab(m: Message, p: dict) -> None:
+    item = current_vocab(p)
+    if not item:
+        return
+    cur, total = vocab_progress(p)
+    opts = _vocab_options(item)
+    direction = item.get("direction") or "en_ru"
+    label = "EN → RU" if direction == "en_ru" else "RU → EN"
+    await m.answer(
+        f"📚 <b>Словарь</b> · {label}\n"
+        f"Вопрос {cur}/{total}\n\n"
+        f"<b>{_vocab_prompt(item)}</b>",
+        parse_mode="HTML",
+        reply_markup=_mcq_kb(opts),
+    )
+
+
+async def _send_reading(m: Message, p: dict, *, users: dict | None = None, uid: str | None = None) -> None:
+    cur = current_reading(p)
     if not cur:
         return
-    block, q = cur
-    i = int(p.get("reading_i") or 0)
-    if i == 0:
+    pid = cur.get("passage_id")
+    if p.get("reading_last_passage") != pid:
+        title = cur.get("passage_title") or ""
+        text = cur.get("passage_text") or ""
         await m.answer(
-            f"📖 <b>Reading</b> · уровень текста {p.get('reading_level')}\n\n"
-            f"{block['text']}",
+            f"📖 <b>Reading</b> · {cur.get('passage_level') or ''}\n"
+            f"<b>{title}</b>\n\n{text}",
             parse_mode="HTML",
         )
+        p["reading_last_passage"] = pid
+        if users is not None and uid is not None:
+            save_users(users, only=uid)
+    q = cur.get("q") or {}
+    ri, total = reading_progress(p)
+    opts = list(q.get("options") or [])
     await m.answer(
-        f"Вопрос {i + 1}/{len(block['questions'])}\n\n{q['prompt']}",
-        reply_markup=_mcq_kb(q["options"]),
+        f"Вопрос {ri}/{total}\n\n{q.get('prompt') or ''}",
+        reply_markup=_mcq_kb(opts),
     )
 
 
-async def _send_listening_audio(m: Message, p: dict) -> None:
-    script = (p.get("listening_script") or "").strip()
+async def _send_listening_audio(m: Message, item: dict) -> None:
+    script = (item.get("script") or "").strip()
     if not script:
         return
     await m.answer(
-        f"🎧 <b>Listening</b> · уровень {p.get('listening_level')}\n"
-        "Сейчас пришлю аудио. Слушай внимательно, затем ответь на вопросы.",
+        f"🎧 <b>Listening</b> · уровень {item.get('level') or ''}\n"
+        "Сейчас пришлю аудио. Слушай внимательно, затем ответь на вопрос.",
         parse_mode="HTML",
     )
     try:
@@ -189,27 +288,43 @@ async def _send_listening_audio(m: Message, p: dict) -> None:
     await m.answer(f"<i>Аудио временно недоступно. Текст:</i>\n{script}", parse_mode="HTML")
 
 
-async def _send_listening_q(m: Message, p: dict) -> None:
-    q = current_listening_q(p)
-    if not q:
+async def _send_listening(
+    m: Message,
+    p: dict,
+    *,
+    force_audio: bool = False,
+    users: dict | None = None,
+    uid: str | None = None,
+) -> None:
+    item = current_listening(p)
+    if not item:
         return
-    block = LISTENING.get(p.get("listening_level") or "A2") or LISTENING["A2"]
-    block_n = len(block.get("questions") or [])
-    i = int(p.get("listening_i") or 0)
+    lid = item.get("id")
+    already = p.get("listening_audio_sent")
+    # re-send audio only if this item wasn't sent yet, or force / just started
+    if force_audio or already != lid:
+        await _send_listening_audio(m, item)
+        p["listening_audio_sent"] = lid
+        if users is not None and uid is not None:
+            save_users(users, only=uid)
+    q = item.get("question") or {}
+    li, total = listening_progress(p)
+    opts = list(q.get("options") or [])
     await m.answer(
-        f"Вопрос {i + 1}/{block_n}\n\n{q['prompt']}",
-        reply_markup=_mcq_kb(q["options"]),
+        f"Вопрос {li}/{total}\n\n{q.get('prompt') or ''}",
+        reply_markup=_mcq_kb(opts),
     )
 
 
 async def _send_writing(m: Message, p: dict) -> None:
-    meta = WRITING.get(p.get("writing_level") or "A2") or WRITING["A2"]
+    lvl = p.get("writing_level") or "A2"
+    meta = WRITING_PROMPTS.get(lvl) or WRITING_PROMPTS.get("A2") or {}
     await m.answer(
-        f"✍️ <b>Writing</b> · {p.get('writing_level')}\n\n"
-        f"{meta['prompt']}\n\n"
-        "Напиши ответ <b>одним сообщением</b> на английском.",
+        f"✍️ <b>Writing</b> · {lvl}\n\n"
+        f"{meta.get('prompt') or ''}\n\n"
+        "Напиши <b>8 предложений</b> одним сообщением на английском.",
         parse_mode="HTML",
-        reply_markup=_pause_kb(),
+        reply_markup=_write_kb(),
     )
 
 
@@ -217,42 +332,52 @@ async def _send_speaking(m: Message, p: dict) -> None:
     item = current_speaking(p)
     if not item:
         return
-    i = int(p.get("speaking_i") or 0) + 1
+    n = int(p.get("speaking_answers") or 0) + 1
     await m.answer(
-        f"🗣 <b>Speaking</b> · задание {i}\n\n"
-        f"{item['prompt']}\n\n"
+        f"🗣 <b>Speaking</b> · ответ {n}/{SPEAKING_TARGET}\n\n"
+        f"{item.get('prompt') or ''}\n\n"
         "Отправь <b>голосовое</b> на английском.",
         parse_mode="HTML",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text=BTN_SKIP_SPEAKING)],
-                [KeyboardButton(text="⏸ Пауза · в меню курсов")],
-                [KeyboardButton(text="🔙 Вернуться в меню")],
-            ],
-            resize_keyboard=True,
-        ),
+        reply_markup=_speaking_kb(),
     )
 
 
-async def _advance_after_lk(m: Message, user: dict, p: dict) -> None:
-    if not lk_round_done(p):
-        await _send_lk(m, p)
-        return
-    if p.get("phase") == "lk1":
-        after_lk1_choose_round2(p)
-        await m.answer(
-            "Ок, уточняем уровень — второй раунд посложнее или полегче 👇"
-        )
-        await _send_lk(m, p)
-        return
-    # lk2 done → reading
-    begin_reading(p)
-    await m.answer("Дальше — <b>чтение</b>.", parse_mode="HTML")
-    await _send_reading(m, p)
+async def _resume_phase(m: Message, user: dict, users: dict, uid: str) -> None:
+    p = placement(user)
+    phase = p.get("phase")
+    if phase == "grammar":
+        await _send_grammar(m, p)
+    elif phase == "vocab":
+        await _send_vocab(m, p)
+    elif phase == "reading":
+        await _send_reading(m, p, users=users, uid=uid)
+    elif phase == "listening":
+        # mid-listening continue: don't re-send audio if already sent for this item
+        await _send_listening(m, p, force_audio=False, users=users, uid=uid)
+    elif phase == "writing":
+        await _send_writing(m, p)
+    elif phase == "speaking":
+        await _send_speaking(m, p)
+    else:
+        await m.answer("Начни тест заново.", reply_markup=_courses_home_kb(user))
 
 
 async def _finish_and_show(m: Message, user: dict, users: dict, uid: str) -> None:
     p = placement(user)
+    p["phase"] = "analyzing"
+    save_users(users, only=uid)
+
+    status: Message | None = None
+    for step in PROCESSING_STEPS:
+        if status is None:
+            status = await m.answer(step)
+        else:
+            try:
+                await status.edit_text(step)
+            except Exception:
+                status = await m.answer(step)
+        await asyncio.sleep(5)
+
     finalize_placement(p)
     save_users(users, only=uid)
     await m.answer(results_html(p), parse_mode="HTML", reply_markup=_courses_home_kb(user))
@@ -359,12 +484,18 @@ async def course_test_start(m: Message):
     save_users(users, only=uid)
     p = placement(user)
     await m.answer(
-        "▶️ <b>Вступительный тест</b> (~25–35 мин)\n"
-        "Часть 1/5 — Language Knowledge (грамматика и лексика).\n"
-        "Выбирай номер ответа. Можно поставить паузу.",
+        "▶️ <b>Вступительный тест</b> (~30–40 мин)\n\n"
+        "Части:\n"
+        "· грамматика (40)\n"
+        "· словарь (50)\n"
+        "· чтение\n"
+        "· аудирование\n"
+        "· письмо (8 предложений)\n"
+        "· говорение (до 20 ответов)\n\n"
+        "Часть 1 — грамматика. Можно поставить паузу.",
         parse_mode="HTML",
     )
-    await _send_lk(m, p)
+    await _send_grammar(m, p)
 
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_COURSE_CONTINUE)
@@ -377,27 +508,14 @@ async def course_test_continue(m: Message):
     ensure_course(user)
     p = placement(user)
     phase = p.get("phase")
-    if not phase or phase in (None, "intro", "done") or p.get("finished"):
+    if not phase or phase in (None, "intro", "done", "analyzing") or p.get("finished"):
         await m.answer(
             "Нет теста в процессе — нажми «Пройти вступительный тест».",
             reply_markup=_courses_home_kb(user),
         )
         return
     await m.answer(f"Продолжаем: <b>{progress_label(p)}</b>", parse_mode="HTML")
-    if phase in ("lk1", "lk2"):
-        await _send_lk(m, p)
-    elif phase == "reading":
-        await _send_reading(m, p)
-    elif phase == "listening":
-        if int(p.get("listening_i") or 0) == 0:
-            await _send_listening_audio(m, p)
-        await _send_listening_q(m, p)
-    elif phase == "writing":
-        await _send_writing(m, p)
-    elif phase == "speaking":
-        await _send_speaking(m, p)
-    else:
-        await m.answer("Начни тест заново.", reply_markup=_courses_home_kb(user))
+    await _resume_phase(m, user, users, uid)
 
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_SKIP_SPEAKING)
@@ -463,17 +581,7 @@ async def course_text(m: Message):
     if await _deny_if_closed(m):
         return
     text = (m.text or "").strip()
-    if not text or text in {
-        BTN_COURSES,
-        BTN_COURSE_START_TEST,
-        BTN_COURSE_CONTINUE,
-        BTN_COURSE_RESULTS,
-        BTN_COURSE_BUY,
-        BTN_COURSE_ABOUT,
-        BTN_SKIP_SPEAKING,
-        "⏸ Пауза · в меню курсов",
-        "🔙 Вернуться в меню",
-    }:
+    if not text or text in _NAV_TEXTS:
         return
 
     uid = str(m.from_user.id)
@@ -482,58 +590,95 @@ async def course_text(m: Message):
     p = placement(user)
     phase = p.get("phase")
 
-    if phase in ("lk1", "lk2"):
-        item = current_lk_item(p)
+    if phase == "grammar":
+        item = current_grammar(p)
         if not item:
             return
-        idx = _parse_mcq(text, len(item["options"]))
-        if idx is None:
-            await m.answer("Выбери вариант кнопкой (1, 2, 3…).")
+        subtype = item.get("subtype") or "mcq"
+        if subtype in _GRAMMAR_MCQ:
+            opts = list(item.get("options") or [])
+            idx = _resolve_choice(text, opts)
+            if idx is None:
+                await m.answer("Выбери вариант кнопкой (1, 2, 3…).")
+                return
+            answer_grammar_mcq(p, idx)
+        elif subtype in _GRAMMAR_TEXT:
+            answer_grammar_text(p, text)
+        else:
+            await m.answer("Непонятный тип задания — напиши в поддержку.")
             return
-        answer_lk(p, idx)
         save_users(users, only=uid)
-        await _advance_after_lk(m, user, p)
+        if grammar_done(p):
+            begin_vocab(p)
+            save_users(users, only=uid)
+            await m.answer("Дальше — <b>словарь</b> (50 слов).", parse_mode="HTML")
+            await _send_vocab(m, p)
+        else:
+            await _send_grammar(m, p)
+        return
+
+    if phase == "vocab":
+        item = current_vocab(p)
+        if not item:
+            return
+        opts = _vocab_options(item)
+        idx = _resolve_choice(text, opts)
+        if idx is None:
+            await m.answer("Выбери вариант кнопкой.")
+            return
+        answer_vocab(p, idx)
         save_users(users, only=uid)
+        if vocab_done(p):
+            begin_reading(p)
+            save_users(users, only=uid)
+            await m.answer("Дальше — <b>чтение</b>.", parse_mode="HTML")
+            await _send_reading(m, p, users=users, uid=uid)
+        else:
+            await _send_vocab(m, p)
         return
 
     if phase == "reading":
-        cur = current_reading_q(p)
+        cur = current_reading(p)
         if not cur:
             return
-        _b, q = cur
-        idx = _parse_mcq(text, len(q["options"]))
+        q = cur.get("q") or {}
+        opts = list(q.get("options") or [])
+        idx = _resolve_choice(text, opts)
         if idx is None:
             await m.answer("Выбери вариант кнопкой.")
             return
         answer_reading(p, idx)
+        save_users(users, only=uid)
         if reading_done(p):
             begin_listening(p)
+            p["listening_audio_sent"] = None
             save_users(users, only=uid)
             await m.answer("Дальше — <b>аудирование</b>.", parse_mode="HTML")
-            await _send_listening_audio(m, p)
-            await _send_listening_q(m, p)
+            await _send_listening(m, p, force_audio=True, users=users, uid=uid)
         else:
-            save_users(users, only=uid)
-            await _send_reading(m, p)
+            await _send_reading(m, p, users=users, uid=uid)
         return
 
     if phase == "listening":
-        q = current_listening_q(p)
-        if not q:
+        item = current_listening(p)
+        if not item:
             return
-        idx = _parse_mcq(text, len(q["options"]))
+        q = item.get("question") or {}
+        opts = list(q.get("options") or [])
+        idx = _resolve_choice(text, opts)
         if idx is None:
             await m.answer("Выбери вариант кнопкой.")
             return
         answer_listening(p, idx)
+        save_users(users, only=uid)
         if listening_done(p):
             begin_writing(p)
             save_users(users, only=uid)
             await m.answer("Дальше — <b>письмо</b>.", parse_mode="HTML")
             await _send_writing(m, p)
         else:
-            save_users(users, only=uid)
-            await _send_listening_q(m, p)
+            # next item — send new audio
+            await _send_listening(m, p, force_audio=True, users=users, uid=uid)
         return
 
     if phase == "writing":
