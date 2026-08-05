@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-"""A0.T1 Lesson 1 — playable pilot for timing/quality check."""
+"""A0.T1 Lesson 1 — playable pilot (v2 after timing feedback)."""
 
 from __future__ import annotations
 
+import random
+import re
 import time
-from typing import Any
+from difflib import SequenceMatcher
 
 
 def ensure_a0_pilot(user: dict) -> dict:
@@ -26,35 +28,71 @@ def start_lesson1(user: dict) -> dict:
         "check_i": 0,
         "check_ok": 0,
         "check_tot": 0,
-        "listen_show": False,
-        "speak_model": "Hi, I'm Alex. Nice to meet you.",
+        "speak_round": 0,
+        "last_audio": "",
+        "mcq_opts": [],
+        "mcq_correct": -1,
         "note": "",
-        "fail_rounds": 0,
+        "explain_topic": "",
         "finished": False,
     }
     user["a0_pilot"] = p
     return p
 
 
+def shuffle_mcq(options: list[str], correct: int) -> tuple[list[str], int]:
+    """Никогда не оставлять correct стабильно на кнопке 1."""
+    order = list(range(len(options)))
+    random.shuffle(order)
+    # если после shuffle correct снова на 0 и есть выбор — перетасовать ещё
+    for _ in range(8):
+        if order[0] != correct or len(order) < 2:
+            break
+        random.shuffle(order)
+    disp = [options[i] for i in order]
+    new_correct = order.index(correct)
+    return disp, new_correct
+
+
 PRACTICE = [
     {
-        "q": "Выбери правильный вариант:\nHi, ___ Maya.",
+        "q": "Hi, ___ Maya. Что вставить?",
         "options": ["I'm", "I", "Am I", "You"],
         "correct": 0,
     },
     {
-        "q": "Смысл один и тот же?",
-        "options": ["I am = I'm", "I am ≠ I'm", "I'm = you are", "I = I'm"],
+        "q": "I am и I'm — это…",
+        "options": [
+            "один смысл, I'm короче",
+            "разный смысл",
+            "I'm только для вопросов",
+            "I am нельзя в речи",
+        ],
         "correct": 0,
     },
     {
-        "q": "Про собеседника:",
+        "q": "Про собеседника выбери норму:",
         "options": ["You're Alex.", "I'm Alex.", "Are Alex.", "Is you Alex."],
         "correct": 0,
     },
     {
-        "q": "Вопрос:",
+        "q": "Как спросить «ты Дэн?»",
         "options": ["Are you Dan?", "You are Dan?", "Am you Dan?", "Is you Dan?"],
+        "correct": 0,
+    },
+    {
+        "q": "Короткий ответ «нет, я не …»",
+        "options": ["No, I'm not.", "No, I amn't.", "No, I not.", "No, I'm no."],
+        "correct": 0,
+    },
+    {
+        "q": "Nice to meet you — это…",
+        "options": [
+            "приятно познакомиться",
+            "как дела",
+            "до завтра",
+            "меня зовут",
+        ],
         "correct": 0,
     },
 ]
@@ -62,13 +100,13 @@ PRACTICE = [
 LISTENINGS = [
     {
         "audio": "Hi, I'm Tom.",
-        "q": "Как зовут человека?",
+        "q": "Как зовут человека на записи?",
         "options": ["Tom", "Tim", "Sam", "Bob"],
         "correct": 0,
     },
     {
         "audio": "Hello, I'm Sara. Nice to meet you.",
-        "q": "Что она сказала после имени?",
+        "q": "Что было после имени?",
         "options": [
             "Nice to meet you",
             "How are you",
@@ -79,8 +117,14 @@ LISTENINGS = [
     },
     {
         "audio": "Are you Alex?",
-        "q": "Это вопрос?",
-        "options": ["Да", "Нет", "Это имя", "Это прощание"],
+        "q": "Это вопрос или утверждение?",
+        "options": ["Вопрос", "Утверждение", "Прощание", "Число"],
+        "correct": 0,
+    },
+    {
+        "audio": "Hi. I'm not Paul. I'm Mark.",
+        "q": "Как его на самом деле зовут?",
+        "options": ["Mark", "Paul", "Alex", "Tom"],
         "correct": 0,
     },
 ]
@@ -103,12 +147,17 @@ MINI_CHECK = [
         "correct": 0,
     },
     {
-        "q": "Короткий ответ «да»:",
+        "q": "Короткий ответ «да, это я»:",
         "options": ["Yes, I am.", "Yes, I'm.", "Yes, I.", "Yes, am I."],
         "correct": 0,
     },
     {
-        "q": "Слышишь (представь): “Nice to meet you.” Это…",
+        "q": "You're — это…",
+        "options": ["you are", "you am", "your", "you is"],
+        "correct": 0,
+    },
+    {
+        "q": "Nice to meet you значит…",
         "options": [
             "приятно познакомиться",
             "до свидания",
@@ -150,12 +199,78 @@ def elapsed_min(p: dict) -> float:
     return max(0.0, (time.time() - t0) / 60.0)
 
 
-def speaking_ok(text: str | None, name: str) -> bool:
-    t = (text or "").lower()
-    if len(t.strip()) < 2:
-        return False
-    words = set(w.strip(".,!?") for w in t.replace("'", " ").split())
-    # мягко: есть hi/hello и i + am/im или имя
-    greet = "hi" in words or "hello" in words or "i'm" in t.lower() or "i am" in t.lower()
-    has_i = "i" in words or "i'm" in t.lower() or "im" in words
-    return greet or has_i or (name and name.lower() in t.lower())
+def _norm_tokens(text: str) -> list[str]:
+    t = (text or "").lower().replace("'", " ")
+    return re.findall(r"[a-zа-яё]+", t, flags=re.IGNORECASE)
+
+
+def name_match(text: str | None, name: str) -> bool:
+    """Имя должно быть узнаваемо; 'Dan' ≠ 'Danil'."""
+    n = re.sub(r"[^a-z]", "", (name or "").lower())
+    if len(n) < 2:
+        return True
+    raw = (text or "").lower()
+    if n in raw:
+        return True
+    best = 0.0
+    for w in _norm_tokens(raw):
+        w = re.sub(r"[^a-z]", "", w.lower())
+        if not w:
+            continue
+        best = max(best, SequenceMatcher(None, w, n).ratio())
+    # строго: почти полное имя
+    return best >= 0.86
+
+
+def speaking_ok(text: str | None, name: str, *, need_nice: bool = False) -> tuple[bool, str]:
+    """
+    Возвращает (ok, подсказка_если_нет).
+    Требует I'm/I am + узнаваемое имя (+ nice… по флагу).
+    """
+    t = (text or "").strip()
+    if len(t) < 2:
+        return False, "Слишком тихо/пусто. Ещё раз ближе к микрофону."
+    low = t.lower()
+    has_im = bool(re.search(r"\bi\s*am\b|\bi'?m\b|\bim\b", low))
+    if not has_im:
+        return False, "Нужно I'm или I am — без этого не засчитаю."
+    if not name_match(t, name):
+        return False, f"Имя почти не слышно. Скажи чётче: I'm {name}."
+    if need_nice:
+        if "nice" not in low and "meet" not in low:
+            return False, "Добавь в конце: Nice to meet you."
+    return True, ""
+
+
+def rico_explain_reply(question: str, topic: str, name: str) -> str:
+    """Короткий человечный ответ Рико на «непонятно»."""
+    try:
+        from services.openrouter import chat_completion
+
+        sys = (
+            "Ты Рико — живой репетитор английского в Telegram для абсолютного новичка (A0). "
+            "Отвечай по-русски, тепло, с 1–2 эмодзи, без воды. "
+            "Объясни ТОЛЬКО текущую тему урока: I am/I'm, you are/you're, Hi/Hello, Nice to meet you. "
+            "Максимум 4 коротких предложения. Если вопрос оффтоп/дурачество — мягко, но твёрдо верни к теме."
+        )
+        return (
+            chat_completion(
+                [
+                    {"role": "system", "content": sys},
+                    {
+                        "role": "user",
+                        "content": f"Ученика зовут {name}. Тема блока: {topic}. Вопрос ученика: {question}",
+                    },
+                ],
+                temperature=0.55,
+                max_tokens=220,
+                timeout=18,
+            )
+            or ""
+        ).strip()
+    except Exception:
+        return (
+            f"Ок, {name}, давай проще 😊\n"
+            "I am и I'm — одно и то же. I'm короче, так говорят в жизни.\n"
+            "Напиши: что именно цепляет — «сокр» / «вопрос Are you» / «зачем You're»?"
+        )
