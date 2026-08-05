@@ -27,6 +27,7 @@ from services.course_placement import (
     BTN_COURSE_ABOUT,
     BTN_COURSE_BUY,
     BTN_COURSE_CONTINUE,
+    BTN_COURSE_FINISH_NOW,
     BTN_COURSE_RESULTS,
     BTN_COURSE_START_TEST,
     BTN_COURSES,
@@ -44,6 +45,7 @@ from services.course_placement import (
     begin_speaking,
     begin_vocab,
     begin_writing,
+    can_finalize_early,
     courses_allowed,
     current_grammar,
     current_listening,
@@ -81,6 +83,7 @@ _NAV_TEXTS = {
     BTN_COURSES,
     BTN_COURSE_START_TEST,
     BTN_COURSE_CONTINUE,
+    BTN_COURSE_FINISH_NOW,
     BTN_COURSE_RESULTS,
     BTN_COURSE_BUY,
     BTN_COURSE_ABOUT,
@@ -88,6 +91,14 @@ _NAV_TEXTS = {
     "⏸ Пауза · в меню курсов",
     "🔙 Вернуться в меню",
 }
+
+
+def _unfinished_placement(p: dict) -> bool:
+    """Есть незавершённый тест (включая phase=analyzing)."""
+    if p.get("finished"):
+        return False
+    phase = p.get("phase")
+    return bool(phase) and phase not in (None, "done", "intro")
 
 
 async def _deny_if_closed(m: Message) -> bool:
@@ -116,8 +127,11 @@ def _courses_home_kb(user: dict) -> ReplyKeyboardMarkup:
         if int(p.get("price") or 0) > 0:
             rows.append([KeyboardButton(text=BTN_COURSE_BUY)])
         rows.append([KeyboardButton(text=BTN_COURSE_START_TEST)])
-    elif p.get("phase") and p.get("phase") not in (None, "done", "intro", "analyzing"):
+    elif _unfinished_placement(p):
+        # включая analyzing — Continue всегда виден
         rows.append([KeyboardButton(text=BTN_COURSE_CONTINUE)])
+        if can_finalize_early(p):
+            rows.append([KeyboardButton(text=BTN_COURSE_FINISH_NOW)])
         rows.append([KeyboardButton(text=BTN_COURSE_START_TEST)])
     else:
         rows.append([KeyboardButton(text=BTN_COURSE_START_TEST)])
@@ -177,15 +191,13 @@ def _write_kb() -> ReplyKeyboardMarkup:
     return _pause_kb()
 
 
-def _speaking_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=BTN_SKIP_SPEAKING)],
-            [KeyboardButton(text="⏸ Пауза · в меню курсов")],
-            [KeyboardButton(text="🔙 Вернуться в меню")],
-        ],
-        resize_keyboard=True,
-    )
+def _speaking_kb(p: dict | None = None) -> ReplyKeyboardMarkup:
+    rows = [[KeyboardButton(text=BTN_SKIP_SPEAKING)]]
+    if p is not None and can_finalize_early(p):
+        rows.append([KeyboardButton(text=BTN_COURSE_FINISH_NOW)])
+    rows.append([KeyboardButton(text="⏸ Пауза · в меню курсов")])
+    rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def _vocab_options(item: dict) -> list[str]:
@@ -328,23 +340,31 @@ async def _send_writing(m: Message, p: dict) -> None:
     )
 
 
-async def _send_speaking(m: Message, p: dict) -> None:
+async def _send_speaking(m: Message, p: dict) -> bool:
+    """Отправить вопрос speaking. False = нечего слать → caller должен завершить."""
+    if speaking_done(p):
+        return False
     item = current_speaking(p)
     if not item:
-        return
+        return False
     n = int(p.get("speaking_answers") or 0) + 1
+    prompt = (item.get("prompt") or "").replace("<", "&lt;").replace(">", "&gt;")
     await m.answer(
         f"🗣 <b>Speaking</b> · ответ {n}/{SPEAKING_TARGET}\n\n"
-        f"{item.get('prompt') or ''}\n\n"
+        f"{prompt}\n\n"
         "Отправь <b>голосовое</b> на английском.",
         parse_mode="HTML",
-        reply_markup=_speaking_kb(),
+        reply_markup=_speaking_kb(p),
     )
+    return True
 
 
 async def _resume_phase(m: Message, user: dict, users: dict, uid: str) -> None:
     p = placement(user)
     phase = p.get("phase")
+    if phase == "analyzing" or (phase == "speaking" and speaking_done(p)):
+        await _finish_and_show(m, user, users, uid)
+        return
     if phase == "grammar":
         await _send_grammar(m, p)
     elif phase == "vocab":
@@ -357,29 +377,39 @@ async def _resume_phase(m: Message, user: dict, users: dict, uid: str) -> None:
     elif phase == "writing":
         await _send_writing(m, p)
     elif phase == "speaking":
-        await _send_speaking(m, p)
+        if not await _send_speaking(m, p):
+            await _finish_and_show(m, user, users, uid)
     else:
         await m.answer("Начни тест заново.", reply_markup=_courses_home_kb(user))
 
 
 async def _finish_and_show(m: Message, user: dict, users: dict, uid: str) -> None:
     p = placement(user)
+    if p.get("finished"):
+        await m.answer(results_html(p), parse_mode="HTML", reply_markup=_courses_home_kb(user))
+        return
+
     p["phase"] = "analyzing"
     save_users(users, only=uid)
 
     status: Message | None = None
-    for step in PROCESSING_STEPS:
-        if status is None:
-            status = await m.answer(step)
-        else:
-            try:
-                await status.edit_text(step)
-            except Exception:
+    try:
+        for step in PROCESSING_STEPS:
+            if status is None:
                 status = await m.answer(step)
-        await asyncio.sleep(5)
+            else:
+                try:
+                    await status.edit_text(step)
+                except Exception:
+                    status = await m.answer(step)
+            await asyncio.sleep(1.2)
+    finally:
+        # всегда finalize при незавершённом — skill scores не трогаем
+        p = placement(user)
+        if not p.get("finished"):
+            finalize_placement(p)
+            save_users(users, only=uid)
 
-    finalize_placement(p)
-    save_users(users, only=uid)
     await m.answer(results_html(p), parse_mode="HTML", reply_markup=_courses_home_kb(user))
 
 
@@ -395,6 +425,12 @@ async def open_courses(m: Message):
     set_mode(uid, MODE_COURSES)
     save_users(users, only=uid)
     await m.answer(INTRO_HTML, parse_mode="HTML", reply_markup=_courses_home_kb(user))
+    p = placement(user)
+    if p.get("phase") == "analyzing" and not p.get("finished"):
+        await m.answer(
+            "Анализ ещё не завершён — нажми «Продолжить тест», чтобы получить результат.",
+            reply_markup=_courses_home_kb(user),
+        )
 
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_COURSE_ABOUT)
@@ -480,6 +516,19 @@ async def course_test_start(m: Message):
     users = users_for(uid)
     user = get_user(users, uid)
     ensure_course(user)
+    p = placement(user)
+    if _unfinished_placement(p):
+        tip = (
+            "⚠️ У тебя уже есть незавершённый тест — прогресс сохранён.\n\n"
+            "Нажми «Продолжить тест», чтобы идти дальше."
+        )
+        if can_finalize_early(p) or p.get("phase") in ("speaking", "analyzing"):
+            tip += (
+                "\nИли «Завершить и показать результат» — "
+                "посчитаем уровень по текущим ответам (без сброса)."
+            )
+        await m.answer(tip, reply_markup=_courses_home_kb(user))
+        return
     start_placement(user)
     save_users(users, only=uid)
     p = placement(user)
@@ -507,15 +556,42 @@ async def course_test_continue(m: Message):
     user = get_user(users, uid)
     ensure_course(user)
     p = placement(user)
-    phase = p.get("phase")
-    if not phase or phase in (None, "intro", "done", "analyzing") or p.get("finished"):
+    if p.get("finished") or not _unfinished_placement(p):
         await m.answer(
             "Нет теста в процессе — нажми «Пройти вступительный тест».",
             reply_markup=_courses_home_kb(user),
         )
         return
+    if p.get("phase") == "analyzing":
+        await m.answer("Досчитываю результат…")
+        await _finish_and_show(m, user, users, uid)
+        return
     await m.answer(f"Продолжаем: <b>{progress_label(p)}</b>", parse_mode="HTML")
     await _resume_phase(m, user, users, uid)
+
+
+@router.message(ModeFilter(MODE_COURSES), F.text == BTN_COURSE_FINISH_NOW)
+async def course_finish_now(m: Message):
+    if await _deny_if_closed(m):
+        return
+    uid = str(m.from_user.id)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ensure_course(user)
+    p = placement(user)
+    phase = p.get("phase")
+    if not (can_finalize_early(p) or phase in ("speaking", "analyzing")):
+        await m.answer(
+            "Досрочное завершение доступно на этапе говорения "
+            "(после нескольких ответов) или во время анализа.",
+            reply_markup=_courses_home_kb(user),
+        )
+        return
+    if p.get("finished"):
+        await m.answer(results_html(p), parse_mode="HTML", reply_markup=_courses_home_kb(user))
+        return
+    await m.answer("Считаю результат по текущим ответам (прогресс не сбрасываю)…")
+    await _finish_and_show(m, user, users, uid)
 
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_SKIP_SPEAKING)
@@ -530,10 +606,8 @@ async def skip_speak(m: Message):
         return
     skip_speaking_item(p)
     save_users(users, only=uid)
-    if speaking_done(p):
+    if speaking_done(p) or not await _send_speaking(m, p):
         await _finish_and_show(m, user, users, uid)
-        return
-    await _send_speaking(m, p)
 
 
 @router.message(ModeFilter(MODE_COURSES), F.voice)
@@ -550,19 +624,27 @@ async def course_voice(m: Message):
     from services.stt import recognize_english
 
     await m.answer("Слушаю…")
+    text = None
     try:
         file = await m.bot.get_file(m.voice.file_id)
         data = await m.bot.download_file(file.file_path)
         raw = data.read() if hasattr(data, "read") else data
-        text = await asyncio.to_thread(recognize_english, raw)
+        text = await asyncio.wait_for(
+            asyncio.to_thread(recognize_english, raw),
+            timeout=35,
+        )
+    except asyncio.TimeoutError:
+        log.warning("course STT timeout uid=%s", uid)
+        text = None
     except Exception as e:
         log.warning("course STT fail: %s", e)
         text = None
     ok = score_speaking_utterance(p, text)
     save_users(users, only=uid)
     if text:
+        safe = str(text).replace("<", "&lt;").replace(">", "&gt;")
         await m.answer(
-            f"{'✅' if ok else '⚠️'} Распознал: <i>{text}</i>",
+            f"{'✅' if ok else '⚠️'} Распознал: <i>{safe}</i>",
             parse_mode="HTML",
         )
     else:
@@ -570,10 +652,8 @@ async def course_voice(m: Message):
             "Не удалось распознать речь — засчитал как слабый ответ. "
             "Можно следующее задание или пропуск."
         )
-    if speaking_done(p):
+    if speaking_done(p) or not await _send_speaking(m, p):
         await _finish_and_show(m, user, users, uid)
-        return
-    await _send_speaking(m, p)
 
 
 @router.message(ModeFilter(MODE_COURSES), F.text)
@@ -689,7 +769,8 @@ async def course_text(m: Message):
             "Принял текст. Финал — <b>говорение</b> (голосовые).",
             parse_mode="HTML",
         )
-        await _send_speaking(m, p)
+        if speaking_done(p) or not await _send_speaking(m, p):
+            await _finish_and_show(m, user, users, uid)
         return
 
     if phase == "speaking":

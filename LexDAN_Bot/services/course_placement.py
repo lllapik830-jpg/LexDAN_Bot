@@ -31,6 +31,7 @@ BTN_COURSE_RESULTS = "📋 Мой результат теста"
 BTN_COURSE_BUY = "💳 Купить курс"
 BTN_COURSE_ABOUT = "ℹ️ Как устроен курс"
 BTN_SKIP_SPEAKING = "⏭ Пропустить вопрос"
+BTN_COURSE_FINISH_NOW = "📋 Завершить и показать результат"
 
 
 def courses_allowed(user_id: str | int | None) -> bool:
@@ -522,17 +523,20 @@ def _speaking_by_id(sid: str) -> dict | None:
 
 
 def current_speaking(p: dict) -> dict | None:
+    """Текущий вопрос интервью. Без фильтра по adapt — иначе тест молча зависает."""
     if int(p.get("speaking_answers") or 0) >= SPEAKING_TARGET:
         return None
     q = p.get("speaking_queue") or []
+    if not q:
+        q = [s["id"] for s in SPEAKING_INTERVIEW]
+        p["speaking_queue"] = q
     i = int(p.get("speaking_i") or 0)
+    if i < 0:
+        i = 0
+        p["speaking_i"] = 0
     while i < len(q):
         item = _speaking_by_id(q[i])
         if not item:
-            i += 1
-            p["speaking_i"] = i
-            continue
-        if _level_idx(item.get("level") or "A0") > _level_idx(p.get("adapt_max_level") or "B2") + 1:
             i += 1
             p["speaking_i"] = i
             continue
@@ -558,8 +562,9 @@ def score_speaking_utterance(p: dict, transcript: str | None) -> bool:
     p["speaking_answers"] = int(p.get("speaking_answers") or 0) + 1
     advance_speaking_pointer(p)
     if t:
-        p.setdefault("speaking_transcripts", []).append(t[:240])
-    # speaking_score = доля + бонус за длину
+        # без HTML-тегов — иначе parse_mode может уронить ответ
+        safe = t[:240].replace("<", " ").replace(">", " ")
+        p.setdefault("speaking_transcripts", []).append(safe)
     tot = max(1, sc[1])
     avg_len = sum(len(re.findall(r"[A-Za-z]+", x)) for x in (p.get("speaking_transcripts") or [])) / max(
         1, len(p.get("speaking_transcripts") or [])
@@ -581,9 +586,21 @@ def skip_speaking_item(p: dict) -> None:
 def speaking_done(p: dict) -> bool:
     if int(p.get("speaking_answers") or 0) >= SPEAKING_TARGET:
         return True
-    # вопросы закончились
     q = p.get("speaking_queue") or []
-    return int(p.get("speaking_i") or 0) >= len(q) and current_speaking(p) is None
+    if not q:
+        return int(p.get("speaking_answers") or 0) > 0
+    # не вызываем current_speaking — он мутирует индекс
+    return int(p.get("speaking_i") or 0) >= len(q)
+
+
+def can_finalize_early(p: dict) -> bool:
+    """Можно завершить с текущим прогрессом (не теряя ответы)."""
+    if p.get("finished"):
+        return True
+    phase = p.get("phase")
+    if phase in ("speaking", "analyzing"):
+        return int(p.get("speaking_answers") or 0) >= 8
+    return False
 
 
 def _skill_ratio(p: dict, skill: str) -> float | None:
