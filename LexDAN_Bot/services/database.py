@@ -27,6 +27,7 @@ MODE_SECRET = "secret"
 MODE_DAILY_FIRE = "daily_fire"
 MODE_EXCLUSIVE = "exclusive"
 MODE_COURSES = "courses"
+MODE_A0_COURSE = "a0_course"
 
 DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
 
@@ -465,6 +466,7 @@ def set_mode(user_id: str, mode: str) -> dict:
         MODE_DAILY_FIRE: "огонь дня",
         MODE_EXCLUSIVE: "эксклюзив Рико",
         MODE_COURSES: "курсы",
+        MODE_A0_COURSE: "A0 курс (пилот)",
     }
     user["last_section"] = labels.get(mode, mode)
     from datetime import datetime, timedelta, timezone

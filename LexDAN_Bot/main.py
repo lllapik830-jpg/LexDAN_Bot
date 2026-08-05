@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher
 from flask import Flask, jsonify, request
 
 from config import BOT_TOKEN, PUBLIC_BASE_URL
-from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews
+from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews, a0_course
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,6 +35,7 @@ dp.include_routers(
     daily_fire.router,  # Огонь дня до catch-all меню
     secret_missions.router,  # кнопка секрета до catch-all меню
     courses.router,  # курсы / placement до catch-all меню
+    a0_course.router,  # пилот A0.T1 L1 (/a0_curs) до voice/меню
     daily_reviews.router,  # офферы повторения grammar/vocab
     menu.router,
     payments.router,
