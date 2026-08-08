@@ -413,10 +413,12 @@ async def _start_task2(m: Message, uid: str) -> None:
     full = pack.get("full_text") or ""
     await m.answer(
         "📝 <b>Задание 2 · Вопросы по тексту</b>\n\n"
-        "🦜 Рико: Сейчас 4 вопроса. Отвечай <b>полным предложением</b> на английском "
-        "(не «ten», а например <i>Her sister is ten years old</i>).\n"
-        "Регистр и запятые не придираюсь — смотрю смысл, логику и грамматику.\n"
-        "На каждый вопрос — 2 попытки: сначала помогу, со второй разберём и пойдём дальше.\n\n"
+        "🦜 Рико: 4 вопроса по тексту. Отвечай на английском своими словами — "
+        "шаблон не нужен (и <i>Her father is a doctor</i>, и <i>Lena's father is a doctor</i> — ок).\n"
+        "Смотрю только факты и грамматику (времена, формы слов). "
+        "Регистр и запятые не трогаю.\n"
+        "Если перепутал факт — помогу и дам ещё попытку. "
+        "Если факт верный, а грамматика хромает — поправлю и идём дальше.\n\n"
         f"<b>Текст:</b>\n{full}",
         reply_markup=_exit_kb(),
         parse_mode="HTML",
@@ -436,7 +438,7 @@ async def _send_task2_q(m: Message, uid: str) -> None:
     q = qs[i]
     await m.answer(
         f"<b>Вопрос {i + 1}/4</b>\n\n{q.get('q')}\n\n"
-        "<i>Ответь одним полным предложением.</i>",
+        "<i>Ответь предложением своими словами — без шаблона.</i>",
         reply_markup=_exit_kb(),
         parse_mode="HTML",
     )
@@ -473,9 +475,24 @@ async def reading_task2_answer(m: Message):
             user_text=text,
         )
 
-    if verdict.get("ok"):
+    fact_ok = bool(verdict.get("fact_ok") or verdict.get("meaning_ok"))
+    grammar_ok = bool(verdict.get("grammar_ok", True))
+    need_fs = bool(verdict.get("need_full_sentence"))
+    better = (verdict.get("better_en") or q.get("model_en") or "").strip()
+    feedback = (verdict.get("feedback_ru") or "").strip()
+
+    # Обрывок вроде «doctor» — попросить предложение, попытку не сжигаем
+    if need_fs and fact_ok:
+        await m.answer(
+            f"{feedback or '🦜 Рико: Факт верный — напиши полным предложением.'}",
+            parse_mode="HTML",
+        )
+        return
+
+    # Факт + грамматика ок
+    if fact_ok and grammar_ok:
         quote = q.get("quote") or ""
-        msg = "✅ Верно! Хорошее предложение."
+        msg = "✅ Верно!"
         if quote:
             msg += f"\nВ тексте: «{quote}»"
         await m.answer(msg)
@@ -483,36 +500,40 @@ async def reading_task2_answer(m: Message):
         await _send_task2_q(m, uid)
         return
 
-    # смысл ок, но не полное предложение — мягко просим, попытку не сжигаем
-    if verdict.get("need_full_sentence") and verdict.get("meaning_ok"):
-        await m.answer(
-            "🦜 Рико: Напиши, пожалуйста, <b>полным предложением</b> — "
-            "не одно слово, а мысль целиком "
-            "(например: <i>Her sister is ten years old</i>).",
-            parse_mode="HTML",
-        )
+    # Факт верный, грамматика нет — правим и идём дальше (без второй попытки)
+    if fact_ok and not grammar_ok:
+        parts = [feedback or "🦜 Рико: Факт верный, чуть поправлю грамматику."]
+        if better:
+            parts.append(f"✏️ Лучше так: <i>{better}</i>")
+        topic = (verdict.get("review_topic") or "").strip()
+        if topic:
+            parts.append(
+                _format_review_line(topic, verdict.get("review_level") or level)
+            )
+        parts.append("Идём дальше ✅")
+        await m.answer("\n".join(parts), parse_mode="HTML")
+        update_session(uid, task2_i=i + 1, task2_tries=0)
+        await _send_task2_q(m, uid)
         return
 
-    better = verdict.get("better_en") or q.get("model_en") or ""
-    feedback = verdict.get("feedback_ru") or "Не совсем так."
-    review = _format_review_line(
-        verdict.get("review_topic") or "Present Simple",
-        verdict.get("review_level") or level,
-    )
-
+    # Факт неверный
+    hint = q.get("hint_ru") or "Найди нужный факт в тексте."
     if tries <= 0:
-        hint = q.get("hint_ru") or "Найди нужный факт в тексте."
         await m.answer(
-            f"{feedback}\n\n"
+            f"{feedback or '🦜 Рико: По факту из текста не так.'}\n\n"
             f"💡 Подсказка: {hint}\n"
-            "Попробуй ещё раз — полным предложением."
+            "Перепиши ответ — своими словами, но с верным фактом."
         )
         update_session(uid, task2_tries=1)
         return
 
+    review = ""
+    topic = (verdict.get("review_topic") or "").strip()
+    if topic:
+        review = "\n" + _format_review_line(topic, verdict.get("review_level") or level)
     await m.answer(
-        f"{feedback}\n\n"
-        f"✅ Пример правильного ответа: <b>{better}</b>\n"
+        f"{feedback or '🦜 Рико: Факт всё ещё не сходится с текстом.'}\n\n"
+        f"✅ По смыслу текста подходит, например: <b>{better}</b>"
         f"{review}\n\n"
         "Идём к следующему вопросу.",
         parse_mode="HTML",
@@ -532,14 +553,13 @@ async def _start_task3(m: Message, uid: str) -> None:
     full = pack.get("full_text") or ""
     lines = "\n".join(f"{n}. {p}" for n, p in enumerate(plan, start=1))
     await m.answer(
-        "📝 <b>Задание 3 · Пересказ по плану</b>\n\n"
-        "🦜 Рико: Напиши пересказ своими словами. Можно фантазировать в формулировках — "
-        "главное не противоречить тексту.\n"
-        "Пиши только то, что есть в тексте (если возраста родителей нет — не выдумывай).\n"
-        "Грамматику и логику проверю железно; после одного пересказа сразу дам правки "
-        "и засчитаю задание.\n\n"
+        "📝 <b>Задание 3 · Пересказ</b>\n\n"
+        "🦜 Рико: Напиши пересказ своими словами. "
+        "План ниже — только подсказка, не шаблон: можно другой порядок и не все пункты.\n"
+        "Главное — не противоречить тексту и не выдумывать то, чего в нём нет.\n"
+        "Проверю факты и грамматику, сразу дам правки и засчитаю задание.\n\n"
         f"<b>Текст:</b>\n{full}\n\n"
-        f"<b>План:</b>\n{lines}",
+        f"<b>План (подсказка):</b>\n{lines}",
         reply_markup=_exit_kb(),
         parse_mode="HTML",
     )
@@ -552,7 +572,7 @@ async def reading_task3_answer(m: Message):
         return
     if len(text.split()) < 8:
         await m.answer(
-            "🦜 Рико: Напиши чуть подробнее — несколько предложений по плану."
+            "🦜 Рико: Напиши чуть подробнее — несколько предложений своими словами."
         )
         return
     uid = str(m.from_user.id)

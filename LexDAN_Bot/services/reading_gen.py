@@ -1260,60 +1260,78 @@ def judge_comprehension_answer(
     user_text: str,
 ) -> dict:
     """
-    Проверка ответа-предложения к вопросу по тексту.
-    soft к регистру/пунктуации; жёстко к смыслу и грамматике.
+    Проверка ответа по тексту.
+
+    Не шаблоним формулировку: «Her father is a doctor» ≡ «Lena's father is a doctor».
+    Смотрим: (1) факт совпадает с текстом/вопросом, (2) грамматика.
+    Регистр и пунктуацию игнорируем.
     """
     from services.gpt import _ask_json
 
     rev = _default_review(level)
-    meaning_ok = check_comprehension_answer(user_text, accept)
+    meaning_local = check_comprehension_answer(user_text, accept)
     is_sentence = looks_like_full_sentence(user_text)
     model = (model_en or "").strip() or (
         (accept[0] if accept else "See the text.") + "."
     )
+
+    # Одно слово / обрывок при верном ключе — попросить предложение, без «ошибки»
+    if meaning_local and not is_sentence:
+        return {
+            "fact_ok": True,
+            "grammar_ok": True,
+            "need_full_sentence": True,
+            "feedback_ru": (
+                "🦜 Рико: Факт верный! Напиши его, пожалуйста, "
+                "полным предложением (не одно слово)."
+            ),
+            "better_en": model,
+            "review_topic": rev["review_topic"],
+            "review_level": rev["review_level"],
+        }
+
     fallback = {
-        "ok": bool(meaning_ok and is_sentence),
-        "need_full_sentence": bool(meaning_ok and not is_sentence),
-        "meaning_ok": meaning_ok,
-        "grammar_ok": bool(meaning_ok and is_sentence),
+        "fact_ok": meaning_local,
+        "grammar_ok": True if meaning_local else True,
+        "need_full_sentence": False,
         "feedback_ru": (
-            "🦜 Рико: Напиши, пожалуйста, полным предложением — "
-            "не одно слово, а мысль целиком (например: Her sister is ten years old)."
-            if meaning_ok and not is_sentence
-            else (
-                "🦜 Рико: По смыслу не совсем так. Найди нужный факт в тексте и напиши полным предложением."
-                if not meaning_ok
-                else "🦜 Рико: Верно по смыслу!"
-            )
+            "🦜 Рико: Верно по смыслу!"
+            if meaning_local
+            else "🦜 Рико: По факту из текста не совсем так. Найди нужную информацию и ответь снова."
         ),
-        "better_en": model if not (meaning_ok and is_sentence) else "",
+        "better_en": "" if meaning_local else model,
         "review_topic": rev["review_topic"],
         "review_level": rev["review_level"],
     }
+
     data = _ask_json(
         [
             {
                 "role": "system",
                 "content": (
                     "You are Rico judging a reading comprehension answer. ONLY JSON.\n"
-                    "Student must answer in a FULL English sentence (not just «ten»).\n"
-                    "Ignore case and punctuation completely — never mention them.\n"
-                    "Accept paraphrase if the FACT from the text is correct.\n"
-                    "Check grammar/structure firmly (agreement, word order, tense, articles when meaning breaks).\n"
+                    "Ignore case and punctuation forever — never mention them.\n"
+                    "Do NOT require a template wording. Accept ANY paraphrase that answers "
+                    "the QUESTION with a FACT that matches the TEXT "
+                    "(e.g. «her father is a doctor» == «Lena's father is a doctor»).\n"
+                    "Separate FACT from GRAMMAR:\n"
+                    "- fact_ok=true if the student's meaning correctly answers the question "
+                    "using information from the text (even if grammar is imperfect).\n"
+                    "- fact_ok=false if they answer the wrong thing "
+                    "(e.g. give a job when asked for age, or invent facts).\n"
+                    "- grammar_ok=false only for real grammar/spelling/tense/word-form errors.\n"
+                    "- need_full_sentence=true ONLY for tiny fragments like «doctor» / «ten» "
+                    "with no subject+verb. If there is already a clause with a verb "
+                    "(«her father is a doctor»), need_full_sentence MUST be false.\n"
                     "Return {"
-                    '"ok":bool,'
-                    '"need_full_sentence":bool,'
-                    '"meaning_ok":bool,'
+                    '"fact_ok":bool,'
                     '"grammar_ok":bool,'
+                    '"need_full_sentence":bool,'
                     '"feedback_ru":"short Russian Rico feedback",'
-                    '"better_en":"one natural full-sentence model answer (English)",'
-                    '"review_topic":"grammar topic to review",'
-                    '"review_level":"CEFR level of that topic"'
+                    '"better_en":"corrected English if grammar_ok is false OR model answer if fact_ok is false; else empty",'
+                    '"review_topic":"grammar topic if grammar issue, else empty",'
+                    '"review_level":"CEFR level of that topic or empty"'
                     "}.\n"
-                    "ok=true ONLY if meaning_ok AND grammar_ok AND it is a full sentence.\n"
-                    "need_full_sentence=true if the fact is right but answer is a fragment "
-                    "(then feedback_ru must politely ask for a full sentence).\n"
-                    "If wrong: help briefly; better_en = correct full sentence from the text.\n"
                     f"Student CEFR level: {level}."
                 ),
             },
@@ -1321,7 +1339,8 @@ def judge_comprehension_answer(
                 "role": "user",
                 "content": (
                     f"TEXT:\n{full_text}\n\nQ: {question}\n"
-                    f"KEY FACTS (accept): {accept}\nQUOTE: {quote}\nMODEL: {model}\n"
+                    f"KEY FACTS (accept any paraphrase covering these): {accept}\n"
+                    f"QUOTE: {quote}\nEXAMPLE (not a required template): {model}\n"
                     f"STUDENT: {user_text}"
                 ),
             },
@@ -1331,22 +1350,56 @@ def judge_comprehension_answer(
         max_tokens=320,
     )
     if not isinstance(data, dict):
-        return fallback
+        data = fallback
+
+    fact_ok = bool(data.get("fact_ok"))
+    # Локальный матч по ключам — сильный сигнал, что парафраз ок
+    if meaning_local and is_sentence:
+        fact_ok = True
+    grammar_ok = bool(data.get("grammar_ok", True))
     need_fs = bool(data.get("need_full_sentence"))
-    if meaning_ok and not is_sentence:
+    # Уже есть предложение с глаголом — нельзя требовать «полный ответ» снова
+    if is_sentence:
+        need_fs = False
+    if meaning_local and not is_sentence:
         need_fs = True
-    ok = bool(data.get("ok")) and not need_fs
-    if need_fs:
-        ok = False
+        fact_ok = True
+
+    better = str(data.get("better_en") or "").strip()
+    if fact_ok and grammar_ok:
+        better = ""
+    elif fact_ok and not grammar_ok and not better:
+        better = model
+    elif not fact_ok and not better:
+        better = model
+
+    review_topic = str(data.get("review_topic") or "").strip()
+    review_level = str(data.get("review_level") or "").strip().upper()
+    if fact_ok and not grammar_ok and not review_topic:
+        review_topic = rev["review_topic"]
+        review_level = rev["review_level"]
+    if fact_ok and grammar_ok:
+        review_topic = ""
+        review_level = ""
+
+    feedback = str(data.get("feedback_ru") or fallback["feedback_ru"]).strip()
+    if fact_ok and grammar_ok and is_sentence:
+        feedback = "🦜 Рико: Верно!"
+    elif fact_ok and not grammar_ok:
+        if not feedback or "полн" in feedback.lower():
+            feedback = "🦜 Рико: Факт верный, чуть поправлю грамматику."
+
     return {
-        "ok": ok,
+        "fact_ok": fact_ok,
+        "grammar_ok": grammar_ok,
         "need_full_sentence": need_fs,
-        "meaning_ok": bool(data.get("meaning_ok", meaning_ok)),
-        "grammar_ok": bool(data.get("grammar_ok", False)),
-        "feedback_ru": str(data.get("feedback_ru") or fallback["feedback_ru"]).strip(),
-        "better_en": str(data.get("better_en") or model).strip(),
-        "review_topic": str(data.get("review_topic") or rev["review_topic"]).strip(),
-        "review_level": str(data.get("review_level") or rev["review_level"]).strip().upper(),
+        "feedback_ru": feedback,
+        "better_en": better,
+        "review_topic": review_topic,
+        "review_level": review_level or rev["review_level"],
+        # совместимость со старым полем
+        "ok": bool(fact_ok and grammar_ok and not need_fs),
+        "meaning_ok": fact_ok,
     }
 
 
@@ -1358,9 +1411,8 @@ def judge_retelling(
     level: str = "A1",
 ) -> dict:
     """
-    Лояльный пересказ: задание всегда засчитывается.
-    Правки грамматики/логики + мягкие подсказки по плану.
-    Не требовать фактов, которых нет в тексте.
+    Пересказ: план — мягкая подсказка, не шаблон.
+    Проверяем факты vs текст и грамматику; задание всегда засчитывается.
     """
     from services.gpt import _ask_json
 
@@ -1368,14 +1420,12 @@ def judge_retelling(
     fallback = {
         "passed": True,
         "feedback_ru": (
-            "🦜 Рико: Спасибо за пересказ! Я чуть поправил формулировки — "
-            "смотри ниже. Задание принято."
+            "🦜 Рико: Спасибо за пересказ! Задание принято. "
+            "Ниже — мягкие правки, если они нужны."
         ),
         "better_en": (user_text or "").strip(),
         "tips_ru": "",
-        "review_topics": [
-            {"topic": rev["review_topic"], "level": rev["review_level"]},
-        ],
+        "review_topics": [],
     }
     data = _ask_json(
         [
@@ -1383,30 +1433,33 @@ def judge_retelling(
                 "role": "system",
                 "content": (
                     "You are Rico judging an English READING retelling. ONLY JSON.\n"
-                    "ALWAYS set passed=true — the task is completed after this one submission.\n"
-                    "Be LOYAL to the student's imagination and wording: paraphrase is welcome.\n"
-                    "Do NOT punish missing plan details harshly — gently mention what could be added.\n"
-                    "CRITICAL: NEVER require facts that are NOT in the source text "
-                    "(e.g. parents' ages if the text never states them). "
-                    "If the plan sounds broader than the text, judge only by what the text supports.\n"
-                    "Check grammar and logic firmly (not case/punctuation nitpicks).\n"
+                    "ALWAYS set passed=true — one submission completes the task.\n"
+                    "The PLAN is only a soft hint / scaffold, NOT a checklist. "
+                    "Do NOT punish the student for skipping a plan point or using another order. "
+                    "Do NOT force template structure.\n"
+                    "Judge only:\n"
+                    "1) LOGIC/FACTS vs the source TEXT (no invented facts; "
+                    "do not require details the text never states).\n"
+                    "2) GRAMMAR (tense, agreement, spelling, word form) — ignore case/punctuation.\n"
+                    "Accept free paraphrase and imagination in wording.\n"
                     "Return {"
                     '"passed":true,'
-                    '"feedback_ru":"warm Russian feedback with light corrections notes",'
-                    '"better_en":"improved English retelling keeping student meaning/facts",'
-                    '"tips_ru":"optional short tips if a plan point was thin",'
+                    '"feedback_ru":"warm Russian feedback; mention fact issues and/or grammar softly",'
+                    '"better_en":"improved English keeping the student meaning; empty if already fine",'
+                    '"tips_ru":"optional one tip; empty if not needed",'
                     '"review_topics":[{"topic":"Grammar theme","level":"A1"}]'
                     "}.\n"
-                    "review_topics: 0-2 themes worth reviewing based on real student errors "
-                    "(empty list if English was already solid).\n"
+                    "review_topics: 0-2 items only for real grammar problems; empty if solid.\n"
                     f"Student CEFR level: {level}."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"PLAN:\n" + "\n".join(f"{i}. {p}" for i, p in enumerate(plan, 1))
-                    + f"\n\nFACTS FROM TEXT:\n" + "\n".join(f"- {f}" for f in facts)
+                    "PLAN (soft hint only — do not require covering every point):\n"
+                    + "\n".join(f"{i}. {p}" for i, p in enumerate(plan, 1))
+                    + "\n\nFACTS FROM TEXT:\n"
+                    + "\n".join(f"- {f}" for f in facts)
                     + f"\n\nTEXT:\n{full_text}\n\nSTUDENT RETELLING:\n{user_text}"
                 ),
             },
@@ -1428,10 +1481,14 @@ def judge_retelling(
                     clean_topics.append({"topic": topic, "level": lv})
             elif isinstance(t, str) and t.strip():
                 clean_topics.append({"topic": t.strip(), "level": (level or "A1").upper()})
+    better = str(data.get("better_en") or "").strip()
+    # не подменять пересказ шаблоном по плану, если студент уже написал нормально
+    if better and normalize_gap_token(better) == normalize_gap_token(user_text or ""):
+        better = ""
     return {
         "passed": True,
         "feedback_ru": str(data.get("feedback_ru") or fallback["feedback_ru"]).strip(),
-        "better_en": str(data.get("better_en") or fallback["better_en"]).strip(),
+        "better_en": better,
         "tips_ru": str(data.get("tips_ru") or "").strip(),
         "review_topics": clean_topics,
     }
