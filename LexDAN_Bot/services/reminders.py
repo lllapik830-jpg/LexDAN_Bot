@@ -1,6 +1,6 @@
 ﻿"""
-Напоминания: «ты не заходил» — не чаще 1 раза в сутки, тихие часы по Москве.
-Ведут к урокам/заданиям, не к «огню дня».
+Напоминания о боте для free / «Общение» (399): 2 раза в день — 12:00 и 18:00 МСК.
+Напоминания о заданиях (Grammar/Vocabulary) — только у полного тарифа (см. daily_reviews).
 """
 
 from __future__ import annotations
@@ -12,8 +12,12 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 from services.database import load_users, save_users, get_user
 from services.growth import ensure_growth
+from services.rewards import user_plan
 
 MSK = timezone(timedelta(hours=3))
+
+# Слоты мягкого пинга «загляни в бота» (МСК), только не-премиум
+BOT_PING_HOURS = (12, 18)
 
 
 def _now_msk() -> datetime:
@@ -34,17 +38,34 @@ def reminder_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def users_due_for_reminder() -> list[tuple[str, dict]]:
-    """Вернуть [(user_id, user), ...] кому пора напомнить."""
-    users = load_users()
+def _bot_ping_text(user: dict, hour: int) -> str:
+    name = user.get("name") or "друг"
+    if hour == 12:
+        return (
+            f"🦜 <b>Привет, {name}!</b>\n\n"
+            "Полдень — хорошее время заглянуть к Рико на пару минут английского.\n"
+            "Жми кнопку ниже, когда будет удобно 💚"
+        )
+    return (
+        f"🦜 <b>{name}, вечерний привет!</b>\n\n"
+        "Рико на связи. Можно коротко поговорить или заглянуть в уроки — "
+        "как хочешь сегодня ✨"
+    )
+
+
+def users_due_for_bot_ping(hour: int | None = None) -> list[tuple[str, dict, int]]:
+    """
+    Кому слать мягкий пинг о боте.
+    Returns [(user_id, user, slot_hour), ...]
+    """
     now = _now_msk()
-    hour = now.hour
-    # Тихие часы 23:00–09:00 МСК
-    if hour >= 23 or hour < 9:
+    slot = int(hour if hour is not None else now.hour)
+    if slot not in BOT_PING_HOURS:
         return []
 
     today = _today()
-    due = []
+    users = load_users()
+    due: list[tuple[str, dict, int]] = []
     for uid, raw in users.items():
         if not isinstance(raw, dict):
             continue
@@ -54,46 +75,42 @@ def users_due_for_reminder() -> list[tuple[str, dict]]:
             continue
         if not user.get("name") or user.get("step") != "ready":
             continue
-        if user.get("reminder_sent_date") == today:
+        # Полный тариф получает задания через daily_reviews — не дублируем
+        if user_plan(user) == "full":
             continue
-        last = user.get("last_active_at") or ""
-        if not last:
+        slots = user.get("bot_ping_slots")
+        if not isinstance(slots, dict):
+            slots = {}
+        day_done = slots.get(today) or []
+        if not isinstance(day_done, list):
+            day_done = []
+        if str(slot) in {str(x) for x in day_done}:
             continue
-        try:
-            last_d = datetime.fromisoformat(last)
-            if last_d.tzinfo is None:
-                last_d = last_d.replace(tzinfo=MSK)
-        except ValueError:
-            continue
-        if now - last_d < timedelta(hours=20):
-            continue
-        due.append((str(uid), user))
+        due.append((str(uid), user, slot))
     return due
 
 
+# Совместимость со старым именем (раньше — inactivity reminder)
+def users_due_for_reminder() -> list[tuple[str, dict]]:
+    return [(uid, u) for uid, u, _ in users_due_for_bot_ping()]
+
+
 async def send_due_reminders(bot) -> int:
+    """Пинги 12:00 и 18:00 МСК для free / 399."""
+    now = _now_msk()
+    if now.hour not in BOT_PING_HOURS:
+        return 0
+
     users = load_users()
-    due = users_due_for_reminder()
+    due = users_due_for_bot_ping(now.hour)
     sent = 0
     dirty = False
     today = _today()
-    for uid, _ in due:
+
+    for uid, _, slot in due:
         user = get_user(users, uid)
         ensure_growth(user)
-        name = user.get("name") or "друг"
-        streak = int(user.get("streak") or 0)
-        text = (
-            f"🦜 <b>Эй, {name}!</b>\n\n"
-            "Рико соскучился. Давай 15 минут английского сегодня?\n"
-        )
-        if streak > 0:
-            text += (
-                f"Твоя серия сейчас <b>{streak}</b> дн. — "
-                f"не прерывай её, зайди в задания 💪\n\n"
-            )
-        else:
-            text += "\n"
-        text += "Жми <b>📚 Уроки</b> — Grammar / Vocabulary / Listening."
+        text = _bot_ping_text(user, slot)
         try:
             await bot.send_message(
                 int(uid),
@@ -101,13 +118,24 @@ async def send_due_reminders(bot) -> int:
                 reply_markup=reminder_keyboard(),
                 parse_mode="HTML",
             )
-            user["reminder_sent_date"] = today
+            slots = user.get("bot_ping_slots")
+            if not isinstance(slots, dict):
+                slots = {}
+            day_done = list(slots.get(today) or [])
+            if str(slot) not in {str(x) for x in day_done}:
+                day_done.append(str(slot))
+            # не раздувать историю — только сегодня + вчера
+            keep = {today, (_now_msk().date() - timedelta(days=1)).isoformat()}
+            slots = {d: v for d, v in slots.items() if d in keep}
+            slots[today] = day_done
+            user["bot_ping_slots"] = slots
+            user["reminder_sent_date"] = today  # legacy-флаг
             user.pop("tg_blocked", None)
             sent += 1
             dirty = True
         except Exception as e:
             err = str(e).lower()
-            logging.warning(f"Reminder fail {uid}: {e}")
+            logging.warning(f"Bot ping fail {uid}: {e}")
             if "blocked" in err or "deactivated" in err or "forbidden" in err:
                 user["tg_blocked"] = True
                 dirty = True

@@ -185,7 +185,7 @@ async def _event_announce_once():
 
 
 async def _daily_review_loop():
-    """Каждые 5 мин: grammar-оффер в 12:00 МСК, vocab-оффер в 16:00 МСК."""
+    """Каждые 5 мин: офферы заданий только для 799 (Grammar 12:00, Vocab 16:00 МСК)."""
     from services.daily_reviews import send_grammar_review_offers, send_vocab_review_offers
 
     await asyncio.sleep(70)
@@ -203,7 +203,7 @@ async def _daily_review_loop():
 
 
 async def _reminder_loop():
-    """Раз в час: напоминания «не заходил»."""
+    """Каждые 5 мин: пинги о боте в 12:00 и 18:00 МСК (free / 399)."""
     from services.reminders import send_due_reminders
 
     await asyncio.sleep(45)  # дать боту подняться
@@ -211,10 +211,10 @@ async def _reminder_loop():
         try:
             n = await send_due_reminders(bot)
             if n:
-                logging.info(f"Reminders sent: {n}")
+                logging.info(f"Bot pings sent: {n}")
         except Exception as e:
             logging.error(f"Reminder loop error: {e}")
-        await asyncio.sleep(3600)
+        await asyncio.sleep(300)
 
 
 async def _trial_last_day_offer_loop():

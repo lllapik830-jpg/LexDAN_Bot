@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Ежедневные офферы: Grammar 12:00 МСК, Vocabulary 16:00 МСК.
+Ежедневные офферы заданий (только полный тариф 799):
+Grammar 12:00 МСК, Vocabulary 16:00 МСК.
 Пустой прогресс / уже повторил без новых тем → предложить пройти тему, не «огонь».
 """
 
@@ -81,10 +82,15 @@ def vocab_start_topic_kb() -> ReplyKeyboardMarkup:
 
 
 def _eligible_user(user: dict) -> bool:
+    """Напоминания о заданиях / повторении — только полный доступ (799)."""
+    from services.rewards import user_plan
+
     ensure_growth(user)
     if user.get("tg_blocked"):
         return False
     if not user.get("name") or user.get("step") != "ready":
+        return False
+    if user_plan(user) != "full":
         return False
     return True
 
