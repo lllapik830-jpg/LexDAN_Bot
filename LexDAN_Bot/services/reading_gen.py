@@ -52,7 +52,7 @@ def _gap_local_context(gapped: str, n: int, radius: int = 40) -> str:
 def _looks_ambiguous_gap(gapped: str, answers: list[str], bank: list[str]) -> str | None:
     """
     Вернуть причину, если пропуск угадывается только «наугад»
-    (возраст/число/цена без опоры в видимом тексте).
+    (возраст/число/цена/профессия без опоры в видимом тексте).
     """
     bank_l = [str(w).strip().lower() for w in bank]
     numberish = {
@@ -76,28 +76,120 @@ def _looks_ambiguous_gap(gapped: str, answers: list[str], bank: list[str]) -> st
             "thirteen",
             "fourteen",
             "fifteen",
+            "sixteen",
+            "seventeen",
+            "eighteen",
+            "nineteen",
             "twenty",
             "thirty",
             "forty",
             "fifty",
+            "sixty",
+            "seventy",
+            "eighty",
+            "ninety",
         }
     }
+    jobs = {
+        "doctor",
+        "teacher",
+        "engineer",
+        "nurse",
+        "driver",
+        "pilot",
+        "cook",
+        "chef",
+        "waiter",
+        "waitress",
+        "manager",
+        "student",
+        "writer",
+        "singer",
+        "actor",
+        "actress",
+        "farmer",
+        "lawyer",
+        "police",
+        "policeman",
+        "firefighter",
+        "builder",
+        "dentist",
+        "vet",
+        "artist",
+        "programmer",
+        "secretary",
+        "shopkeeper",
+    }
+    job_cues = {
+        "doctor": ("hospital", "sick", "patient", "medicine", "ill"),
+        "nurse": ("hospital", "sick", "patient", "medicine"),
+        "teacher": ("school", "teach", "teaches", "lesson", "class", "student"),
+        "engineer": ("bridge", "machine", "design", "factory", "build"),
+        "driver": ("bus", "taxi", "car", "drive", "drives"),
+        "cook": ("kitchen", "cook", "cooks", "restaurant", "food"),
+        "chef": ("kitchen", "cook", "restaurant"),
+        "farmer": ("farm", "field", "animals", "crop"),
+        "dentist": ("teeth", "tooth", "clinic"),
+        "vet": ("animal", "pet", "dog", "cat"),
+        "pilot": ("plane", "airport", "fly", "flies"),
+        "lawyer": ("court", "law", "case"),
+        "builder": ("house", "build", "builds", "brick"),
+        "programmer": ("code", "computer", "software"),
+        "artist": ("paint", "drawing", "picture", "gallery"),
+        "singer": ("song", "sing", "sings", "concert"),
+        "actor": ("film", "stage", "theatre", "theater"),
+        "actress": ("film", "stage", "theatre", "theater"),
+        "waiter": ("restaurant", "menu", "serve"),
+        "waitress": ("restaurant", "menu", "serve"),
+    }
+
+    years_old_gaps = 0
+    for i in range(1, 6):
+        ctx = _gap_local_context(gapped, i).lower()
+        if re.search(r"years?\s+old", ctx) or re.search(r"\bage\b", ctx):
+            years_old_gaps += 1
+
+    # Несколько возрастных пропусков + несколько чисел в банке = почти всегда лотерея
+    if years_old_gaps >= 2 and len(numberish) >= 2:
+        # разрешаем только если КАЖдое число-ответ уже написано в видимом тексте вне пропусков
+        rest = _GAP_RE.sub(" ", gapped)
+        rest_tok = set(_norm_cmp(rest).split())
+        for ans in answers:
+            a = str(ans).strip().lower()
+            if a in numberish and a not in rest_tok:
+                return (
+                    "several age gaps with numbers in the bank, but number "
+                    f"«{ans}» is not written elsewhere in the gapped text"
+                )
+
     for i, ans in enumerate(answers, start=1):
         ctx = _gap_local_context(gapped, i).lower()
-        if not any(re.search(p, ctx) for p in _AMBIGUOUS_GAP_HINTS):
-            continue
-        # рядом years old / pounds — а в банке ≥2 «числа»
-        if len(numberish) >= 2 and str(ans).strip().lower() in numberish:
-            # допустимо только если это же число уже есть в ДРУГОЙ части gapped_text
-            rest = _GAP_RE.sub(" ", gapped)
-            rest_l = rest.lower()
-            a = str(ans).strip().lower()
-            # число должно встречаться вне этого пропуска (подсказка раньше/позже)
-            if a not in _norm_cmp(rest_l).split() and a not in rest_l:
-                return (
-                    f"gap {i}: «{ans}» — число/возраст/цена без подсказки "
-                    f"в остальном тексте (пример: sister is ___ years old)"
-                )
+        a = str(ans).strip().lower()
+        if any(re.search(p, ctx) for p in _AMBIGUOUS_GAP_HINTS):
+            if len(numberish) >= 2 and a in numberish:
+                rest = _GAP_RE.sub(" ", gapped)
+                rest_tok = set(_norm_cmp(rest).lower().split())
+                if a not in rest_tok and a not in rest.lower():
+                    return (
+                        f"gap {i}: «{ans}» — число/возраст/цена без подсказки "
+                        f"в остальном тексте (пример: sister is ___ years old)"
+                    )
+
+        # Профессии: при 2+ работах в банке у каждой должна быть уникальная подсказка в тексте
+        jobs_in_bank = [w for w in bank_l if w in jobs]
+        if a in jobs and len(jobs_in_bank) >= 2:
+            rest = _GAP_RE.sub(" ", gapped).lower()
+            cues = job_cues.get(a, ())
+            if cues:
+                if not any(c in rest for c in cues):
+                    return (
+                        f"gap {i}: job «{ans}» is not uniquely cued in the gapped text "
+                        f"(need a clue like hospital/school/…)"
+                    )
+            else:
+                rest_tok = set(_norm_cmp(rest).split())
+                if a not in rest_tok:
+                    return f"gap {i}: job «{ans}» has no unique clue among {jobs_in_bank}"
     return None
 
 
@@ -220,15 +312,16 @@ def _fallback_cafe() -> dict:
 
 
 def _fallback_family() -> dict:
-    """Возраст/числа с явной подсказкой в том же видимом тексте."""
+    """
+    Семья без «угадай возраст»: возраст дан целиком в тексте,
+    пропуски — только то, что однозначно читается из подсказок.
+    """
     full = (
         "My name is Lena. I live with my family in a small flat. "
         "I have one sister. Her name is Olga. "
         "Olga is ten years old and she likes school. "
-        "My sister is ten years old, so we often do homework together. "
-        "My father is a doctor and my mother is a teacher. "
-        "Dad helps sick people at the hospital. "
-        "Mum works at our school and teaches English. "
+        "My father is a doctor. Dad helps sick people at the hospital. "
+        "My mother is a teacher. Mum works at our school and teaches English. "
         "At weekends we cook together in the kitchen. "
         "I love my family very much. "
         "Next Sunday we will visit grandma."
@@ -237,33 +330,32 @@ def _fallback_family() -> dict:
         "My name is Lena. I live with my family in a small flat. "
         "I have one sister. Her name is Olga. "
         "Olga is ten years old and she likes school. "
-        "My sister is (1)___ years old, so we often do homework together. "
-        "My father is a (2)___ and my mother is a teacher. "
-        "Dad helps sick people at the hospital. "
-        "Mum works at our school and teaches (3)___. "
+        "My sister's name is (1)___. "
+        "My father is a (2)___. Dad helps sick people at the hospital. "
+        "My mother is a teacher. Mum works at our school and teaches (3)___. "
         "At weekends we cook together in the (4)___. "
         "I love my family very much. "
         "Next Sunday we will visit (5)___."
     )
-    # (1) ten — уже сказано «Olga is ten years old»
+    # (1) Olga — уже «Her name is Olga»
     # (2) doctor — «helps sick people at the hospital»
-    # (3) English — «teaches English» / Mum teacher at school
+    # (3) English — «teaches English»
     # (4) kitchen — «cook together in the kitchen»
     # (5) grandma — «visit grandma»
-    answers = ["ten", "doctor", "English", "kitchen", "grandma"]
-    bank = ["ten", "doctor", "English", "kitchen", "grandma", "twelve"]
+    answers = ["Olga", "doctor", "English", "kitchen", "grandma"]
+    bank = ["Olga", "doctor", "English", "kitchen", "grandma", "twelve"]
     questions = [
         {
             "q": "How old is Olga?",
             "accept": ["ten", "10", "ten years old"],
-            "hint_ru": "Сколько лет Ольге?",
+            "hint_ru": "Сколько лет Ольге? Возраст уже написан в тексте целиком.",
             "quote": "Olga is ten years old…",
             "model_en": "Olga is ten years old.",
         },
         {
             "q": "What is Lena's father's job?",
             "accept": ["doctor", "a doctor"],
-            "hint_ru": "Кем работает папа?",
+            "hint_ru": "Кем работает папа? Смотри, что он делает в больнице.",
             "quote": "My father is a doctor…",
             "model_en": "Lena's father is a doctor.",
         },
@@ -284,9 +376,9 @@ def _fallback_family() -> dict:
     ]
     plan = [
         "Who Lena lives with",
-        "Facts about Olga",
+        "Facts about Olga (name and age from the text)",
         "Parents' jobs",
-        "Weekend and Sunday plans",
+        "Weekend cooking and Sunday visit",
     ]
     facts = [
         "Lena lives with her family; she has a sister Olga.",
@@ -765,11 +857,20 @@ def _fallback_pack(level: str, topic: dict) -> dict:
 
 
 def generate_reading_pack(level: str, topic: dict) -> dict:
-    from services.gpt import _ask_json
-
     fallback = _fallback_pack(level, topic)
+    tid = (topic.get("id") or "").lower()
     title_en = topic.get("title_en") or "Topic"
     title_ru = topic.get("title_ru") or title_en
+    # Семья: только проверенный текст — GPT стабильно делает «угадай возраст»
+    if "family" in tid or "family" in title_en.lower():
+        pack = dict(fallback)
+        bank = list(pack["word_bank"])
+        random.shuffle(bank)
+        pack["word_bank"] = bank
+        return pack
+
+    from services.gpt import _ask_json
+
     focus = topic.get("focus") or title_en
     system = (
         "Create CEFR English READING practice JSON for Russian learners. ONLY JSON.\n"
@@ -781,9 +882,11 @@ def generate_reading_pack(level: str, topic: dict) -> dict:
         "CRITICAL GAP RULES (task shows ONLY gapped_text + word bank, NOT full_text):\n"
         "- Each gap must be uniquely recoverable from the REST of gapped_text + bank.\n"
         "- Prefer collocations, contrasts, grammar/logic, or a fact already stated earlier "
-        "in the same gapped_text (e.g. «Olga is ten… My sister is (1)___ years old»).\n"
-        "- FORBIDDEN: bare «is ___ years old» / random ages, prices, times "
-        "when two bank numbers would both fit (ten vs twelve) with no clue.\n"
+        "in the same gapped_text.\n"
+        "- FORBIDDEN: age gaps like «is ___ years old» with numbers in the bank "
+        "(40/42/10) — NEVER. Write ages as full facts, do not gap them.\n"
+        "- FORBIDDEN: several job gaps (doctor/teacher/engineer) without unique clues "
+        "(hospital / teaches English / …) for each job.\n"
         "- The 1 distractor in word_bank must NOT fit any gap.\n"
         "answers: exactly 5 English words/short phrases for gaps 1..5 in order.\n"
         "word_bank: those 5 answers PLUS 1 distractor; will be shuffled.\n"
