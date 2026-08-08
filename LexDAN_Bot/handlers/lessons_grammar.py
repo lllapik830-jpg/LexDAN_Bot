@@ -396,10 +396,6 @@ async def _finish_exercise_ok(
         clear_active_exercise(user_id)
         lines = [text + extra, "", "📝 Прогресс:"] + progress_lines
         await m.answer("\n".join(lines), reply_markup=exercises_menu_kb(done), parse_mode="HTML")
-        if topic_just_done:
-            from services.collection import grant_collection_drop_message
-
-            await grant_collection_drop_message(m, user_id)
         return
 
     await m.answer(text + extra, parse_mode="HTML")
@@ -430,10 +426,6 @@ async def _continue_after_speak(m: Message, user_id: str, speak: dict):
             ]
         )
         await m.answer("\n".join(lines), reply_markup=exercises_menu_kb(done), parse_mode="HTML")
-        if topic_just_done:
-            from services.collection import grant_collection_drop_message
-
-            await grant_collection_drop_message(m, user_id)
         return
 
     if celebration:

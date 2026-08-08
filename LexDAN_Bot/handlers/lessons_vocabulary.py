@@ -862,7 +862,7 @@ async def vocab_word_practice(m: Message):
     done += 1
     _remember_sentence(str(m.from_user.id), text, done=done)
 
-    _user, drop_result = finish_word_practice(str(m.from_user.id), level, topic_id, word["en"])
+    finish_word_practice(str(m.from_user.id), level, topic_id, word["en"])
     from services.growth import (
         note_word_learned,
         ensure_growth,
@@ -870,7 +870,6 @@ async def vocab_word_practice(m: Message):
         is_paid,
     )
     from handlers.lesson_keyboards import lesson_limit_inline_kb
-    from services.collection import send_drop_result
     from services.event_magic import remember_tg_username
 
     users = load_users()
@@ -879,9 +878,6 @@ async def vocab_word_practice(m: Message):
     remember_tg_username(user, getattr(m.from_user, "username", None))
     wrap = note_word_learned(user)
     save_users(users, only=str(m.from_user.id))
-
-    if drop_result:
-        await send_drop_result(m, user, drop_result)
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))

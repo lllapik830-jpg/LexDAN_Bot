@@ -26,17 +26,13 @@ DUP_DROP_CHANCE = 0.20
 
 
 def collection_allowed(user_id: str | int | None) -> bool:
-    """Коллекция и кнопки ивента доступны всем пользователям."""
-    return user_id is not None
+    """Раздел «Магические элементы» отключён — UI и кнопки скрыты."""
+    return False
 
 
 def event_drops_allowed(user_id: str | int | None = None) -> bool:
-    """Дропы карт только во время активного ивента (+ доступ)."""
-    if user_id is not None and not collection_allowed(user_id):
-        return False
-    from services.event_magic import is_event_active
-
-    return is_event_active()
+    """Дропы карточек полностью отключены."""
+    return False
 
 def ensure_collection(user: dict) -> dict:
     if "collection" not in user or not isinstance(user.get("collection"), dict):
@@ -246,19 +242,7 @@ def grant_collection_finale(user: dict) -> None:
 
 
 def note_vocab_word_learned(user: dict, user_id: str | None = None) -> bool:
-    """
-    Учесть +1 выученное слово. True = пора дропать (каждые 3).
-    Если коллекция полная / нет доступа / ивент неактивен — False.
-    """
-    if not event_drops_allowed(user_id):
-        return False
-    c = ensure_collection(user)
-    if c.get("complete"):
-        return False
-    c["vocab_since_drop"] = int(c.get("vocab_since_drop") or 0) + 1
-    if c["vocab_since_drop"] >= VOCAB_DROP_EVERY:
-        c["vocab_since_drop"] = 0
-        return True
+    """Дропы отключены — никогда не триггерит карту."""
     return False
 
 
@@ -339,7 +323,6 @@ def format_drop_caption(result: dict) -> str:
 
 def format_album_text(user: dict) -> str:
     from services.event_magic import (
-        can_show_points,
         format_points,
         get_points,
         is_event_active,
@@ -417,27 +400,10 @@ async def send_drop_result(message, user: dict, result: dict) -> None:
 
 
 def try_grant_drop(user: dict, user_id: str | int | None = None) -> dict | None:
-    """Если доступ есть, ивент активен и коллекция неполная — применить дроп."""
-    if not event_drops_allowed(user_id):
-        return None
-    ensure_collection(user)
-    if is_complete(user):
-        return None
-    return apply_drop(user)
+    """Дропы отключены — всегда None."""
+    return None
 
 
 async def grant_collection_drop_message(message, user_id: str) -> None:
-    """Загрузить user, дропнуть если можно, сохранить, отправить фото+комментарий."""
-    if not event_drops_allowed(user_id):
-        return
-    from services.database import load_users, get_user, save_users
-    from services.growth import ensure_growth
-
-    users = load_users()
-    user = get_user(users, str(user_id))
-    ensure_growth(user)
-    result = try_grant_drop(user, user_id=user_id)
-    if not result:
-        return
-    save_users(users, only=str(user_id))
-    await send_drop_result(message, user, result)
+    """Дропы карточек отключены — no-op."""
+    return

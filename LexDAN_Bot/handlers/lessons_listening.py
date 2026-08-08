@@ -819,7 +819,7 @@ async def _finish_topic_ok(m: Message, uid: str, sess: dict, *, after_help: bool
     set_listening_list(uid, level)
     users = load_users()
     user = get_user(users, uid)
-    from services.collection import collection_allowed, grant_collection_drop_message
+    from services.collection import collection_allowed
     from services.event_magic import add_listening_points, remember_tg_username
 
     if (not already_done) and collection_allowed(uid):
@@ -837,6 +837,3 @@ async def _finish_topic_ok(m: Message, uid: str, sess: dict, *, after_help: bool
         reply_markup=listening_topics_kb(level, user),
         parse_mode="HTML",
     )
-
-    if not already_done:
-        await grant_collection_drop_message(m, uid)
