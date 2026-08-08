@@ -160,6 +160,10 @@ def advance_review(user: dict, *, correct: bool) -> dict:
 
 def clear_review(user: dict) -> None:
     user["grammar_review"] = {"active": False}
+    # Не оставлять hub=grammar_review — иначе ответы/выбор уровня перехватываются
+    lesson = user.get("lesson")
+    if isinstance(lesson, dict) and lesson.get("hub") == "grammar_review":
+        lesson["hub"] = None
 
 
 def format_review_prompt(item: dict, *, n: int, total: int, title: str) -> str:

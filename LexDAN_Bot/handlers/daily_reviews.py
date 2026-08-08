@@ -64,6 +64,7 @@ async def _send_current_review(m: Message, user: dict) -> None:
         ok = int(gr.get("correct") or 0)
         total = int(gr.get("total") or 0)
         clear_review(user)
+        save_users(users_for(str(m.from_user.id)), only=str(m.from_user.id))
         await m.answer(
             f"🦜 Красава! Повторение закончено: <b>{ok}/{total}</b>.\n"
             "Так материал лучше остаётся в голове. Увидимся на следующем круге 💚",
@@ -226,6 +227,8 @@ async def vocab_review_no(m: Message):
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("grammar_review"), F.text)
 async def grammar_review_answer(m: Message):
+    from aiogram.dispatcher.event.bases import SkipHandler
+
     text = (m.text or "").strip()
     if text in {
         BTN_GRAMMAR_REVIEW_YES,
@@ -235,16 +238,18 @@ async def grammar_review_answer(m: Message):
         BTN_START_GRAMMAR_TOPIC,
         BTN_START_VOCAB_TOPIC,
         "🔙 Вернуться в меню",
+        "📚 Уроки",
     }:
-        return
+        raise SkipHandler
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
     gr = ensure_grammar_review(user)
     if not gr.get("active"):
-        await m.answer("Сессия повторения не активна.", reply_markup=main_menu(user))
-        set_mode(uid, MODE_MENU)
-        return
+        # Застрявший hub после конца повторения — не блокируем Уроки
+        clear_review(user)
+        save_users(users, only=uid)
+        raise SkipHandler
     result = check_review_answer(user, text)
     await m.answer(
         ("✅ " if result["ok"] else "❌ ") + (result.get("feedback") or ""),

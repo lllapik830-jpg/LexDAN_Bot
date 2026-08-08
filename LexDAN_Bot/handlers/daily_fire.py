@@ -38,7 +38,7 @@ from services.daily_fire import (
     format_word_or_phrase,
     format_voice,
     format_fact,
-    tts_text_for,
+    tts_parts_for,
     pick_practice_offer,
     format_ritual_done,
     should_celebrate_ritual,
@@ -175,14 +175,18 @@ async def daily_fire_item(m: Message):
     else:
         text = format_fact(data, first_open=first_open)
 
-    tts = tts_text_for(kind, data)
-    if kind == "voice" and tts:
-        await send_voice_reply(m, tts, title="Огонь дня", voice_id=resolve_rico_voice_id(user))
-        await m.answer(text, reply_markup=daily_fire_kb(user), parse_mode="HTML")
-    else:
-        await m.answer(text, reply_markup=daily_fire_kb(user), parse_mode="HTML")
-        if tts:
-            await send_voice_reply(m, tts, title="Огонь дня", voice_id=resolve_rico_voice_id(user))
+    # Все аудио в огне дня — только голос Рико (без gTTS)
+    rico_vid = resolve_rico_voice_id(user)
+    tts_parts = tts_parts_for(kind, data)
+    await m.answer(text, reply_markup=daily_fire_kb(user), parse_mode="HTML")
+    for chunk in tts_parts:
+        await send_voice_reply(
+            m,
+            chunk,
+            title="Огонь дня · Rico",
+            voice_id=rico_vid,
+            allow_gtts_fallback=False,
+        )
 
     if first_open:
         users = users_for(uid)

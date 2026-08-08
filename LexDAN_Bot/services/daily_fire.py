@@ -587,10 +587,26 @@ def format_fact(data: dict, *, first_open: bool) -> str:
     )
 
 
-def tts_text_for(kind: str, data: dict) -> str:
+def tts_parts_for(kind: str, data: dict) -> list[str]:
+    """Фразы, которые Рико произносит голосом (по порядку)."""
+    parts: list[str] = []
     if kind in {"word", "phrase"}:
-        return (data.get("sentence_en") or data.get("item") or "").strip()
-    return (data.get("en") or "").strip()
+        item = (data.get("item") or "").strip()
+        sent = (data.get("sentence_en") or "").strip()
+        if item:
+            parts.append(item)
+        if sent and sent.lower() != item.lower():
+            parts.append(sent)
+    else:
+        en = (data.get("en") or "").strip()
+        if en:
+            parts.append(en)
+    return parts
+
+
+def tts_text_for(kind: str, data: dict) -> str:
+    parts = tts_parts_for(kind, data)
+    return parts[0] if parts else ""
 
 
 def accessible_cefr_levels(user: dict) -> list[str]:
@@ -777,6 +793,7 @@ __all__ = [
     "format_voice",
     "format_fact",
     "tts_text_for",
+    "tts_parts_for",
     "spoiler",
     "pick_practice_offer",
     "format_ritual_done",

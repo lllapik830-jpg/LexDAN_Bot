@@ -142,6 +142,10 @@ async def open_lessons(m: Message):
     ensure_user_fields(user)
     ensure_growth(user)
     note_lesson_activity(user)
+    # Уроки важнее застрявшего/активного повторения — сбрасываем, чтобы A0/A1 не ловил review-хендлер
+    from services.grammar_review import clear_review
+
+    clear_review(user)
     save_users(users, only=user_id)
     phase = user["assessment"].get("phase")
 

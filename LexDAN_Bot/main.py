@@ -36,7 +36,6 @@ dp.include_routers(
     secret_missions.router,  # кнопка секрета до catch-all меню
     courses.router,  # курсы / placement до catch-all меню
     a0_course.router,  # пилот A0.T1 L1 (/a0_curs) до voice/меню
-    daily_reviews.router,  # офферы повторения grammar/vocab
     menu.router,
     payments.router,
     voice.router,
@@ -47,6 +46,7 @@ dp.include_routers(
     lessons_sections.router,
     chat.router,
     lessons.router,
+    daily_reviews.router,  # после lessons: иначе hub=grammar_review перехватывает уровни
     collection.router,  # до profile catch-all
     profile.router,
 )
