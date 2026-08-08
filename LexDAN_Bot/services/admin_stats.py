@@ -203,11 +203,12 @@ def _hit_grammar_limit(u: dict) -> bool:
     if has_lessons_pass(u):
         return False
     daily = u.get("daily") or {}
-    if daily.get("hit_grammar_limit"):
+    if daily.get("hit_grammar_limit") or daily.get("hit_grammar_extra_limit"):
         return True
+    from services.growth import grammar_total_used_today
+
     cap = grammar_daily_cap(u)
-    done = int(daily.get("grammar_exercises_today") or 0)
-    return done >= cap
+    return grammar_total_used_today(u) >= cap
 
 
 def _hit_vocab_limit(u: dict) -> bool:
@@ -301,25 +302,23 @@ def report_assessed() -> str:
 
 def report_limits() -> str:
     from services.growth import (
-        FREE_LESSON_POINTS_PER_DAY,
-        POINT_GRAMMAR_EXERCISE,
-        POINT_VOCAB_ITEM,
-        lesson_points_cap,
-        lesson_points_used_today,
+        FREE_GRAMMAR_PER_DAY,
+        FREE_LISTENING_PER_DAY,
+        grammar_daily_cap as growth_grammar_cap,
+        grammar_total_used_today,
     )
 
     rows = _iter_users()
     chat_hit = [(uid, u) for uid, u in rows if _hit_chat_limit(u)]
-    lesson_hit = [
-        (uid, u)
-        for uid, u in rows
-        if (_hit_grammar_limit(u) or _hit_vocab_limit(u))
-    ]
+    grammar_hit = [(uid, u) for uid, u in rows if _hit_grammar_limit(u)]
+    vocab_hit = [(uid, u) for uid, u in rows if _hit_vocab_limit(u)]
 
     lines = [
         "⛔ <b>Лимиты сегодня (бесплатные)</b>\n",
-        f"Уроки: общий пул <b>{FREE_LESSON_POINTS_PER_DAY}</b> баллов "
-        f"(Grammar {POINT_GRAMMAR_EXERCISE} / Vocab {POINT_VOCAB_ITEM}).\n",
+        f"Grammar <b>{FREE_GRAMMAR_PER_DAY}</b> (вкл. доп.) · "
+        f"Vocab <b>{FREE_VOCAB_ITEMS_PER_DAY}</b> · "
+        f"Listening <b>{FREE_LISTENING_PER_DAY}</b> · "
+        f"Чат <b>{FREE_CHAT_PER_DAY}</b>.\n",
     ]
 
     lines.append(f"💬 Чат ({len(chat_hit)}), лимит {FREE_CHAT_PER_DAY}:")
@@ -331,12 +330,21 @@ def report_limits() -> str:
     else:
         lines.append("— никого")
 
-    lines.append(f"\n📘📗 Уроки — упёрлись в баллы ({len(lesson_hit)}):")
-    if lesson_hit:
-        for uid, u in lesson_hit:
-            used = lesson_points_used_today(u)
-            cap = lesson_points_cap(u)
-            lines.append(_line(uid, u, f"{used}/{cap} баллов"))
+    lines.append(f"\n📘 Grammar ({len(grammar_hit)}):")
+    if grammar_hit:
+        for uid, u in grammar_hit:
+            used = grammar_total_used_today(u)
+            cap = growth_grammar_cap(u)
+            lines.append(_line(uid, u, f"{used}/{cap}"))
+    else:
+        lines.append("— никого")
+
+    lines.append(f"\n📗 Vocabulary ({len(vocab_hit)}):")
+    if vocab_hit:
+        for uid, u in vocab_hit:
+            used = vocab_items_used_today(u)
+            cap = vocab_daily_cap(u)
+            lines.append(_line(uid, u, f"{used}/{cap}"))
     else:
         lines.append("— никого")
 

@@ -88,17 +88,12 @@ def grammar_daily_cap(user: dict) -> int:
 
 
 def vocab_daily_cap(user: dict) -> int:
-    """Сколько слов/фраз ещё можно выучить сегодня по баллам (1 слово = 2 балла)."""
-    from services.growth import (
-        POINT_VOCAB_ITEM,
-        lesson_points_remaining,
-        vocab_items_used_today,
-    )
-
+    """Дневной потолок слов/фраз Vocabulary (отдельный от Grammar)."""
     ensure_growth(user)
     if has_lessons_pass(user):
         return 10_000
-    return vocab_items_used_today(user) + lesson_points_remaining(user) // POINT_VOCAB_ITEM
+    daily = user["daily"]
+    return int(daily.get("vocab_cap") or FREE_VOCAB_ITEMS_PER_DAY)
 
 
 def set_grammar_cap_today(user: dict, cap: int) -> None:
@@ -115,18 +110,8 @@ def set_grammar_cap_today(user: dict, cap: int) -> None:
 
 def set_vocab_cap_today(user: dict, cap: int) -> None:
     ensure_growth(user)
-    from services.growth import POINT_VOCAB_ITEM
-
-    points = max(int(cap) * POINT_VOCAB_ITEM, int(cap))
-    cur = int(
-        user["daily"].get("lesson_points_cap")
-        or user["daily"].get("grammar_cap")
-        or FREE_LESSON_POINTS_PER_DAY
-    )
-    boosted = max(cur, points)
-    user["daily"]["lesson_points_cap"] = boosted
-    user["daily"]["vocab_cap"] = boosted
-    user["daily"]["grammar_cap"] = boosted
+    cur = int(user["daily"].get("vocab_cap") or FREE_VOCAB_ITEMS_PER_DAY)
+    user["daily"]["vocab_cap"] = max(cur, int(cap))
 
 
 STREAK_MILESTONES = (7, 14, 30, 50, 100)

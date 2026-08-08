@@ -35,11 +35,13 @@ def _today() -> str:
 
 def listening_daily_cap(user: dict) -> int | None:
     """None = безлимит (799 / триал). Иначе дневной лимит ситуаций."""
+    from services.growth import FREE_LISTENING_PER_DAY
     from services.rewards import user_plan
 
     if user_plan(user) == "full":
         return None
-    return 1  # free + 399
+    return FREE_LISTENING_PER_DAY  # free + 399
+
 
 def listening_used_today(user: dict) -> int:
     sm = ensure_listening(user)
@@ -50,6 +52,8 @@ def listening_used_today(user: dict) -> int:
 
 def can_start_listening(user: dict) -> tuple[bool, str]:
     """Можно ли начать новую ситуацию сегодня."""
+    from services.growth import FREE_LISTENING_PER_DAY
+
     cap = listening_daily_cap(user)
     if cap is None:
         return True, ""
@@ -57,7 +61,7 @@ def can_start_listening(user: dict) -> tuple[bool, str]:
     if used >= cap:
         return (
             False,
-            "🎧 На твоём тарифе — <b>1 ситуация Listening в день</b>.\n"
+            f"🎧 На твоём тарифе — <b>{FREE_LISTENING_PER_DAY} ситуация Listening в день</b>.\n"
             "Лимит на сегодня уже использован. Завтра снова можно, "
             "или открой полный доступ (799₽) без дневного лимита.",
         )
