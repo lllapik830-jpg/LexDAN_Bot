@@ -1501,6 +1501,10 @@ def generate_listening_pack(level: str, topic: dict) -> dict:
     return _attach_voices_and_number(pack, level, topic)
 
 
+def _norm_speaker(name: str) -> str:
+    return " ".join(str(name or "").strip().split()).casefold()
+
+
 def _attach_voices_and_number(pack: dict, level: str, topic: dict) -> dict:
     roles = topic.get("roles") or "two people"
     setting = topic.get("setting") or topic.get("title_en") or "everyday situation"
@@ -1540,6 +1544,10 @@ def _attach_voices_and_number(pack: dict, level: str, topic: dict) -> dict:
         voice_map[ename] = ev
         used_keys.add(ev["key"])
         used_names.add(ev["name"])
+
+    # индекс по нормализованному имени — чтобы "Jack"/"jack " не теряли голос
+    voice_by_norm = {_norm_speaker(k): v for k, v in voice_map.items()}
+
     pack["voice_map"] = {
         name: {
             "key": v["key"],
@@ -1550,10 +1558,37 @@ def _attach_voices_and_number(pack: dict, level: str, topic: dict) -> dict:
         }
         for name, v in voice_map.items()
     }
+    # fallback: первый мужской/женский из карты
+    gender_fallback = {}
+    for s in sp:
+        g = (s.get("gender") or "male").lower()
+        nm = s.get("name")
+        if nm in voice_map and g not in gender_fallback:
+            gender_fallback[g] = voice_map[nm]
+
     numbered = []
     for i, t in enumerate(pack["turns"], start=1):
-        vinfo = pack["voice_map"].get(t["speaker"]) or {}
         speaker = t["speaker"]
+        vinfo_raw = voice_map.get(speaker) or voice_by_norm.get(_norm_speaker(speaker))
+        if not vinfo_raw:
+            # не оставляем voice_id пустым — иначе mid-dialog уйдёт в Adam/gTTS
+            vinfo_raw = gender_fallback.get("male") or gender_fallback.get("female") or v0
+        vinfo = {
+            "voice_id": vinfo_raw.get("voice_id"),
+            "accent": vinfo_raw.get("accent") or "",
+            "flag": vinfo_raw.get("flag") or "",
+            "voice_name": vinfo_raw.get("name") or "",
+            "key": vinfo_raw.get("key") or "",
+        }
+        # синхронизируем карту на случай опечатки имени в turn
+        if speaker not in pack["voice_map"]:
+            pack["voice_map"][speaker] = {
+                "key": vinfo["key"],
+                "voice_id": vinfo["voice_id"],
+                "voice_name": vinfo["voice_name"],
+                "accent": vinfo["accent"],
+                "flag": vinfo["flag"],
+            }
         accent = (vinfo.get("accent") or "").strip()
         flag = (vinfo.get("flag") or "").strip()
         if accent:
@@ -1567,7 +1602,6 @@ def _attach_voices_and_number(pack: dict, level: str, topic: dict) -> dict:
                 "n": i,
                 "speaker": speaker,
                 "text": t["text"],
-                # Имя героя + акцент голоса (не имя ElevenLabs)
                 "label": f"{speaker}{accent_bit} {i}",
                 "voice_id": vinfo.get("voice_id"),
                 "accent": accent,

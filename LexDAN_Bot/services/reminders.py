@@ -1,5 +1,6 @@
 ﻿"""
 Напоминания: «ты не заходил» — не чаще 1 раза в сутки, тихие часы по Москве.
+Ведут к урокам/заданиям, не к «огню дня».
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from services.database import load_users, save_users, get_user
 from services.growth import ensure_growth
 
 MSK = timezone(timedelta(hours=3))
+
+
 def _now_msk() -> datetime:
     return datetime.now(MSK)
 
@@ -22,13 +25,10 @@ def _today() -> str:
 
 
 def reminder_keyboard() -> ReplyKeyboardMarkup:
-    from handlers.keyboards import BTN_START_TODAY
-
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BTN_START_TODAY)],
-            [KeyboardButton(text="🗣️ Общаться"), KeyboardButton(text="📚 Уроки")],
-            [KeyboardButton(text="📊 Профиль")],
+            [KeyboardButton(text="📚 Уроки")],
+            [KeyboardButton(text="🗣️ Общаться"), KeyboardButton(text="📊 Профиль")],
         ],
         resize_keyboard=True,
     )
@@ -65,7 +65,6 @@ def users_due_for_reminder() -> list[tuple[str, dict]]:
                 last_d = last_d.replace(tzinfo=MSK)
         except ValueError:
             continue
-        # Не заходил минимум ~20 часов
         if now - last_d < timedelta(hours=20):
             continue
         due.append((str(uid), user))
@@ -88,12 +87,13 @@ async def send_due_reminders(bot) -> int:
             "Рико соскучился. Давай 15 минут английского сегодня?\n"
         )
         if streak > 0:
-            text += f"Твоя серия сейчас <b>{streak}</b> дн. — не дай ей сгореть 🔥\n\n"
+            text += (
+                f"Твоя серия сейчас <b>{streak}</b> дн. — "
+                f"не прерывай её, зайди в задания 💪\n\n"
+            )
         else:
             text += "\n"
-        from handlers.keyboards import BTN_START_TODAY
-
-        text += f"Жми <b>{BTN_START_TODAY}</b> — сразу к словам."
+        text += "Жми <b>📚 Уроки</b> — Grammar / Vocabulary / Listening."
         try:
             await bot.send_message(
                 int(uid),

@@ -25,6 +25,8 @@ from services.daily_reviews import grammar_offer_kb, vocab_offer_kb
 from services.grammar_review import (
     BTN_GRAMMAR_REVIEW_NO,
     BTN_GRAMMAR_REVIEW_YES,
+    BTN_START_GRAMMAR_TOPIC,
+    BTN_START_VOCAB_TOPIC,
     BTN_VOCAB_REVIEW_NO,
     BTN_VOCAB_REVIEW_YES,
     advance_review,
@@ -83,6 +85,43 @@ async def _send_current_review(m: Message, user: dict) -> None:
         )
     else:
         await m.answer(text, parse_mode="HTML", reply_markup=_review_write_kb())
+
+
+@router.message(F.text == BTN_START_GRAMMAR_TOPIC)
+async def grammar_start_topic(m: Message):
+    uid = str(m.from_user.id)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ensure_growth(user)
+    set_mode(uid, MODE_LESSONS)
+    save_users(users, only=uid)
+    from handlers.lessons_grammar import open_grammar
+
+    await m.answer(
+        "🦜 Отлично — идём в Grammar. Выбери тему и пройди её с заданиями 💚"
+    )
+    await open_grammar(m)
+
+
+@router.message(F.text == BTN_START_VOCAB_TOPIC)
+async def vocab_start_topic(m: Message):
+    uid = str(m.from_user.id)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ensure_growth(user)
+    set_mode(uid, MODE_LESSONS)
+    from datetime import datetime, timedelta, timezone
+
+    from services.daily_reviews import _vocab_learned_count
+
+    msk = timezone(timedelta(hours=3))
+    user["vocab_review_last_date"] = datetime.now(msk).date().isoformat()
+    user["vocab_review_learned_at_review"] = _vocab_learned_count(user)
+    save_users(users, only=uid)
+    from handlers.lessons_vocabulary import start_today
+
+    await m.answer("🦜 Супер — открываю Vocabulary, пойдём учить слова 📚")
+    await start_today(m)
 
 
 @router.message(F.text == BTN_GRAMMAR_REVIEW_YES)
@@ -147,13 +186,27 @@ async def vocab_review_yes(m: Message):
     users = users_for(uid)
     user = get_user(users, uid)
     ensure_growth(user)
+    from datetime import datetime, timedelta, timezone
+
+    from services.daily_reviews import _vocab_learned_count
+
+    msk = timezone(timedelta(hours=3))
+    learned = _vocab_learned_count(user)
+    if learned <= 0:
+        await m.answer(
+            "🦜 Пока нет изученных слов — сначала пройди тему Vocabulary.",
+            reply_markup=main_menu(user),
+        )
+        set_mode(uid, MODE_MENU)
+        save_users(users, only=uid)
+        return
+    user["vocab_review_last_date"] = datetime.now(msk).date().isoformat()
+    user["vocab_review_learned_at_review"] = learned
     set_mode(uid, MODE_LESSONS)
     set_vocab_hub(uid, "global_drill_menu")
-    users = users_for(uid)
-    user = get_user(users, uid)
+    save_users(users, only=uid)
     await m.answer(
-        "🦜 Супер! Открываю задания по всем уровням — "
-        "можно повторить изученные слова или фразы.",
+        "🦜 Супер! Открываю задания по изученным словам и фразам ✨",
         reply_markup=global_drill_menu_kb(),
         parse_mode="HTML",
     )
@@ -179,6 +232,8 @@ async def grammar_review_answer(m: Message):
         BTN_GRAMMAR_REVIEW_NO,
         BTN_VOCAB_REVIEW_YES,
         BTN_VOCAB_REVIEW_NO,
+        BTN_START_GRAMMAR_TOPIC,
+        BTN_START_VOCAB_TOPIC,
         "🔙 Вернуться в меню",
     }:
         return

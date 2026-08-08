@@ -375,13 +375,21 @@ async def listening_ready(m: Message):
     for t in turns_n:
         label = t.get("label") or f"{t['speaker']} {t['n']}"
         await m.answer(f"<b>{label}:</b>", parse_mode="HTML")
-        await send_voice_reply(
+        # Без gTTS-fallback: иначе к 5–6 реплике голос персонажа прыгает на Google
+        ok = await send_voice_reply(
             m,
             t["text"],
             title=label,
             voice_id=t.get("voice_id"),
             slow=slow,
+            allow_gtts_fallback=False,
         )
+        if not ok:
+            await m.answer(
+                f"<i>(голос {t.get('speaker') or ''} временно недоступен — текст ниже)</i>\n"
+                f"<code>{t.get('text') or ''}</code>",
+                parse_mode="HTML",
+            )
 
     await m.answer(
         "Когда прослушаешь всё — жми <b>Прослушал(а)</b>.\n"
@@ -442,6 +450,7 @@ async def listening_replay_turn(m: Message):
         title=label,
         voice_id=turn.get("voice_id"),
         slow=_slow_for_level(level),
+        allow_gtts_fallback=False,
     )
 
 

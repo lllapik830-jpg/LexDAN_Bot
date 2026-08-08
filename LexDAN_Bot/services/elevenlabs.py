@@ -150,16 +150,26 @@ def gtts_tts(text: str, *, slow: bool = False) -> bytes | None:
 
 
 def synthesize_speech(
-    text: str, voice_id: str | None = None, *, slow: bool = False
+    text: str, voice_id: str | None = None, *, slow: bool = False,
+    allow_gtts_fallback: bool = True,
 ) -> tuple[bytes | None, str]:
     """
-    Сначала ElevenLabs, при ошибке — gTTS.
-    Возвращает (mp3_bytes, source) где source = 'elevenlabs' | 'gtts' | ''.
+    Сначала ElevenLabs, при ошибке — gTTS (если allow_gtts_fallback).
+    Для listening-диалогов: allow_gtts_fallback=False, чтобы голос персонажа
+    не прыгал на google mid-cast.
     """
     audio, err = elevenlabs_tts_detail(text, voice_id=voice_id, slow=slow)
     if audio:
         return audio, "elevenlabs"
-    logging.warning(f"ElevenLabs unavailable ({err}), falling back to gTTS")
+    # один повтор для sticky-voice (часто timeout на Render)
+    if voice_id:
+        audio, err2 = elevenlabs_tts_detail(text, voice_id=voice_id, slow=slow)
+        if audio:
+            return audio, "elevenlabs"
+        err = err2 or err
+    logging.warning(f"ElevenLabs unavailable ({err}), falling back to gTTS={allow_gtts_fallback}")
+    if not allow_gtts_fallback:
+        return None, ""
     audio = gtts_tts(text, slow=slow)
     if audio:
         return audio, "gtts"
@@ -175,7 +185,6 @@ def mp3_to_ogg_opus(mp3_bytes: bytes) -> bytes | None:
         return None
 
     try:
-        # Через pipe — без временных файлов на диске
         result = subprocess.run(
             [
                 "ffmpeg",
@@ -205,7 +214,6 @@ def mp3_to_ogg_opus(mp3_bytes: bytes) -> bytes | None:
     except Exception as e:
         logging.error(f"mp3_to_ogg error: {e}")
         return None
-
 
 
 async def send_voice_from_mp3(
@@ -258,12 +266,17 @@ async def send_voice_reply(
     title: str = "LexDAN",
     voice_id: str | None = None,
     slow: bool = False,
+    allow_gtts_fallback: bool = True,
 ) -> bool:
     """Сгенерировать и отправить голосовое. True если ушло."""
     import asyncio
 
     mp3_bytes, source = await asyncio.to_thread(
-        synthesize_speech, text, voice_id, slow=slow
+        synthesize_speech,
+        text,
+        voice_id,
+        slow=slow,
+        allow_gtts_fallback=allow_gtts_fallback,
     )
     return await send_voice_from_mp3(
         message, mp3_bytes, source=source, title=title

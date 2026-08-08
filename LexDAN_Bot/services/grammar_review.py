@@ -16,8 +16,47 @@ BTN_GRAMMAR_REVIEW_YES = "🔁 Повторить материал"
 BTN_GRAMMAR_REVIEW_NO = "⏭ Отказаться"
 BTN_VOCAB_REVIEW_YES = "🔁 Повторить"
 BTN_VOCAB_REVIEW_NO = "⏭ Не сейчас"
+BTN_START_GRAMMAR_TOPIC = "📚 Пройти тему Grammar"
+BTN_START_VOCAB_TOPIC = "📚 Пройти тему Vocabulary"
 
 REVIEW_TYPES = ("mcq", "word_form", "order_words", "translate_en", "write_sentence")
+
+
+def _shuffle_mcq_options(item: dict) -> dict:
+    """Правильный ответ не должен всегда быть на 1-й кнопке."""
+    opts = list(item.get("options") or [])
+    ans = (item.get("answer") or "").strip()
+    if len(opts) < 2 or not ans:
+        return item
+    order = list(range(len(opts)))
+    random.shuffle(order)
+    # стараемся не оставлять correct на позиции 0
+    for _ in range(6):
+        if opts[order[0]] != ans or len(order) < 2:
+            break
+        random.shuffle(order)
+    item["options"] = [opts[i] for i in order]
+    return item
+
+
+def _sanitize_tip(tip: str) -> str:
+    """Убрать спойлеры вида «… → There are» из подсказок."""
+    t = (tip or "").strip()
+    if not t:
+        return ""
+    if "→" in t or "->" in t:
+        # оставляем только безопасную часть до стрелки, если она общая
+        left = t.split("→", 1)[0].split("->", 1)[0].strip(" .")
+        if left.lower() in {
+            "subject",
+            "subject → verb → object (и обстоятельства)",
+        } or left.startswith("Subject"):
+            return "Порядок: подлежащее → глагол → остальное."
+        if "вопрос" in left.lower() or "неисчисляем" in left.lower():
+            return "Смотри: вопрос это или утверждение, и число (ед./мн.)."
+        return ""
+    # если tip явно содержит правильный ответ-фразу длиннее 3 слов — режем
+    return t
 
 
 def completed_practice_topics(user: dict) -> list[tuple[str, str, str]]:
@@ -53,6 +92,14 @@ def pick_review_set(topic_id: str) -> list[dict]:
         item = dict(random.choice(pool))
         item["subtype"] = st
         item["kind"] = "mcq" if st == "mcq" else "write"
+        # не светим спойлер-подсказки
+        tip = _sanitize_tip(str(item.get("tip") or ""))
+        if tip:
+            item["tip"] = tip
+        else:
+            item.pop("tip", None)
+        if st == "mcq":
+            item = _shuffle_mcq_options(item)
         chosen.append(item)
     random.shuffle(chosen)
     return chosen
@@ -99,6 +146,15 @@ def advance_review(user: dict, *, correct: bool) -> dict:
     if int(gr["index"]) >= len(gr.get("queue") or []):
         gr["active"] = False
         gr["finished"] = True
+        # снимок для логики офферов: не долбить ту же тему завтра
+        from datetime import datetime, timedelta, timezone
+
+        msk = timezone(timedelta(hours=3))
+        user["grammar_review_last_topic_id"] = gr.get("topic_id")
+        user["grammar_review_last_date"] = datetime.now(msk).date().isoformat()
+        user["grammar_review_topics_count_at_review"] = len(
+            completed_practice_topics(user)
+        )
     return gr
 
 
@@ -110,6 +166,7 @@ def format_review_prompt(item: dict, *, n: int, total: int, title: str) -> str:
     st = item.get("subtype") or ""
     head = f"🦜 <b>Повторение · {title}</b>\nЗадание {n}/{total}\n\n"
     instr = (item.get("instruction_ru") or "").strip()
+    # tip никогда не показываем в условии — там часто спойлер ответа
     if st == "mcq":
         sent = (item.get("sentence_en") or "").strip()
         ru = (item.get("sentence_ru") or "").strip()
@@ -127,7 +184,8 @@ def format_review_prompt(item: dict, *, n: int, total: int, title: str) -> str:
             body += f"\n<i>{ru}</i>"
         return head + body
     if st == "order_words":
-        words = item.get("words") or []
+        words = list(item.get("words") or [])
+        random.shuffle(words)
         mixed = " / ".join(str(w) for w in words)
         return head + f"{instr}\n\n<code>{mixed}</code>"
     if st == "translate_en":
