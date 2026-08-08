@@ -45,10 +45,41 @@ _REVIEW_BY_LEVEL: dict[str, dict[str, tuple[str, str]]] = {
 
 
 def _normalize_text(s: str) -> str:
-    """Нижний регистр, без пунктуации; апострофы снимаем — havent == haven't."""
+    """Нижний регистр; it's ≠ its (сначала раскрываем сокращения)."""
     t = (s or "").strip().lower().replace("ё", "е")
-    t = t.replace("’", "'").replace("`", "'").replace("ʻ", "'")
-    t = t.replace("'", "")  # don't / dont / don't → dont
+    t = (
+        t.replace("’", "'")
+        .replace("‘", "'")
+        .replace("`", "'")
+        .replace("ʻ", "'")
+        .replace("′", "'")
+    )
+    for a, b in (
+        ("won't", "will not"),
+        ("can't", "cannot"),
+        ("don't", "do not"),
+        ("doesn't", "does not"),
+        ("didn't", "did not"),
+        ("isn't", "is not"),
+        ("aren't", "are not"),
+        ("wasn't", "was not"),
+        ("weren't", "were not"),
+        ("haven't", "have not"),
+        ("hasn't", "has not"),
+        ("hadn't", "had not"),
+        ("i'm", "i am"),
+        ("you're", "you are"),
+        ("we're", "we are"),
+        ("they're", "they are"),
+        ("he's", "he is"),
+        ("she's", "she is"),
+        ("it's", "it is"),
+        ("that's", "that is"),
+        ("there's", "there is"),
+        ("let's", "let us"),
+    ):
+        t = t.replace(a, b)
+    t = t.replace("'", "")
     t = re.sub(r"[.!?,;:\"«»()\[\]{}]", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
     return t
@@ -65,8 +96,7 @@ def _answer_aliases(text: str) -> set[str]:
     out.add(n.replace("there is", "theres"))
     out.add(n.replace("i am", "im"))
     out.add(n.replace("im", "i am"))
-    out.add(n.replace("it is", "its"))
-    out.add(n.replace("its", "it is"))
+    # its ≠ it is / it's
     return {x for x in out if x}
 
 

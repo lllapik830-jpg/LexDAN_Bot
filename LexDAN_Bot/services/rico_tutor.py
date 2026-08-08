@@ -306,19 +306,38 @@ def generate_grammar_exercise(
     return _finalize_exercise(data, subtype, kind, fallback)
 
 
+def _ascii_apos(s: str) -> str:
+    """Единый ASCII-апостроф ' — без «кривых» кавычек в кнопках."""
+    return (
+        (s or "")
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("`", "'")
+        .replace("ʻ", "'")
+        .replace("′", "'")
+    )
+
+
 def _mcq_options_ok(options, answer: str) -> bool:
     if not isinstance(options, list) or len(options) < 4:
         return False
-    opts = [str(x).strip() for x in options[:4]]
+    opts = [_ascii_apos(str(x).strip()) for x in options[:4]]
+    if any(not o for o in opts):
+        return False
+    # не склеивать its и it's: сравниваем как есть
     if len(set(o.lower() for o in opts)) < 4:
+        return False
+    # GPT иногда пихает «its/it's» одним вариантом — брак
+    if any("/" in o for o in opts):
         return False
     # GPT часто пишет a/b/c/d — брак
     letters = {"a", "b", "c", "d"}
     if all(o.lower().rstrip(".") in letters for o in opts):
         return False
-    if answer not in opts:
+    ans = _ascii_apos(answer).strip()
+    if ans not in opts:
         lower_map = {o.lower(): o for o in opts}
-        if answer.lower() not in lower_map:
+        if ans.lower() not in lower_map:
             return False
     return True
 
@@ -351,7 +370,8 @@ def _finalize_exercise(data: dict, subtype: str, kind: str, fallback: dict) -> d
             instruction_ru = (fallback.get("instruction_ru") or instruction_ru).strip()
             tip = (fallback.get("tip") or tip).strip()
             prompt = _build_exercise_display(instruction_ru, sentence_en, sentence_ru, "mcq")
-        options = [str(x) for x in options[:4]]
+        options = [_ascii_apos(str(x).strip()) for x in options[:4]]
+        answer = _ascii_apos(answer)
         if answer not in options:
             lower_map = {o.lower(): o for o in options}
             if answer.lower() in lower_map:
@@ -489,11 +509,48 @@ def translate_exercise_prompt(prompt: str) -> str | None:
 
 
 def _normalize_text(s: str) -> str:
+    """
+    Мягкая нормализация для сравнения ответов.
+    Важно: it's ≠ its — сначала раскрываем it's → it is, потом снимаем апострофы
+    (иначе it's и its схлопываются в одно «its»).
+    """
     import re
 
     t = (s or "").strip().lower().replace("ё", "е")
-    t = t.replace("’", "'").replace("`", "'").replace("ʻ", "'")
-    # не придираемся к апострофам: don't == dont
+    t = (
+        t.replace("’", "'")
+        .replace("‘", "'")
+        .replace("`", "'")
+        .replace("ʻ", "'")
+        .replace("′", "'")
+    )
+    # Раскрыть частые сокращения ДО удаления апострофа
+    for a, b in (
+        ("won't", "will not"),
+        ("can't", "cannot"),
+        ("don't", "do not"),
+        ("doesn't", "does not"),
+        ("didn't", "did not"),
+        ("isn't", "is not"),
+        ("aren't", "are not"),
+        ("wasn't", "was not"),
+        ("weren't", "were not"),
+        ("haven't", "have not"),
+        ("hasn't", "has not"),
+        ("hadn't", "had not"),
+        ("i'm", "i am"),
+        ("you're", "you are"),
+        ("we're", "we are"),
+        ("they're", "they are"),
+        ("he's", "he is"),
+        ("she's", "she is"),
+        ("it's", "it is"),
+        ("that's", "that is"),
+        ("there's", "there is"),
+        ("let's", "let us"),
+    ):
+        t = t.replace(a, b)
+    # оставшиеся апострофы (Dan's → Dans) — не придираемся к стилю
     t = t.replace("'", "")
     t = re.sub(r"[.!?,;:\"«»()\[\]{}]", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
@@ -514,8 +571,7 @@ def _answer_aliases(text: str) -> set[str]:
     out.add(n.replace("there are", "therere"))
     out.add(n.replace("i am", "im"))
     out.add(n.replace("im", "i am"))
-    out.add(n.replace("it is", "its"))
-    out.add(n.replace("its", "it is"))
+    # НЕ уравниваем its ↔ it is: это разные слова (possessive vs it's)
     return {x for x in out if x}
 
 

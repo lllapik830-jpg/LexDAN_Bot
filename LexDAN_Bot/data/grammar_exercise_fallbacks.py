@@ -817,6 +817,12 @@ TOPIC_FOCUS: dict[str, str] = {
     "comparatives": "ONLY comparative/superlative adjectives.",
     "modals_a2": "ONLY must/have to/should/mustn't.",
     "conditionals_0_1": "ONLY zero/first conditional.",
+    "possessive_s_a1": (
+        "ONLY possessive 's / s' and its vs it's. "
+        "CRITICAL: its (belonging, NO apostrophe) is NOT it's (it is). "
+        "Never mark them as the same. Use straight ASCII apostrophe ' in options. "
+        "Do not put 'its/it's' as one option."
+    ),
     "passive_basic": "ONLY passive (be + V3).",
     "present_perfect": "ONLY Present Perfect (have/has + V3).",
     "going_to_future": "ONLY be going to + V1.",
