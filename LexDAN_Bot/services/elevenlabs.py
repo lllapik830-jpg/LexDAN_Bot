@@ -271,14 +271,39 @@ async def send_voice_reply(
     """Сгенерировать и отправить голосовое. True если ушло."""
     import asyncio
 
+    vid = (voice_id or "").strip() or None
     mp3_bytes, source = await asyncio.to_thread(
         synthesize_speech,
         text,
-        voice_id,
+        vid,
         slow=slow,
         allow_gtts_fallback=allow_gtts_fallback,
     )
     return await send_voice_from_mp3(
         message, mp3_bytes, source=source, title=title
+    )
+
+
+async def send_rico_voice(
+    message,
+    text: str,
+    *,
+    user: dict | None = None,
+    title: str = "Rico",
+    slow: bool = False,
+) -> bool:
+    """
+    Озвучка голосом Рико (уроки, огонь дня, реплики Рико).
+    Не использовать для чата и персонажей Listening.
+    """
+    from services.voices import resolve_rico_voice_id
+
+    return await send_voice_reply(
+        message,
+        text,
+        title=title,
+        voice_id=resolve_rico_voice_id(user),
+        slow=slow,
+        allow_gtts_fallback=True,
     )
 

@@ -85,14 +85,13 @@ def _parse_choice(text: str, n: int) -> int | None:
 
 
 async def _voice_only(m: Message, text: str, p: dict) -> None:
-    """Только голосовое — без текста фразы над ним."""
+    """Только голосовое — без текста фразы над ним. Голос Рико."""
     p["last_audio"] = text
     try:
-        from services.elevenlabs import synthesize_speech, send_voice_from_mp3
+        from services.elevenlabs import send_rico_voice
 
-        mp3, _ = await asyncio.to_thread(synthesize_speech, text, slow=True)
-        if mp3:
-            await send_voice_from_mp3(m, mp3, title="A0 L1")
+        ok = await send_rico_voice(m, text, title="A0 L1", slow=True)
+        if ok:
             return
     except Exception as e:
         log.warning("a0 tts fail: %s", e)

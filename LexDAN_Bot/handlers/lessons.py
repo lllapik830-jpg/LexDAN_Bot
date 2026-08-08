@@ -41,7 +41,7 @@ from services.assessment import (
 )
 from services.assessment_gen import estimate_level_from_translation
 from services.gpt import judge_translation, judge_vocab, judge_listening, judge_writing
-from services.elevenlabs import send_voice_reply
+from services.elevenlabs import send_rico_voice
 
 router = Router()
 
@@ -453,10 +453,9 @@ async def switch_rico_voice(m: Message):
         BTN_RICO_VOICE,
         toggle_rico_voice,
         rico_voice_help_html,
-        resolve_rico_voice_id,
         rico_alt_voice_unlocked,
     )
-    from services.elevenlabs import send_voice_reply
+    from services.elevenlabs import send_rico_voice
 
     uid = str(m.from_user.id)
     users = users_for(uid)
@@ -480,12 +479,7 @@ async def switch_rico_voice(m: Message):
     preview = (
         "Hello! I'm Rico. Let's learn English together with patience and courage."
     )
-    await send_voice_reply(
-        m,
-        preview,
-        title="Rico voice preview",
-        voice_id=resolve_rico_voice_id(user),
-    )
+    await send_rico_voice(m, preview, user=user, title="Rico voice preview")
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text)
@@ -628,8 +622,13 @@ async def _start_listen_flow(m: Message, level: str):
 
 
 async def _send_listen_audio(m: Message, text: str, number: int):
+    from services.database import users_for, get_user
+    from services.elevenlabs import send_rico_voice
+
     await m.answer(f"🎧 {number}/3", reply_markup=assess_dont_know_kb())
-    await send_voice_reply(m, text, title=f"Listen {number}")
+    uid = str(m.from_user.id)
+    user = get_user(users_for(uid), uid)
+    await send_rico_voice(m, text, user=user, title=f"Listen {number}")
 
 
 async def _handle_listen_answer(m: Message, user: dict, text: str):

@@ -34,7 +34,7 @@ from services.listening_state import (
     consume_listening_slot,
 )
 from services.listening_gen import generate_listening_pack, build_order_summary, TURN_COUNT
-from services.elevenlabs import send_voice_reply
+from services.elevenlabs import send_voice_reply, send_rico_voice
 
 router = Router()
 
@@ -797,7 +797,7 @@ async def listening_task3_pick(m: Message):
         "🦜 Рико: Давай разберём правильный порядок.\n\n" + summary,
         parse_mode="HTML",
     )
-    await send_voice_reply(m, summary, title="Rico order", slow=slow)
+    await send_rico_voice(m, summary, user=user, title="Rico order", slow=slow)
     from services.translation import translate_to_russian
 
     ru = translate_to_russian(summary) or ""

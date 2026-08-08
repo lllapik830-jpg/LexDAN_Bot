@@ -44,8 +44,7 @@ from services.daily_fire import (
     should_celebrate_ritual,
     mark_ritual_celebrated,
 )
-from services.elevenlabs import send_voice_reply
-from services.voices import resolve_rico_voice_id
+from services.elevenlabs import send_rico_voice
 from data.assessment_data import is_level_accessible_for_user
 
 router = Router()
@@ -175,18 +174,11 @@ async def daily_fire_item(m: Message):
     else:
         text = format_fact(data, first_open=first_open)
 
-    # Все аудио в огне дня — только голос Рико (без gTTS)
-    rico_vid = resolve_rico_voice_id(user)
+    # Все аудио в огне дня — только голос Рико
     tts_parts = tts_parts_for(kind, data)
     await m.answer(text, reply_markup=daily_fire_kb(user), parse_mode="HTML")
     for chunk in tts_parts:
-        await send_voice_reply(
-            m,
-            chunk,
-            title="Огонь дня · Rico",
-            voice_id=rico_vid,
-            allow_gtts_fallback=False,
-        )
+        await send_rico_voice(m, chunk, user=user, title="Огонь дня · Rico")
 
     if first_open:
         users = users_for(uid)

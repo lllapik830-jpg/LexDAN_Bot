@@ -9,13 +9,18 @@ import os
 from services.rewards import user_plan
 
 # Дефолт для бесплатного тарифа (Adam)
-DEFAULT_VOICE_ID = (os.getenv("ELEVENLABS_VOICE_ID") or "pNInz6obpgDQGcFmaJgB").strip()
+def _env_voice(name: str, fallback: str) -> str:
+    v = (os.getenv(name) or "").strip()
+    return v if v else fallback
 
-# Голос Рико — для уроков (всегда)
-RICO_VOICE_ID = (os.getenv("RICO_VOICE_ID") or "fBD19tfE58bkETeiwUoC").strip()
+
+DEFAULT_VOICE_ID = _env_voice("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
+
+# Голос Рико — для уроков / огня дня / Рико-реплик (всегда)
+RICO_VOICE_ID = _env_voice("RICO_VOICE_ID", "fBD19tfE58bkETeiwUoC")
 RICO_VOICE_NAME = "Rico 🦜"
 # Призовой второй голос Рико (1–2 место ивента)
-RICO_VOICE_ALT_ID = (os.getenv("RICO_VOICE_ALT_ID") or "XsmrVB66q3D4TaXVaWNF").strip()
+RICO_VOICE_ALT_ID = _env_voice("RICO_VOICE_ALT_ID", "XsmrVB66q3D4TaXVaWNF")
 RICO_VOICE_ALT_NAME = "Rico · Legend 👑"
 
 BTN_RICO_VOICE = "🦜 Голос Рико"
@@ -250,10 +255,12 @@ def rico_alt_voice_unlocked(user: dict | None) -> bool:
 
 
 def resolve_rico_voice_id(user: dict | None = None) -> str:
-    """Какой Voice ID Рико использовать в уроках/озвучке."""
+    """Какой Voice ID Рико использовать в уроках/озвучке. Никогда не пустой."""
     if user and rico_alt_voice_unlocked(user) and (user.get("rico_voice_key") or "") == "legend":
-        return RICO_VOICE_ALT_ID or RICO_VOICE_ID
-    return RICO_VOICE_ID
+        vid = (RICO_VOICE_ALT_ID or "").strip() or RICO_VOICE_ID
+    else:
+        vid = (RICO_VOICE_ID or "").strip()
+    return vid or "fBD19tfE58bkETeiwUoC"
 
 
 def current_rico_voice_label(user: dict | None = None) -> str:
