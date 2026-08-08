@@ -25,28 +25,12 @@ BTN_RICO_HELP = "🦜 Помощь Рико"
 
 
 def level_sections_kb(user: dict | None = None, *, user_id: str | int | None = None) -> ReplyKeyboardMarkup:
-    """Grammar + Vocabulary + Listening; Reading — только MANAGER (тест)."""
-    from services.database import load_users, get_user
-    from config import MANAGER_ID
-
+    """Grammar + Vocabulary + Listening + Reading."""
     rows = [
         [KeyboardButton(text="📘 Grammar"), KeyboardButton(text="📗 Vocabulary")],
-        [KeyboardButton(text="🎧 Listening")],
+        [KeyboardButton(text="🎧 Listening"), KeyboardButton(text="📖 Reading")],
+        [KeyboardButton(text="⬅️ К уровням"), KeyboardButton(text="🔙 Вернуться в меню")],
     ]
-    u = user
-    uid = user_id
-    if u is None and uid is not None:
-        users = load_users()
-        u = get_user(users, str(uid))
-    if uid is None and isinstance(u, dict):
-        uid = u.get("telegram_id") or u.get("id")
-    # Reading — ранний доступ только админу
-    try:
-        if uid is not None and int(uid) == int(MANAGER_ID):
-            rows.append([KeyboardButton(text="📖 Reading")])
-    except (TypeError, ValueError):
-        pass
-    rows.append([KeyboardButton(text="⬅️ К уровням"), KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 

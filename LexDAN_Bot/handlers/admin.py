@@ -47,7 +47,7 @@ HELP = (
     "/users — живые (зарегистрированы, не блокировали бота)\n"
     "/purge_blocked — проверить Telegram и удалить блоки из БД\n"
     "/user <code>id</code> — полная карточка\n"
-    "/top — топ по использованию (чат/grammar/vocab/listening)\n"
+    "/top — топ по использованию (чат/grammar/vocab/listening/reading)\n"
     "/others — без активности в разделах\n"
     "/starts — кто нажал /start сегодня\n"
     "/paid — у кого активный тариф\n"

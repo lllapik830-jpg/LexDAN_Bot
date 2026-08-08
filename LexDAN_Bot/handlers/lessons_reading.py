@@ -1,11 +1,10 @@
-"""Раздел Reading — 3 задания (пока только MANAGER_ID)."""
+"""Раздел Reading — 3 задания (тексты из фиксированного банка, без озвучки)."""
 
 from __future__ import annotations
 
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
-from config import MANAGER_ID
 from handlers.filters import ModeFilter
 from handlers.lesson_filters import LessonHubFilter
 from handlers.lesson_keyboards import level_sections_kb
@@ -22,6 +21,8 @@ from services.reading_state import (
     update_session,
     clear_session,
     mark_topic_done,
+    can_start_reading,
+    consume_reading_slot,
 )
 from services.reading_gen import (
     generate_reading_pack,
@@ -40,13 +41,6 @@ BTN_READING = "📖 Reading"
 BTN_EXIT = "🚪 Выйти из Reading"
 BTN_BACK_SECTIONS = "⬅️ К разделам"
 BTN_READY = "✅ Начать задание 1"
-
-
-def reading_allowed(user_id: str | int) -> bool:
-    try:
-        return int(user_id) == int(MANAGER_ID)
-    except (TypeError, ValueError):
-        return False
 
 
 def reading_topics_kb(level: str, user: dict) -> ReplyKeyboardMarkup:
@@ -78,21 +72,25 @@ def intro_kb() -> ReplyKeyboardMarkup:
 
 async def open_reading_for_level(m: Message, user: dict, level: str) -> None:
     uid = str(m.from_user.id)
-    if not reading_allowed(uid):
-        await m.answer(
-            "📖 Reading скоро откроется. Пока раздел на проверке 🦜",
-            reply_markup=level_sections_kb(user=user, user_id=uid),
-        )
-        return
+    from services.growth import ensure_growth
+    from services.rewards import user_plan
+
+    ensure_growth(user)
     set_reading_list(uid, level)
     users = load_users()
     user = get_user(users, uid)
     ensure_reading(user)
+    plan = user_plan(user)
+    if plan == "full":
+        limit_note = "Безлимит тем на твоём тарифе ✨"
+    else:
+        limit_note = "На free и 399₽ — <b>1 тема в день</b> · на 799₽ — безлимит."
     await m.answer(
         f"📖 <b>Reading · {level}</b>\n\n"
-        "Выбери тему — короткий текст + 3 задания.\n"
+        f"{limit_note}\n"
+        "Выбери тему — короткий текст + 3 задания (без озвучки).\n"
         "Чтобы закрыть тему галочкой, нужно пройти все 3 задания подряд.\n"
-        "Если выйдешь раньше — прогресс темы сбросится, текст будет новый.",
+        "Если выйдешь раньше — прогресс темы сбросится.",
         reply_markup=reading_topics_kb(level, user),
         parse_mode="HTML",
     )
@@ -129,8 +127,6 @@ async def reading_pick_topic(m: Message):
     text = (m.text or "").strip()
     if text in {BTN_BACK_SECTIONS, "🔙 Вернуться в меню", BTN_EXIT}:
         return
-    if not reading_allowed(m.from_user.id):
-        return
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     level = (user.get("lesson") or {}).get("level") or "A1"
@@ -139,12 +135,17 @@ async def reading_pick_topic(m: Message):
         await m.answer("Выбери тему кнопкой ниже.", reply_markup=reading_topics_kb(level, user))
         return
 
+    ok, limit_msg = can_start_reading(user)
+    if not ok:
+        await m.answer(limit_msg, parse_mode="HTML", reply_markup=reading_topics_kb(level, user))
+        return
+
     await m.answer(
         f"🦜 <b>Рико:</b> Тема «{topic['title_ru']}».\n\n"
         "Будет текст на английском и 3 задания:\n"
         "1️⃣ Заполни пропуски (2 попытки)\n"
-        "2️⃣ Ответы на вопросы полными предложениями\n"
-        "3️⃣ Пересказ по плану\n\n"
+        "2️⃣ Ответы на вопросы своими словами\n"
+        "3️⃣ Пересказ (план — подсказка)\n\n"
         "Нажми <b>Начать задание 1</b>.\n"
         "⚠️ Выход сбросит прогресс этой попытки.",
         reply_markup=intro_kb(),
@@ -191,6 +192,14 @@ async def reading_ready(m: Message):
     sess = get_session(user)
     if not sess or sess.get("phase") != "intro":
         return
+    ok, limit_msg = can_start_reading(user)
+    if not ok:
+        level = sess.get("level") or "A1"
+        await m.answer(limit_msg, parse_mode="HTML", reply_markup=reading_topics_kb(level, user))
+        clear_session(uid)
+        set_reading_list(uid, level)
+        return
+
     level = sess["level"]
     topic = get_topic(level, sess["topic_id"]) or {
         "id": sess["topic_id"],
@@ -201,9 +210,10 @@ async def reading_ready(m: Message):
 
     from services.tg_out import status
 
-    async with status(m, "🦜 Рико готовит текст…"):
+    async with status(m, "🦜 Рико открывает текст…"):
         pack = generate_reading_pack(level, topic)
 
+    consume_reading_slot(uid)
     update_session(
         uid,
         content=pack,

@@ -304,6 +304,7 @@ def report_limits() -> str:
     from services.growth import (
         FREE_GRAMMAR_PER_DAY,
         FREE_LISTENING_PER_DAY,
+        FREE_READING_PER_DAY,
         grammar_daily_cap as growth_grammar_cap,
         grammar_total_used_today,
     )
@@ -318,6 +319,7 @@ def report_limits() -> str:
         f"Grammar <b>{FREE_GRAMMAR_PER_DAY}</b> (вкл. доп.) · "
         f"Vocab <b>{FREE_VOCAB_ITEMS_PER_DAY}</b> · "
         f"Listening <b>{FREE_LISTENING_PER_DAY}</b> · "
+        f"Reading <b>{FREE_READING_PER_DAY}</b> · "
         f"Чат <b>{FREE_CHAT_PER_DAY}</b>.\n",
     ]
 
@@ -466,6 +468,8 @@ def format_user_card(uid: str, u: dict) -> str:
         f"✅ Заданий Grammar: <b>{count_completed_tasks(u)}</b>\n"
         f"📝 Слов: <b>{int(u.get('words_learned') or 0)}</b> · "
         f"фраз: <b>{int(u.get('phrases_learned') or 0)}</b>\n"
+        f"🎧 Listening тем: <b>{_count_listening_topics(u)}</b> · "
+        f"📖 Reading тем: <b>{_count_reading_topics(u)}</b>\n"
         f"🔥 Серия: <b>{int(u.get('streak') or 0)}</b> · "
         f"сейфы: {int(u.get('streak_safes') or 0)}\n\n"
         f"💎 Подписка: <b>{plan_label(plan)}</b> ({plan})\n"
@@ -493,6 +497,12 @@ def _count_listening_topics(u: dict) -> int:
     return sum(1 for v in prog.values() if v)
 
 
+def _count_reading_topics(u: dict) -> int:
+    from services.reading_state import count_reading_topics_done
+
+    return count_reading_topics_done(u)
+
+
 def _usage_metrics(u: dict) -> dict[str, int]:
     """Счётчики разделов за всё время."""
     sync_vocab_counters(u)
@@ -501,7 +511,8 @@ def _usage_metrics(u: dict) -> dict[str, int]:
     words_n = int(u.get("words_learned") or 0)
     phrases_n = int(u.get("phrases_learned") or 0)
     listening_n = _count_listening_topics(u)
-    total = text_n + voice_n + grammar_n + words_n + phrases_n + listening_n
+    reading_n = _count_reading_topics(u)
+    total = text_n + voice_n + grammar_n + words_n + phrases_n + listening_n + reading_n
     return {
         "text": text_n,
         "voice": voice_n,
@@ -509,6 +520,7 @@ def _usage_metrics(u: dict) -> dict[str, int]:
         "words": words_n,
         "phrases": phrases_n,
         "listening": listening_n,
+        "reading": reading_n,
         "sum": total,
     }
 
@@ -525,7 +537,7 @@ def _plan_top_label(u: dict) -> str:
 
 def report_top(*, limit: int = 80) -> str:
     """
-    Топ по сумме: чат (текст+голос) + grammar задания + слова + фразы + listening темы.
+    Топ по сумме: чат (текст+голос) + grammar + слова + фразы + listening + reading.
     Админ (MANAGER) не включается. Без активности — в /others.
     """
     rows = _iter_users(persist_backfill=True)
@@ -543,7 +555,7 @@ def report_top(*, limit: int = 80) -> str:
     lines = [
         "🏆 <b>Топ по использованию</b>\n",
         f"В топе: <b>{len(scored)}</b> · без активности → /others\n",
-        "Сумма = голос + текст + grammar + слова + фразы + listening\n",
+        "Сумма = голос + текст + grammar + слова + фразы + listening + reading\n",
     ]
     if not scored:
         lines.append("Пока никого с активностью.")
@@ -554,7 +566,7 @@ def report_top(*, limit: int = 80) -> str:
             f"<b>{i}.</b> <code>{uid}</code> {_name(u)} · {_plan_top_label(u)}\n"
             f"   🎤{m['voice']} · 💬{m['text']} · 📘{m['grammar']} · "
             f"📝{m['words']}+{m['phrases']} · 🎧{m['listening']} · "
-            f"Σ<b>{m['sum']}</b>"
+            f"📖{m['reading']} · Σ<b>{m['sum']}</b>"
         )
     if len(scored) > limit:
         lines.append(f"\n…и ещё {len(scored) - limit}")

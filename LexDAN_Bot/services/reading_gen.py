@@ -857,81 +857,20 @@ def _fallback_pack(level: str, topic: dict) -> dict:
 
 
 def generate_reading_pack(level: str, topic: dict) -> dict:
-    fallback = _fallback_pack(level, topic)
-    tid = (topic.get("id") or "").lower()
-    title_en = topic.get("title_en") or "Topic"
-    title_ru = topic.get("title_ru") or title_en
-    # Семья: только проверенный текст — GPT стабильно делает «угадай возраст»
-    if "family" in tid or "family" in title_en.lower():
-        pack = dict(fallback)
-        bank = list(pack["word_bank"])
-        random.shuffle(bank)
-        pack["word_bank"] = bank
-        return pack
+    """
+    Текст Reading — только из фиксированного банка (data/reading_packs.py).
+    GPT здесь не вызывается (качество/стоимость). GPT остаётся в судьях заданий 2–3.
+    """
+    from data.reading_packs import get_reading_pack
 
-    from services.gpt import _ask_json
-
-    focus = topic.get("focus") or title_en
-    system = (
-        "Create CEFR English READING practice JSON for Russian learners. ONLY JSON.\n"
-        "Keys: full_text, gapped_text, answers, word_bank, questions, plan, facts.\n"
-        f"TOPIC LOCK: must be about «{title_en}» / «{title_ru}». Focus: {focus}.\n"
-        "Do NOT write a generic park/museum story unless the topic is literally that.\n"
-        "full_text: 9-11 short English sentences as ONE string (spaces between).\n"
-        "gapped_text: SAME story with exactly 5 gaps marked (1)___ (2)___ … (5)___ in order.\n"
-        "CRITICAL GAP RULES (task shows ONLY gapped_text + word bank, NOT full_text):\n"
-        "- Each gap must be uniquely recoverable from the REST of gapped_text + bank.\n"
-        "- Prefer collocations, contrasts, grammar/logic, or a fact already stated earlier "
-        "in the same gapped_text.\n"
-        "- FORBIDDEN: age gaps like «is ___ years old» with numbers in the bank "
-        "(40/42/10) — NEVER. Write ages as full facts, do not gap them.\n"
-        "- FORBIDDEN: several job gaps (doctor/teacher/engineer) without unique clues "
-        "(hospital / teaches English / …) for each job.\n"
-        "- The 1 distractor in word_bank must NOT fit any gap.\n"
-        "answers: exactly 5 English words/short phrases for gaps 1..5 in order.\n"
-        "word_bank: those 5 answers PLUS 1 distractor; will be shuffled.\n"
-        "questions: exactly 4 objects {q, accept[2-5], hint_ru, quote, model_en}.\n"
-        "  model_en MUST be a full English sentence answer (not a single word).\n"
-        "plan: exactly 4 English plan points ONLY for details present in the text.\n"
-        "facts: exactly 4 short English fact lines matching the plan / text.\n"
-        f"CEFR level: {level}. Match vocabulary/grammar to the level. "
-        "Check grammar of full_text carefully."
-    )
-    pack = dict(fallback)
-    last_reason = "empty"
-    for attempt in range(2):
-        data = _ask_json(
-            [
-                {"role": "system", "content": system},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Level:{level}\nTopic:{title_en}/{title_ru}\nFocus:{focus}\n"
-                        f"Attempt:{attempt+1}\nSeed:{random.random()}"
-                    ),
-                },
-            ],
-            fallback,
-            temperature=0.3 if attempt == 0 else 0.45,
-            max_tokens=1800,
-        )
-        cand = _normalize_pack(data, fallback)
-        reason = _pack_structurally_ok(cand)
-        if not reason:
-            pack = cand
-            last_reason = None
-            break
-        last_reason = reason
-        log.warning(
-            "reading pack rejected attempt=%s (%s) topic=%s",
-            attempt + 1,
-            reason,
-            topic.get("id"),
-        )
-    if last_reason:
-        log.warning("reading pack using topic fallback topic=%s", topic.get("id"))
-        pack = dict(fallback)
-    bank = list(pack["word_bank"])
+    tid = topic.get("id") or ""
+    pack = get_reading_pack(level, tid)
+    if not pack:
+        # страховка: тематический fallback из шаблонов
+        pack = dict(_fallback_pack(level, topic))
+    else:
+        pack = dict(pack)
+    bank = list(pack.get("word_bank") or [])
     random.shuffle(bank)
     pack["word_bank"] = bank
     return pack

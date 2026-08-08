@@ -22,6 +22,8 @@ FREE_GRAMMAR_PER_DAY = 5
 FREE_VOCAB_ITEMS_PER_DAY = 1
 # Listening: 1 ситуация в день (см. listening_state.listening_daily_cap)
 FREE_LISTENING_PER_DAY = 1
+# Reading: 1 тема в день (см. reading_state.reading_daily_cap)
+FREE_READING_PER_DAY = 1
 
 # Совместимость со старым кодом «баллов»
 POINT_GRAMMAR_EXERCISE = 1
@@ -896,6 +898,7 @@ def subscription_blurb(user: dict) -> str:
         f"• Grammar (включая доп.) — <b>{FREE_GRAMMAR_PER_DAY}</b> заданий\n"
         f"• Vocabulary — <b>{FREE_VOCAB_ITEMS_PER_DAY}</b> слово/фраза\n"
         f"• Listening — <b>{FREE_LISTENING_PER_DAY}</b> аудирование\n"
+        f"• Reading — <b>{FREE_READING_PER_DAY}</b> тема\n"
         f"• Общение — <b>{FREE_CHAT_PER_DAY}</b> сообщ.\n"
         "• тест уровня\n\n"
         f"<b>💬 Только общение</b> — <b>{PRICE_CHAT_MONTH}₽/мес</b>\n"
