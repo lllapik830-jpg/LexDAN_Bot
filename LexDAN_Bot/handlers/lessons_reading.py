@@ -27,7 +27,10 @@ from services.reading_gen import (
     generate_reading_pack,
     parse_gap_answers,
     check_one_gap,
-    check_comprehension_answer,
+    normalize_gap_token,
+    hint_gap_fill,
+    explain_gap_fill,
+    judge_comprehension_answer,
     judge_retelling,
 )
 
@@ -139,8 +142,8 @@ async def reading_pick_topic(m: Message):
     await m.answer(
         f"🦜 <b>Рико:</b> Тема «{topic['title_ru']}».\n\n"
         "Будет текст на английском и 3 задания:\n"
-        "1️⃣ Заполни пропуски\n"
-        "2️⃣ Найди соответствие (вопросы по тексту)\n"
+        "1️⃣ Заполни пропуски (2 попытки)\n"
+        "2️⃣ Ответы на вопросы полными предложениями\n"
         "3️⃣ Пересказ по плану\n\n"
         "Нажми <b>Начать задание 1</b>.\n"
         "⚠️ Выход сбросит прогресс этой попытки.",
@@ -205,12 +208,18 @@ async def reading_ready(m: Message):
         uid,
         content=pack,
         phase="task1",
-        task1_filled=[None, None, None, None, None],  # правильные слова по пропускам
-        task1_next=0,  # следующий ожидаемый пропуск при поштучном вводе
+        task1_filled=[None, None, None, None, None],
+        task1_next=0,
+        task1_fails=0,
         task2_i=0,
+        task2_tries=0,
     )
     set_reading_hub(uid, "reading_task1")
     await _send_task1(m, uid)
+
+
+def _format_review_line(topic: str, level: str) -> str:
+    return f"📚 Повтори в Grammar: <b>{topic}</b> (уровень <b>{level}</b>)"
 
 
 async def _send_task1(m: Message, uid: str) -> None:
@@ -229,8 +238,11 @@ async def _send_task1(m: Message, uid: str) -> None:
     await m.answer(
         "📝 <b>Задание 1 · Заполни пропуски по смыслу</b>\n\n"
         "В тексте 5 пропусков. Ниже 6 слов — одно лишнее.\n"
-        "Напиши <b>5 слов через запятую</b> по порядку пропусков "
-        "или по одному слову (сначала 1-й пропуск, потом 2-й…).\n\n"
+        "Каждый пропуск однозначно читается из <b>остального текста</b>.\n"
+        "Напиши <b>5 слов через запятую</b> по порядку "
+        "или по одному слову.\n"
+        "У тебя <b>2 попытки</b> на комбинацию: после первой ошибки Рико подскажет "
+        "(без ответа), после второй — разберёт и перейдёте дальше.\n\n"
         f"{gapped}\n\n"
         f"<b>Слова:</b> {bank}\n\n"
         f"<b>Сейчас заполнено:</b>\n" + "\n".join(status_lines),
@@ -239,22 +251,78 @@ async def _send_task1(m: Message, uid: str) -> None:
     )
 
 
-def _apply_gap_list(uid: str, words: list[str], answers: list[str], filled: list) -> tuple[list, list[str]]:
-    """Применить список слов к пропускам. Returns (new_filled, error_messages)."""
-    errs = []
+def _apply_gap_list(words: list[str], answers: list[str], filled: list) -> tuple[list, list[tuple[int, str]]]:
+    """Returns (new_filled, wrong_pairs as 1-based index + user word)."""
+    wrong: list[tuple[int, str]] = []
     new_filled = list(filled)
     for i, w in enumerate(words[:5]):
         if check_one_gap(w, answers[i]):
             new_filled[i] = answers[i]
         else:
-            # не затираем уже правильный ответ неверным
             if new_filled[i] != answers[i]:
                 new_filled[i] = None
-            errs.append(
-                f"В {i + 1}-м пропуске «{w}» не подходит по смыслу. "
-                f"Правильное слово другое — попробуй ещё раз для этого пропуска."
+            wrong.append((i + 1, w))
+    return new_filled, wrong
+
+
+async def _task1_fail_flow(
+    m: Message,
+    uid: str,
+    *,
+    level: str,
+    pack: dict,
+    answers: list[str],
+    filled: list,
+    wrong: list[tuple[int, str]],
+) -> None:
+    fails = int((get_session(get_user(load_users(), uid)) or {}).get("task1_fails") or 0)
+    gapped = pack.get("gapped_text") or ""
+    bank = list(pack.get("word_bank") or [])
+
+    if fails <= 0:
+        update_session(uid, task1_filled=filled, task1_fails=1)
+        from services.tg_out import status
+
+        async with status(m, "🦜 Рико смотрит пропуски…"):
+            hint = hint_gap_fill(
+                level=level,
+                gapped=gapped,
+                word_bank=bank,
+                answers=answers,
+                wrong_pairs=wrong,
             )
-    return new_filled, errs
+        await m.answer(
+            f"{hint}\n\n"
+            "🔁 Это была первая попытка — ответ не раскрываю. "
+            "Собери комбинацию ещё раз.",
+            parse_mode="HTML",
+        )
+        await _send_task1(m, uid)
+        return
+
+    from services.tg_out import status
+
+    async with status(m, "🦜 Рико разбирает ошибки…"):
+        expl = explain_gap_fill(
+            level=level,
+            gapped=gapped,
+            answers=answers,
+            wrong_pairs=wrong,
+        )
+    correct = ", ".join(answers)
+    review = _format_review_line(
+        expl.get("review_topic") or "Present Simple",
+        expl.get("review_level") or level,
+    )
+    await m.answer(
+        f"{expl.get('explain_ru')}\n\n"
+        f"✅ Правильная комбинация: <b>{correct}</b>\n"
+        f"{review}\n\n"
+        "Идём ко второму заданию.",
+        parse_mode="HTML",
+    )
+    update_session(uid, task1_filled=list(answers), task1_fails=2)
+    await _start_task2(m, uid)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("reading_task1"), F.text)
@@ -267,6 +335,7 @@ async def reading_task1_answer(m: Message):
     user = get_user(users, uid)
     sess = get_session(user) or {}
     pack = sess.get("content") or {}
+    level = sess.get("level") or "A1"
     answers = list(pack.get("answers") or [])
     if len(answers) < 5:
         await m.answer("Что-то пошло не так с текстом. Выйди и зайди в тему снова.")
@@ -283,22 +352,21 @@ async def reading_task1_answer(m: Message):
                 parse_mode="HTML",
             )
             return
+
     if parsed is not None and len(parsed) == 5:
-        filled, errs = _apply_gap_list(uid, parsed, answers, filled)
-        update_session(uid, task1_filled=filled)
-        if errs:
-            await m.answer("❌ " + "\n".join(errs))
-            await _send_task1(m, uid)
+        filled, wrong = _apply_gap_list(parsed, answers, filled)
+        if wrong:
+            await _task1_fail_flow(
+                m, uid, level=level, pack=pack, answers=answers, filled=filled, wrong=wrong
+            )
             return
+        update_session(uid, task1_filled=filled)
     else:
-        # одно слово — в следующий незаполненный / указанный пропуск
-        # если пользователь пишет только одно — кладём в первый пустой
         target = next((i for i, w in enumerate(filled) if w is None), None)
         if target is None:
             await m.answer("Все пропуски уже заполнены верно!")
             await _start_task2(m, uid)
             return
-        # если next_i указывает на пустой — используем его
         if 0 <= next_i < 5 and filled[next_i] is None:
             target = next_i
         word = text.strip()
@@ -307,12 +375,15 @@ async def reading_task1_answer(m: Message):
             update_session(uid, task1_filled=filled, task1_next=target + 1)
             await m.answer(f"✅ Пропуск {target + 1} верно: <b>{answers[target]}</b>", parse_mode="HTML")
         else:
-            await m.answer(
-                f"❌ В {target + 1}-м пропуске вместо подходящего слова ты написал(а) «{word}» — "
-                "это не подходит по смыслу. Попробуй ещё раз."
+            await _task1_fail_flow(
+                m,
+                uid,
+                level=level,
+                pack=pack,
+                answers=answers,
+                filled=filled,
+                wrong=[(target + 1, word)],
             )
-            update_session(uid, task1_next=target)
-            await _send_task1(m, uid)
             return
 
     if all(filled[i] == answers[i] for i in range(5)):
@@ -323,18 +394,17 @@ async def reading_task1_answer(m: Message):
         await _start_task2(m, uid)
         return
 
-    # ещё есть пустые
     empty = [str(i + 1) for i, w in enumerate(filled) if w is None]
     await m.answer(
-        "✅ Часть пропусков верна. Осталось заполнить: " + ", ".join(empty) + ".\n"
-        "Можно написать одно слово или все оставшиеся через запятую заново целиком (5 слов)."
+        "✅ Часть пропусков верна. Осталось: " + ", ".join(empty) + ".\n"
+        "Можно одно слово или снова 5 через запятую."
     )
     update_session(uid, task1_filled=filled)
     await _send_task1(m, uid)
 
 
 async def _start_task2(m: Message, uid: str) -> None:
-    update_session(uid, phase="task2", task2_i=0)
+    update_session(uid, phase="task2", task2_i=0, task2_tries=0)
     set_reading_hub(uid, "reading_task2")
     users = load_users()
     user = get_user(users, uid)
@@ -342,9 +412,11 @@ async def _start_task2(m: Message, uid: str) -> None:
     pack = sess.get("content") or {}
     full = pack.get("full_text") or ""
     await m.answer(
-        "📝 <b>Задание 2 · Найди соответствие</b>\n\n"
-        "🦜 Рико: Теперь проверю, как ты находишь ключевую информацию.\n"
-        "Я задам <b>4 вопроса</b> — найди ответ в тексте и напиши в чат.\n\n"
+        "📝 <b>Задание 2 · Вопросы по тексту</b>\n\n"
+        "🦜 Рико: Сейчас 4 вопроса. Отвечай <b>полным предложением</b> на английском "
+        "(не «ten», а например <i>Her sister is ten years old</i>).\n"
+        "Регистр и запятые не придираюсь — смотрю смысл, логику и грамматику.\n"
+        "На каждый вопрос — 2 попытки: сначала помогу, со второй разберём и пойдём дальше.\n\n"
         f"<b>Текст:</b>\n{full}",
         reply_markup=_exit_kb(),
         parse_mode="HTML",
@@ -363,7 +435,8 @@ async def _send_task2_q(m: Message, uid: str) -> None:
         return
     q = qs[i]
     await m.answer(
-        f"<b>Вопрос {i + 1}/4</b>\n\n{q.get('q')}",
+        f"<b>Вопрос {i + 1}/4</b>\n\n{q.get('q')}\n\n"
+        "<i>Ответь одним полным предложением.</i>",
         reply_markup=_exit_kb(),
         parse_mode="HTML",
     )
@@ -378,22 +451,74 @@ async def reading_task2_answer(m: Message):
     users = load_users()
     user = get_user(users, uid)
     sess = get_session(user) or {}
-    qs = (sess.get("content") or {}).get("questions") or []
+    pack = sess.get("content") or {}
+    level = sess.get("level") or "A1"
+    qs = pack.get("questions") or []
     i = int(sess.get("task2_i") or 0)
+    tries = int(sess.get("task2_tries") or 0)
     if i >= len(qs):
         return
     q = qs[i]
-    if check_comprehension_answer(text, q.get("accept") or []):
+
+    from services.tg_out import status
+
+    async with status(m, "🦜 Рико читает ответ…"):
+        verdict = judge_comprehension_answer(
+            level=level,
+            question=str(q.get("q") or ""),
+            accept=list(q.get("accept") or []),
+            model_en=str(q.get("model_en") or ""),
+            quote=str(q.get("quote") or ""),
+            full_text=str(pack.get("full_text") or ""),
+            user_text=text,
+        )
+
+    if verdict.get("ok"):
         quote = q.get("quote") or ""
-        msg = "✅ Верно!"
+        msg = "✅ Верно! Хорошее предложение."
         if quote:
             msg += f"\nВ тексте: «{quote}»"
         await m.answer(msg)
-        update_session(uid, task2_i=i + 1)
+        update_session(uid, task2_i=i + 1, task2_tries=0)
         await _send_task2_q(m, uid)
         return
-    hint = q.get("hint_ru") or "Найди нужное предложение в тексте и напиши ответ ещё раз."
-    await m.answer(f"❌ Не совсем. {hint}")
+
+    # смысл ок, но не полное предложение — мягко просим, попытку не сжигаем
+    if verdict.get("need_full_sentence") and verdict.get("meaning_ok"):
+        await m.answer(
+            "🦜 Рико: Напиши, пожалуйста, <b>полным предложением</b> — "
+            "не одно слово, а мысль целиком "
+            "(например: <i>Her sister is ten years old</i>).",
+            parse_mode="HTML",
+        )
+        return
+
+    better = verdict.get("better_en") or q.get("model_en") or ""
+    feedback = verdict.get("feedback_ru") or "Не совсем так."
+    review = _format_review_line(
+        verdict.get("review_topic") or "Present Simple",
+        verdict.get("review_level") or level,
+    )
+
+    if tries <= 0:
+        hint = q.get("hint_ru") or "Найди нужный факт в тексте."
+        await m.answer(
+            f"{feedback}\n\n"
+            f"💡 Подсказка: {hint}\n"
+            "Попробуй ещё раз — полным предложением."
+        )
+        update_session(uid, task2_tries=1)
+        return
+
+    await m.answer(
+        f"{feedback}\n\n"
+        f"✅ Пример правильного ответа: <b>{better}</b>\n"
+        f"{review}\n\n"
+        "Идём к следующему вопросу.",
+        parse_mode="HTML",
+    )
+    update_session(uid, task2_i=i + 1, task2_tries=0)
+    await _send_task2_q(m, uid)
 
 
 async def _start_task3(m: Message, uid: str) -> None:
@@ -408,9 +533,12 @@ async def _start_task3(m: Message, uid: str) -> None:
     lines = "\n".join(f"{n}. {p}" for n, p in enumerate(plan, start=1))
     await m.answer(
         "📝 <b>Задание 3 · Пересказ по плану</b>\n\n"
-        "🦜 Рико: Напиши краткий пересказ текста по плану. "
-        "Свои слова — ок, факты не меняй.\n\n"
-        f"<b>Текст (на всякий случай):</b>\n{full}\n\n"
+        "🦜 Рико: Напиши пересказ своими словами. Можно фантазировать в формулировках — "
+        "главное не противоречить тексту.\n"
+        "Пиши только то, что есть в тексте (если возраста родителей нет — не выдумывай).\n"
+        "Грамматику и логику проверю железно; после одного пересказа сразу дам правки "
+        "и засчитаю задание.\n\n"
+        f"<b>Текст:</b>\n{full}\n\n"
         f"<b>План:</b>\n{lines}",
         reply_markup=_exit_kb(),
         parse_mode="HTML",
@@ -424,7 +552,7 @@ async def reading_task3_answer(m: Message):
         return
     if len(text.split()) < 8:
         await m.answer(
-            "Напиши чуть подробнее — пересказ по всем пунктам плана (несколько предложений)."
+            "🦜 Рико: Напиши чуть подробнее — несколько предложений по плану."
         )
         return
     uid = str(m.from_user.id)
@@ -432,6 +560,7 @@ async def reading_task3_answer(m: Message):
     user = get_user(users, uid)
     sess = get_session(user) or {}
     pack = sess.get("content") or {}
+    level = sess.get("level") or "A1"
 
     from services.tg_out import status
 
@@ -441,27 +570,34 @@ async def reading_task3_answer(m: Message):
             pack.get("facts") or [],
             pack.get("full_text") or "",
             text,
+            level=level,
         )
 
-    if verdict.get("ok"):
-        await m.answer(
-            "✅ Отлично! Ты правильно пересказал(а) текст и указал(а) все ключевые моменты."
-        )
-        await _finish_topic(m, uid, sess)
-        return
-
-    missing = verdict.get("missing") or []
-    plan = pack.get("plan") or []
-    miss_txt = ""
-    if missing:
-        bits = []
-        for n in missing:
-            if 1 <= n <= len(plan):
-                bits.append(f"{n}) {plan[n - 1]}")
-        if bits:
-            miss_txt = "\nПроверь пункты:\n• " + "\n• ".join(bits)
-    fb = verdict.get("feedback_ru") or "Дополни пересказ по плану."
-    await m.answer(f"❌ {fb}{miss_txt}\n\nМожешь прислать исправленный пересказ.")
+    parts = [
+        "✅ <b>Задание 3 пройдено!</b>",
+        str(verdict.get("feedback_ru") or "").strip(),
+    ]
+    tips = str(verdict.get("tips_ru") or "").strip()
+    if tips:
+        parts.append(f"💡 {tips}")
+    better = str(verdict.get("better_en") or "").strip()
+    if better and normalize_gap_token(better) != normalize_gap_token(text):
+        parts.append(f"✏️ Более естественно:\n<i>{better}</i>")
+    reviews = verdict.get("review_topics") or []
+    if reviews:
+        lines = []
+        for r in reviews:
+            if isinstance(r, dict):
+                lines.append(
+                    _format_review_line(
+                        str(r.get("topic") or "Grammar"),
+                        str(r.get("level") or level),
+                    )
+                )
+        if lines:
+            parts.append("Что полезно повторить:\n" + "\n".join(lines))
+    await m.answer("\n\n".join(p for p in parts if p), parse_mode="HTML")
+    await _finish_topic(m, uid, sess)
 
 
 async def _finish_topic(m: Message, uid: str, sess: dict) -> None:
