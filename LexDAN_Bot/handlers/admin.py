@@ -48,6 +48,7 @@ HELP = (
     "/purge_blocked — проверить Telegram и удалить блоки из БД\n"
     "/user <code>id</code> — полная карточка\n"
     "/top — топ по использованию (чат/grammar/vocab/listening/reading)\n"
+    "/names — юзернеймы в одну строку (по убыванию активности)\n"
     "/others — без активности в разделах\n"
     "/starts — кто нажал /start сегодня\n"
     "/paid — у кого активный тариф\n"
@@ -303,6 +304,33 @@ async def admin_top(m: Message):
     from services.admin_stats import report_top
 
     await _send_report(m, report_top())
+
+
+@router.message(Command("names"))
+async def admin_names(m: Message):
+    if not _is_admin(m):
+        return
+    from services.admin_stats import report_names
+
+    text = report_names()
+    # Одна длинная строка — режем по пробелам под лимит Telegram
+    limit = 3500
+    if len(text) <= limit:
+        await m.answer(text)
+        return
+    buf: list[str] = []
+    size = 0
+    for token in text.split(" "):
+        add = len(token) + (1 if buf else 0)
+        if buf and size + add > limit:
+            await m.answer(" ".join(buf))
+            buf = [token]
+            size = len(token)
+        else:
+            buf.append(token)
+            size += add
+    if buf:
+        await m.answer(" ".join(buf))
 
 
 @router.message(Command("others"))

@@ -573,6 +573,37 @@ def report_top(*, limit: int = 80) -> str:
     return "\n".join(lines)
 
 
+def _tg_username(u: dict) -> str:
+    return (u.get("tg_username") or "").strip().lstrip("@")
+
+
+def report_names() -> str:
+    """
+    Одна строка: 1.@user 2.@user … по убыванию активности.
+    Только у кого есть tg_username. Админ не включается.
+    """
+    rows = _iter_users(persist_backfill=True)
+    scored: list[tuple[str, dict, dict[str, int]]] = []
+    for uid, u in rows:
+        if str(uid) == str(MANAGER_ID):
+            continue
+        if not _tg_username(u):
+            continue
+        m = _usage_metrics(u)
+        scored.append((uid, u, m))
+
+    scored.sort(key=lambda x: (-x[2]["sum"], -x[2]["grammar"], -x[2]["text"]))
+
+    if not scored:
+        return "Нет пользователей с юзернеймом."
+
+    parts = [
+        f"{i}.@{_tg_username(u)}"
+        for i, (_uid, u, _m) in enumerate(scored, 1)
+    ]
+    return " ".join(parts)
+
+
 def report_others(*, limit: int = 120) -> str:
     """Юзеры без действий в разделах (чат/grammar/vocab/listening). Без админа."""
     rows = _iter_users(persist_backfill=True)
@@ -617,7 +648,7 @@ def report_admin_home() -> str:
         f"• текстовых: <b>{text_all}</b>",
         f"• голосовых: <b>{voice_all}</b>",
         f"• всего сообщ.: <b>{text_all + voice_all}</b>\n",
-        "Команды: /users · /purge_blocked · /top · /others · /user <code>id</code> · "
+        "Команды: /users · /purge_blocked · /top · /names · /others · /user <code>id</code> · "
         "/grant_chat · /grant_full · /revoke · /unlock_levels · /paid\n",
         "<b>Пользователи</b>",
     ]
