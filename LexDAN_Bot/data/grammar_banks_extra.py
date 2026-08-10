@@ -116,7 +116,7 @@ EXTRA_FALLBACKS = {
         "Извини."
       ],
       "answer": "Приятно познакомиться.",
-      "tip": "Знакомство."
+      "tip": "Знакомство. После ответа произносим по-английски: Nice to meet you."
     },
     {
       "kind": "mcq",
@@ -151,21 +151,22 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши приветствие Hello или Hi.",
-      "sentence_en": "____! My name is Anna.",
-      "sentence_ru": "Привет! Меня зовут Анна.",
+      "instruction_ru": "Напиши приветствие: Hello (формально) или Hi (с друзьями). Здесь — учитель.",
+      "sentence_en": "____! My name is Anna. I'm your new teacher.",
+      "sentence_ru": "Здравствуйте! Меня зовут Анна. Я ваша новая учительница.",
       "base_form": "",
       "answer": "Hello",
-      "tip": "Hello / Hi.",
+      "tip": "Hello — формально (учитель). Hi — с друзьями.",
+      "accept": ["Hello", "hello"],
       "options": None
     },
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Дополни фразу.",
+      "instruction_ru": "Дополни фразу (подумай, какое слово подходит).",
       "sentence_en": "Nice to ____ you.",
       "sentence_ru": "Приятно познакомиться.",
-      "base_form": "meet",
+      "base_form": "",
       "answer": "meet",
       "tip": "Nice to meet you.",
       "options": None
@@ -174,9 +175,9 @@ EXTRA_FALLBACKS = {
       "kind": "write",
       "subtype": "word_form",
       "instruction_ru": "Дополни фразу.",
-      "sentence_en": "What is your ____?",
-      "sentence_ru": "Как тебя зовут?",
-      "base_form": "name",
+      "sentence_en": "Hello, my name is Alex and what is your ____?",
+      "sentence_ru": "Привет, меня зовут Алекс, а как тебя зовут?",
+      "base_form": "",
       "answer": "name",
       "tip": "What's your name?",
       "options": None
@@ -185,10 +186,11 @@ EXTRA_FALLBACKS = {
       "kind": "write",
       "subtype": "translate_en",
       "instruction_ru": "Переведи:",
-      "sentence_ru": "Как тебя зовут?",
+      "sentence_ru": "Извини.",
       "sentence_en": "",
-      "answer": "What is your name?",
-      "tip": "What's your name?",
+      "answer": "Sorry.",
+      "tip": "Sorry.",
+      "accept": ["Sorry", "Sorry.", "I'm sorry", "I'm sorry.", "I am sorry", "I am sorry."],
       "options": None
     },
     {
@@ -389,7 +391,19 @@ EXTRA_FALLBACKS = {
       "sentence_ru": "Я обычно встаю в 7.",
       "sentence_en": "",
       "answer": "I usually get up at 7.",
-      "tip": "usually + Present Simple.",
+      "tip": "usually + Present Simple. Также ок: wake up.",
+      "accept": [
+        "I usually get up at 7.",
+        "I usually get up at 7",
+        "I usually wake up at 7.",
+        "I usually wake up at 7",
+        "I get up at 7 usually.",
+        "I wake up at 7 usually.",
+        "Usually I get up at 7.",
+        "Usually I wake up at 7.",
+        "I usually get up at seven.",
+        "I usually wake up at seven.",
+      ],
       "options": None
     },
     {
@@ -1153,7 +1167,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши had.",
+      "instruction_ru": "Напиши правильную форму глагола have.",
       "sentence_en": "They ____ (have) finished before we came.",
       "sentence_ru": "Они закончили до нашего прихода.",
       "base_form": "have",
@@ -1175,7 +1189,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши hadn't.",
+      "instruction_ru": "Напиши правильную форму глагола have с отрицанием.",
       "sentence_en": "We ____ (not have) met before.",
       "sentence_ru": "Мы не встречались раньше.",
       "base_form": "not have",
@@ -1454,7 +1468,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши V-ing.",
+      "instruction_ru": "Выбери правильную форму и напиши.",
       "sentence_en": "Stop ____ (talk), please.",
       "sentence_ru": "Перестань говорить.",
       "base_form": "talk",
@@ -1465,7 +1479,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши to + V1.",
+      "instruction_ru": "Выбери правильную форму и напиши.",
       "sentence_en": "I hope ____ (see) you soon.",
       "sentence_ru": "Надеюсь увидеть тебя скоро.",
       "base_form": "see",
@@ -1476,7 +1490,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши V-ing.",
+      "instruction_ru": "Выбери правильную форму и напиши.",
       "sentence_en": "She is good at ____ (cook).",
       "sentence_ru": "Она хорошо готовит.",
       "base_form": "cook",
@@ -1654,10 +1668,10 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши who или which.",
-      "sentence_en": "The dog ____ (which) barked is mine.",
+      "instruction_ru": "Напиши правильно.",
+      "sentence_en": "The dog ____ barked is mine.",
       "sentence_ru": "Собака, которая лаяла, моя.",
-      "base_form": "which",
+      "base_form": "",
       "answer": "which",
       "tip": "животные/вещи → which.",
       "options": None
@@ -1665,7 +1679,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши where.",
+      "instruction_ru": "Напиши правильно по смыслу.",
       "sentence_en": "This is the city ____ I was born.",
       "sentence_ru": "Это город, где я родился.",
       "base_form": "",
@@ -1854,7 +1868,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши would.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "If I lived closer, I ____ (visit) more often.",
       "sentence_ru": "Если бы жил ближе…",
       "base_form": "visit",
@@ -1865,7 +1879,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши had + V3.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "If we ____ (leave) earlier, we would have caught the train.",
       "sentence_ru": "Если бы уехали раньше…",
       "base_form": "leave",
@@ -1876,7 +1890,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши would have.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "He ____ (pass) if he had tried harder.",
       "sentence_ru": "Он бы сдал…",
       "base_form": "pass",
@@ -1954,7 +1968,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши Past форму.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "She said she ____ (can) swim.",
       "sentence_ru": "Она сказала, что умеет плавать.",
       "base_form": "can",
@@ -1965,7 +1979,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши will→would.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "He said he ____ (will) call later.",
       "sentence_ru": "Он сказал, что позвонит.",
       "base_form": "will",
@@ -2054,7 +2068,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши being + V3.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "The house is being ____ (paint).",
       "sentence_ru": "Дом красят.",
       "base_form": "paint",
@@ -2065,7 +2079,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши been + V3.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "All tickets have been ____ (sell).",
       "sentence_ru": "Все билеты проданы.",
       "base_form": "sell",
@@ -2076,7 +2090,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши was/were.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "I ____ (be) told to wait.",
       "sentence_ru": "Мне сказали ждать.",
       "base_form": "be",
@@ -2139,7 +2153,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "mcq",
       "subtype": "mcq",
-      "instruction_ru": "Выбери might.",
+      "instruction_ru": "Выбери правильное.",
       "sentence_en": "They ____ be late — the traffic is bad.",
       "sentence_ru": "Они, возможно, опоздают.",
       "options": [
@@ -2154,10 +2168,10 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши must/can't/might.",
-      "sentence_en": "That ____ (must) be a joke.",
+      "instruction_ru": "Напиши правильно.",
+      "sentence_en": "That ____ be a joke.",
       "sentence_ru": "Это, должно быть, шутка.",
-      "base_form": "must",
+      "base_form": "",
       "answer": "must",
       "tip": "must be.",
       "options": None
@@ -2165,7 +2179,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши have.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "She must ____ (have) forgotten.",
       "sentence_ru": "Она, должно быть, забыла.",
       "base_form": "have",
@@ -2176,7 +2190,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши been.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "He can't have ____ (be) serious.",
       "sentence_ru": "Он не мог быть серьёзным.",
       "base_form": "be",
@@ -2239,7 +2253,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "mcq",
       "subtype": "mcq",
-      "instruction_ru": "Выбери whom/who.",
+      "instruction_ru": "Выбери правильное.",
       "sentence_en": "The colleague with ____ I work is helpful.",
       "sentence_ru": "Коллега, с которым я работаю…",
       "options": [
@@ -2254,7 +2268,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши which.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "The report, ____ was late, annoyed the boss.",
       "sentence_ru": "Отчёт, который опоздал…",
       "base_form": "",
@@ -2265,7 +2279,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши whose.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "The author ____ novel won a prize is here.",
       "sentence_ru": "Автор, чей роман…",
       "base_form": "",
@@ -2276,7 +2290,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши to whom / who.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "The person ____ I spoke was polite. (formal: to whom)",
       "sentence_ru": "",
       "base_form": "",
@@ -2354,10 +2368,10 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши инверсию do/does/did.",
-      "sentence_en": "Only then ____ (do) I understand.",
+      "instruction_ru": "Напиши правильно.",
+      "sentence_en": "Only then ____ I understand.",
       "sentence_ru": "Только тогда я понял.",
-      "base_form": "do",
+      "base_form": "",
       "answer": "did",
       "tip": "Only then + did.",
       "options": None
@@ -2376,10 +2390,10 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши should.",
-      "sentence_en": "Should you ____ (need) help, call me.",
+      "instruction_ru": "Напиши правильно.",
+      "sentence_en": "Should you ____ help, call me.",
       "sentence_ru": "Если понадобится помощь…",
-      "base_form": "need",
+      "base_form": "",
       "answer": "need",
       "tip": "Should you need…",
       "options": None
@@ -2439,7 +2453,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "mcq",
       "subtype": "mcq",
-      "instruction_ru": "Выбери What-cleft.",
+      "instruction_ru": "Выбери правильное.",
       "sentence_en": "____ I need is a quiet place.",
       "sentence_ru": "Что мне нужно — тихое место.",
       "options": [
@@ -2465,7 +2479,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши that.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "It was yesterday ____ everything changed.",
       "sentence_ru": "Именно вчера всё изменилось.",
       "base_form": "",
@@ -2554,10 +2568,10 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши have.",
-      "sentence_en": "You should ____ (have) asked for help.",
+      "instruction_ru": "Напиши правильно.",
+      "sentence_en": "You should ____ asked for help.",
       "sentence_ru": "Тебе следовало попросить помощи.",
-      "base_form": "have",
+      "base_form": "",
       "answer": "have",
       "tip": "should have + V3.",
       "options": None
@@ -2565,7 +2579,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши been.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "He might have ____ (be) joking.",
       "sentence_ru": "Он, возможно, шутил.",
       "base_form": "be",
@@ -2576,10 +2590,10 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши needn't.",
-      "sentence_en": "You ____ (need not) have bought so much food.",
+      "instruction_ru": "Напиши правильно.",
+      "sentence_en": "You ____ have bought so much food.",
       "sentence_ru": "Не нужно было столько еды покупать.",
-      "base_form": "need not",
+      "base_form": "",
       "answer": "needn't",
       "tip": "needn't have.",
       "options": None
@@ -2654,7 +2668,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши V-ing.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "____ (Look) at the map, I found the street.",
       "sentence_ru": "Глядя на карту…",
       "base_form": "Look",
@@ -2665,7 +2679,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши Having + V3.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "____ (finish) dinner, we went for a walk.",
       "sentence_ru": "Поужинав…",
       "base_form": "finish",
@@ -2676,7 +2690,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши V3 participle.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "____ (Build) in 1890, the house is historic.",
       "sentence_ru": "Построенный в 1890…",
       "base_form": "Build",
@@ -2854,7 +2868,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши However.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "I like the idea. ____, it is expensive.",
       "sentence_ru": "Идея нравится. Однако дорого.",
       "base_form": "",
@@ -2865,7 +2879,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши Although.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "____ it was late, we continued.",
       "sentence_ru": "Хотя было поздно…",
       "base_form": "",
@@ -2876,7 +2890,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши In addition.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "____, we need more time.",
       "sentence_ru": "Кроме того, нужно больше времени.",
       "base_form": "",
@@ -2954,7 +2968,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши did.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "Not until midnight ____ (do) they leave.",
       "sentence_ru": "Только в полночь они ушли.",
       "base_form": "do",
@@ -2965,7 +2979,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши had.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "No sooner ____ (have) I sat down than the phone rang.",
       "sentence_ru": "Едва я сел…",
       "base_form": "have",
@@ -2976,7 +2990,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши comes.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "Here ____ the bus!",
       "sentence_ru": "Вот и автобус!",
       "base_form": "",
@@ -3039,7 +3053,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "mcq",
       "subtype": "mcq",
-      "instruction_ru": "Выбери would.",
+      "instruction_ru": "Выбери правильное.",
       "sentence_en": "I ____ imagine that's the best option.",
       "sentence_ru": "Полагаю, это лучший вариант.",
       "options": [
@@ -3054,7 +3068,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши seem.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "They ____ (seem) to be avoiding us.",
       "sentence_ru": "Кажется, они нас избегают.",
       "base_form": "seem",
@@ -3065,7 +3079,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши tend.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "She ____ (tend) to overthink things.",
       "sentence_ru": "Она склонна усложнять.",
       "base_form": "tend",
@@ -3076,7 +3090,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши may well.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "He ____ be right.",
       "sentence_ru": "Он вполне может быть прав.",
       "base_form": "",
@@ -3154,7 +3168,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши would be.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "If I had saved money, I ____ freer now.",
       "sentence_ru": "Если бы копил, сейчас был бы свободнее.",
       "base_form": "",
@@ -3165,7 +3179,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши had + V3.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "If he ____ (listen), he wouldn't be lost now.",
       "sentence_ru": "Если бы послушал…",
       "base_form": "listen",
@@ -3176,7 +3190,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши wouldn't have.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "If I were you, I ____ (not say) that yesterday.",
       "sentence_ru": "На твоём месте я бы того не сказал.",
       "base_form": "not say",
@@ -3265,7 +3279,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши one.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "Which bag do you want? The red ____.",
       "sentence_ru": "Какую сумку? Красную.",
       "base_form": "",
@@ -3276,7 +3290,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши so.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "A: I'm tired. B: ____ am I.",
       "sentence_ru": "Я тоже.",
       "base_form": "",
@@ -3354,7 +3368,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши We regret.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "____ to inform you that the event is cancelled.",
       "sentence_ru": "К сожалению сообщаем…",
       "base_form": "",
@@ -3365,7 +3379,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши further.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "Should you require ____ information, contact us.",
       "sentence_ru": "Если нужна доп. информация…",
       "base_form": "",
@@ -3376,7 +3390,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши Appreciate.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "We ____ your patience.",
       "sentence_ru": "Мы ценим ваше терпение.",
       "base_form": "",
@@ -3454,7 +3468,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши perhaps.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "____ we could meet tomorrow.",
       "sentence_ru": "Возможно, встретимся завтра.",
       "base_form": "",
@@ -3465,7 +3479,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши sort of.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "It's ____ complicated.",
       "sentence_ru": "Это вроде как сложно.",
       "base_form": "",
@@ -3476,7 +3490,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши seem.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "You ____ a bit upset.",
       "sentence_ru": "Ты выглядишь немного расстроенным.",
       "base_form": "",

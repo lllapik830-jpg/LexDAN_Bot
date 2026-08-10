@@ -254,21 +254,48 @@ def _filled_sentence(ex: dict | None) -> str:
 
 
 def _speak_items_for_exercise(ex: dict | None) -> list[str]:
-    """Один раз: полное предложение (не отдельно короткий ответ вроде in/on)."""
+    """Один раз: английская фраза для произношения (только голос Рико)."""
     if not ex:
         return []
+    import re
+
+    def _is_ru(s: str) -> bool:
+        return bool(re.search(r"[А-Яа-яЁё]", s or ""))
+
+    def _is_meta_en(s: str) -> bool:
+        low = (s or "").strip().lower()
+        return (
+            not low
+            or "____" in low
+            or low.startswith("choose")
+            or low.startswith("which")
+            or low.startswith("select")
+        )
+
     subtype = (ex.get("subtype") or "").strip()
     answer = (ex.get("answer") or "").strip()
+    sentence_en = (ex.get("sentence_en") or "").strip()
     filled = _filled_sentence(ex)
-    if filled:
-        return [filled]
+
     if subtype == "translate_ru":
-        full = (ex.get("sentence_en") or answer).strip()
-        return [full] if full else []
+        return [sentence_en] if sentence_en and not _is_ru(sentence_en) else []
     if subtype == "translate_en":
-        return [answer] if answer else []
-    # mcq без пропуска в тексте — произносим сам ответ (часто уже фраза)
-    return [answer] if answer else []
+        return [answer] if answer and not _is_ru(answer) else []
+
+    if filled and not _is_ru(filled):
+        return [filled]
+
+    # MCQ с русским ответом (перевод) → озвучиваем английскую фразу, не русский
+    if _is_ru(answer):
+        if sentence_en and not _is_ru(sentence_en) and not _is_meta_en(sentence_en):
+            return [sentence_en]
+        return []
+
+    if answer and not _is_ru(answer):
+        return [answer]
+    if sentence_en and not _is_ru(sentence_en) and not _is_meta_en(sentence_en):
+        return [sentence_en]
+    return []
 
 
 def _speak_phrase_for_exercise(ex: dict | None) -> str:
@@ -338,7 +365,7 @@ async def _finish_exercise_ok(
         users = load_users()
         user = get_user(users, user_id)
         if all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
-            extra += "\n\n🔓 Все темы пройдены — открой <b>🎯 Тест по Grammar</b> в списке тем!"
+            extra += "\n\n🔓 Основные темы пройдены — открой <b>🎯 Тест по Grammar</b> в списке тем!"
 
     done = get_done_exercises(user, level, topic_id)
     next_num = None
@@ -1168,7 +1195,7 @@ async def acknowledge_topic(m: Message):
     user = get_user(users, str(m.from_user.id))
     extra = ""
     if all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
-        extra = "\n\n🔓 Все темы пройдены — открой <b>🎯 Тест по Grammar</b>!"
+        extra = "\n\n🔓 Основные темы пройдены — открой <b>🎯 Тест по Grammar</b>!"
     await m.answer(
         f"✅ Тема «{topic['title']}» засчитана!{extra}\n\n"
         + format_topics_list(level, _completed_topic_ids(user, level)),
@@ -1579,22 +1606,63 @@ async def exercise_answer(m: Message):
         await _finish_exercise_ok(
             m, uid, level, topic_id, num, f"✅ {fb}", ex=ex
         )
-    else:
-        better = (result.get("better_en") or result.get("answer") or "").strip()
-        fb = result.get("feedback_ru") or ""
-        if better or fb:
-            msg = "Мы исправили ошибку. Продолжаем!"
-            if better:
-                msg += f"\nПравильнее: <b>{better}</b>"
-            if fb and "nice" not in fb.lower() and "молодец" not in fb.lower():
-                msg += f"\n{fb}"
-            await m.answer(f"❌ {msg}", reply_markup=exercise_write_kb(), parse_mode="HTML")
-        else:
-            await m.answer(
-                "❌ Мы исправили ошибку. Продолжаем! Попробуй ещё раз.",
-                reply_markup=exercise_write_kb(),
-            )
+        return
+
+    wrong = int(ex.get("wrong_count") or 0) + 1
+    ex["wrong_count"] = wrong
+    update_active_exercise(uid, ex)
+
+    # 7–8: после 2 ошибок — показать ответ и засчитать
+    if subtype in {"translate_en", "translate_ru"} and wrong >= 2:
+        model = (ex.get("answer") or "").strip()
+        explain = (
+            f"❌ Снова неверно.\n"
+            f"Правильный ответ: <b>{model}</b>\n\n"
+            "✅ Задание засчитано — можно идти дальше."
+        )
+        await _finish_exercise_ok(
+            m,
+            uid,
+            level,
+            topic_id,
+            num,
+            explain,
+            ex=ex,
+            skip_speak=False,
+        )
+        return
+
+    if subtype in {"translate_en", "translate_ru"}:
+        await m.answer(
+            "❌ Не совсем так.\n"
+            "Можно взять <b>подсказку</b> кнопкой ниже — или попробуй ещё раз "
+            "своими словами (без раскрытия ответа).",
+            reply_markup=exercise_write_kb(),
+            parse_mode="HTML",
+        )
         await m.answer("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
+        return
+
+    # word_form и прочее: не светим правильный ответ с первого раза
+    fb = (result.get("feedback_ru") or "").strip()
+    if wrong >= 2 and subtype == "word_form":
+        model = (ex.get("answer") or "").strip()
+        await _finish_exercise_ok(
+            m,
+            uid,
+            level,
+            topic_id,
+            num,
+            f"❌ Снова неверно.\nПравильный ответ: <b>{model}</b>\n\n✅ Задание засчитано.",
+            ex=ex,
+        )
+        return
+
+    tip = fb or "Не совсем так. Подумай ещё раз."
+    if "Нужна форма:" in tip or "Правильнее:" in tip:
+        tip = "Не совсем так. Можно взять подсказку или попробуй ещё раз."
+    await m.answer(f"❌ {tip}", reply_markup=exercise_write_kb(), parse_mode="HTML")
+    await m.answer("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
 
 
 async def _advance_grammar_test(m: Message, user: dict, correct: bool, *, your: str = ""):

@@ -384,6 +384,9 @@ def _finalize_exercise(data: dict, subtype: str, kind: str, fallback: dict) -> d
                 instruction_ru = (fallback.get("instruction_ru") or instruction_ru).strip()
                 tip = (fallback.get("tip") or tip).strip()
                 prompt = _build_exercise_display(instruction_ru, sentence_en, sentence_ru, "mcq")
+        # Правильный ответ — на любом из мест 1–4
+        if answer in options and len(options) >= 2:
+            random.shuffle(options)
         if not sentence_ru:
             sentence_ru = translate_exercise_sentence(sentence_en, answer) or ""
         return {
@@ -398,6 +401,7 @@ def _finalize_exercise(data: dict, subtype: str, kind: str, fallback: dict) -> d
             "accept": accept,
             "tip": tip,
             "help_count": 0,
+            "wrong_count": 0,
         }
 
     if not sentence_ru and ex_subtype == "translate_ru":
@@ -418,6 +422,7 @@ def _finalize_exercise(data: dict, subtype: str, kind: str, fallback: dict) -> d
         "accept": accept,
         "tip": tip,
         "help_count": 0,
+        "wrong_count": 0,
     }
 
 
@@ -629,9 +634,23 @@ def check_write_answer(
         return {"correct": True, "feedback_ru": "Верно!"}
 
     if subtype == "word_form":
+        # Допускаем целое предложение с верной формой: «He is happy» при ответе is
+        u_norm = _normalize_text(user_answer)
+        candidates: set[str] = set()
+        for a in [model_answer, *(accept or [])]:
+            candidates |= _answer_aliases(a)
+        for cand in candidates:
+            if not cand:
+                continue
+            if " " in cand:
+                if cand in u_norm:
+                    return {"correct": True, "feedback_ru": "Верно!"}
+            else:
+                if re.search(rf"(^|\s){re.escape(cand)}(\s|$)", u_norm):
+                    return {"correct": True, "feedback_ru": "Верно!"}
         return {
             "correct": False,
-            "feedback_ru": f"Нужна форма: <b>{model_answer}</b>",
+            "feedback_ru": "Не совсем так. Подумай ещё раз или возьми подсказку.",
         }
 
     words = re.findall(r"[A-Za-zА-Яа-яЁё]+", raw)

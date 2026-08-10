@@ -234,12 +234,18 @@ def is_grammar_topic_done(user: dict, level: str, topic: dict) -> bool:
 
 
 def all_grammar_topics_done(user: dict, level: str) -> bool:
+    """Основные темы уровня закрыты → можно открыть тест.
+    optional-темы (расширение) и доп. задания (BTN_EXTRA) не влияют.
+    """
     from data.grammar_curriculum import get_topics
 
     topics = get_topics(level)
-    if not topics:
+    required = [t for t in topics if not t.get("optional")]
+    if not required:
+        required = list(topics)
+    if not required:
         return False
-    return all(is_grammar_topic_done(user, level, t) for t in topics)
+    return all(is_grammar_topic_done(user, level, t) for t in required)
 
 
 def is_grammar_test_passed(user: dict, level: str) -> bool:
