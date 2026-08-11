@@ -641,7 +641,7 @@ async def exclusive_voice(m: Message):
     try:
         file = await m.bot.get_file(m.voice.file_id)
         buf = await m.bot.download_file(file.file_path)
-        heard = (recognize_english(buf.read()) or "").strip()
+        heard = (recognize_english(buf.read(), hint=(task.get("voice_text") or "")) or "").strip()
     except Exception:
         heard = ""
     if not heard:

@@ -478,7 +478,7 @@ async def _handle_speak_practice_voice(m: Message, user: dict):
     try:
         file = await m.bot.get_file(m.voice.file_id)
         voice_buffer = await m.bot.download_file(file.file_path)
-        heard = (recognize_english(voice_buffer.read()) or "").strip()
+        heard = (recognize_english(voice_buffer.read(), hint=phrase) or "").strip()
     except Exception:
         heard = ""
 

@@ -285,7 +285,7 @@ async def voice_secret(m: Message, bot: Bot):
     try:
         file = await bot.get_file(m.voice.file_id)
         buf = await bot.download_file(file.file_path)
-        heard = recognize_english(buf.read()) or ""
+        heard = recognize_english(buf.read(), hint=target) or ""
     except Exception:
         heard = ""
 
