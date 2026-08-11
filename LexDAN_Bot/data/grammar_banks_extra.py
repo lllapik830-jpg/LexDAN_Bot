@@ -2379,7 +2379,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши have/had.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "Hardly ____ (have) we arrived when it started to rain.",
       "sentence_ru": "Едва мы приехали…",
       "base_form": "have",
@@ -2768,7 +2768,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши существительное.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "The ____ (decide) was difficult.",
       "sentence_ru": "Решение было трудным.",
       "base_form": "decide",
@@ -2779,7 +2779,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши существительное.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "We need a clear ____ (explain).",
       "sentence_ru": "Нужно ясное объяснение.",
       "base_form": "explain",
@@ -2790,7 +2790,7 @@ EXTRA_FALLBACKS = {
     {
       "kind": "write",
       "subtype": "word_form",
-      "instruction_ru": "Напиши существительное.",
+      "instruction_ru": "Напиши правильно.",
       "sentence_en": "His ____ (refuse) shocked us.",
       "sentence_ru": "Его отказ нас шокировал.",
       "base_form": "refuse",

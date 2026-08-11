@@ -385,8 +385,11 @@ NARRATIVE_INTROS: dict[str, str] = {
 
 
 from data.grammar_level_expansion import NARRATIVES as _EXP_NARRATIVES
+from data.grammar_narratives_b1c2 import NARRATIVES_B1C2
 
 NARRATIVE_INTROS.update(_EXP_NARRATIVES)
+# Подробные рассказы B1–C2 поверх коротких версий (как A1/A2 по глубине).
+NARRATIVE_INTROS.update(NARRATIVES_B1C2)
 
 
 def get_narrative_intro(topic_id: str) -> str | None:
