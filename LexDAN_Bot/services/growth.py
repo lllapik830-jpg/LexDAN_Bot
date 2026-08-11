@@ -886,6 +886,7 @@ def invite_link(bot_username: str, code: str) -> str:
 def subscription_blurb(user: dict) -> str:
     ensure_growth(user)
     from services.pricing import discount_blurb, lottery_status_lines
+    from services.sept_promo import promo_price_lines_html
 
     if is_premium(user):
         status = f"✅ Полный доступ ещё <b>{premium_time_label(user)}</b>"
@@ -910,12 +911,7 @@ def subscription_blurb(user: dict) -> str:
         f"• Reading — <b>{FREE_READING_PER_DAY}</b> тема\n"
         f"• Общение — <b>{FREE_CHAT_PER_DAY}</b> сообщ.\n"
         "• тест уровня\n\n"
-        f"<b>💬 Только общение</b> — <b>{PRICE_CHAT_MONTH}₽/мес</b>\n"
-        "• безлимит чата (текст + голос)\n"
-        "• апгрейд до полного — доплата в профиле\n\n"
-        f"<b>🚀 Безлимит ко всему</b> — <b>{PRICE_FULL_MONTH}₽/мес</b>\n"
-        "• уроки без лимита\n"
-        "• безлимит общения\n\n"
+        f"{promo_price_lines_html()}"
         "🔥 Серия дней и 🎁 друзья дают бустеры — смотри в профиле."
     )
 

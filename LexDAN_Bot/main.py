@@ -87,7 +87,20 @@ def yookassa_webhook():
             title = plan_title(result.get("plan") or "full")
             auto = " Автопродление включено." if result.get("auto") else ""
             verb = "продлена" if result.get("renew") else "активирована"
-            if result.get("plan") == "upgrade":
+            if result.get("promo") and result.get("until_label"):
+                until = result["until_label"]
+                if result.get("plan") == "upgrade":
+                    text = (
+                        f"✅ <b>Апгрейд</b> до полного доступа по акции "
+                        f"до <b>{until}</b> включительно.{auto}\n"
+                        "Теперь безлимит уроков, все голоса и 150 тем 🚀"
+                    )
+                else:
+                    text = (
+                        f"✅ Подписка <b>{title}</b> по акции "
+                        f"до <b>{until}</b> включительно.{auto}"
+                    )
+            elif result.get("plan") == "upgrade":
                 text = (
                     f"✅ <b>Апгрейд</b> до полного доступа {verb} на "
                     f"{result.get('days', 30)} дн.{auto}\n"
@@ -143,6 +156,7 @@ async def main():
         asyncio.create_task(_event_finalize_loop())
         asyncio.create_task(_event_announce_once())
         asyncio.create_task(_batch_3d_grant_once())
+        asyncio.create_task(_sept_promo_broadcast_once())
         await dp.start_polling(bot, handle_as_tasks=True)
     finally:
         release_bot_lock()
@@ -182,6 +196,27 @@ async def _event_announce_once():
         logging.error(f"Event announce error: {e}")
 
 
+
+
+async def _sept_promo_broadcast_once():
+    """После деплоя один раз разослать акцию к 1 сентября всем."""
+    from services.broadcast import broadcast_sept_promo_once
+
+    await asyncio.sleep(35)
+    try:
+        result = await broadcast_sept_promo_once(bot, force=False)
+        if result.get("already"):
+            logging.info("Sept promo broadcast already sent earlier")
+        elif result.get("ok"):
+            logging.info(
+                "Sept promo broadcast sent=%s fail=%s",
+                result.get("sent"),
+                result.get("fail"),
+            )
+        else:
+            logging.warning("Sept promo broadcast: %s", result)
+    except Exception as e:
+        logging.error(f"Sept promo broadcast error: {e}")
 
 
 async def _daily_review_loop():

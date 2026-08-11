@@ -46,29 +46,39 @@ def price_with_discount(base: int, user: dict) -> tuple[int, int]:
 
 
 def chat_price(user: dict) -> tuple[int, int]:
-    return price_with_discount(PRICE_CHAT_MONTH, user)
+    from services.sept_promo import catalog_chat_rub
+
+    return price_with_discount(catalog_chat_rub(), user)
 
 
 def full_price(user: dict) -> tuple[int, int]:
-    return price_with_discount(PRICE_FULL_MONTH, user)
+    from services.sept_promo import catalog_full_rub
+
+    return price_with_discount(catalog_full_rub(), user)
 
 
 def upgrade_price(user: dict) -> tuple[int, int]:
-    """Доплата с тарифа «Общение» (399) до полного — 399₽ (+ скидка если есть)."""
-    return price_with_discount(PRICE_CHAT_MONTH, user)
+    """Доплата с тарифа «Общение» до полного (= цена «общения» каталога + скидка)."""
+    from services.sept_promo import catalog_chat_rub
+
+    return price_with_discount(catalog_chat_rub(), user)
 
 
 def discount_blurb(user: dict) -> str:
     pct = discount_percent(user)
     if pct <= 0:
         return ""
+    from services.sept_promo import catalog_chat_rub, catalog_full_rub
+
     chat, _ = chat_price(user)
     full, _ = full_price(user)
     note = user.get("discount_note") or "награда"
+    base_chat = catalog_chat_rub()
+    base_full = catalog_full_rub()
     return (
         f"\n🏷 <b>Твоя скидка {pct}%</b> ({note})\n"
-        f"• Общение: <s>{PRICE_CHAT_MONTH}₽</s> → <b>{chat}₽</b>\n"
-        f"• Всё: <s>{PRICE_FULL_MONTH}₽</s> → <b>{full}₽</b>\n"
+        f"• Общение: <s>{base_chat}₽</s> → <b>{chat}₽</b>\n"
+        f"• Всё: <s>{base_full}₽</s> → <b>{full}₽</b>\n"
         "Скидка учтётся при оплате через бота.\n"
     )
 

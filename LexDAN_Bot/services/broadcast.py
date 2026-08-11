@@ -27,6 +27,27 @@ FEATURES_UPDATE_CAPTION = (
     "👉 https://t.me/LexDan_Rico"
 )
 
+SEPT_PROMO_CAPTION = (
+    "🦜 <b>Рико · акция к 1 сентября</b>\n\n"
+    "Время учёбы и саморазвития на носу — а мы решили устроить шок-цену 💥\n\n"
+    "🚀 <b>Полный доступ</b>\n"
+    "<s>799₽</s> → <b>549₽</b>\n\n"
+    "💬 <b>Только общение</b>\n"
+    "<s>399₽</s> → <b>279₽</b>\n\n"
+    "📅 Успей оформить <b>до 31 августа</b> —\n"
+    "и учись <b>весь сентябрь</b> (доступ до <b>30.09</b> включительно).\n\n"
+    "Что внутри полного доступа:\n"
+    "✅ уроки без лимита — Grammar, Vocabulary, Listening, Reading\n"
+    "✅ безлимит общения с Рико (текст + голос)\n"
+    "✅ все голоса озвучки\n"
+    "✅ огонь дня и прогресс без дневных потолков\n\n"
+    "Жми в меню: <b>📊 Профиль → 💎 Подписка</b>\n\n"
+    "После акции цены вернутся к 799₽ и 399₽.\n"
+    "Канал с новостями: https://t.me/LexDan_Rico"
+)
+
+_SEPT_BROADCAST_KEY = "sept_promo_2026"
+
 
 def fix_update_image_path() -> str | None:
     here = Path(__file__).resolve().parent.parent
@@ -53,28 +74,42 @@ def features_update_image_path() -> str | None:
     return None
 
 
+def sept_promo_image_path() -> str | None:
+    here = Path(__file__).resolve().parent.parent
+    candidates = [
+        here / "assets" / "posts" / "sept_promo_rico_shock.png",
+        here / "assets" / "posts" / "sept_promo_post.png",
+    ]
+    for p in candidates:
+        if p.is_file():
+            return str(p)
+    return None
+
+
 async def _broadcast_photo(
     bot,
     *,
     photo_path: str,
     caption: str,
     log_name: str,
+    extra_buttons: list | None = None,
 ) -> dict:
     from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
     from services.database import load_users, save_users
 
     users = load_users()
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📣 Канал обновлений",
-                    url="https://t.me/LexDan_Rico",
-                )
-            ]
+    rows = [
+        [
+            InlineKeyboardButton(
+                text="📣 Канал обновлений",
+                url="https://t.me/LexDan_Rico",
+            )
         ]
-    )
+    ]
+    if extra_buttons:
+        rows = list(extra_buttons) + rows
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
 
     sent = 0
     fail = 0
@@ -141,3 +176,45 @@ async def broadcast_features_update(bot) -> dict:
         caption=FEATURES_UPDATE_CAPTION,
         log_name="broadcast_features",
     )
+
+
+async def broadcast_sept_promo(bot) -> dict:
+    """Акция к 1 сентября: шок-цены + картинка всем (включая админа)."""
+    from aiogram.types import InlineKeyboardButton
+
+    photo_path = sept_promo_image_path()
+    if not photo_path:
+        return {"ok": False, "error": "image_missing", "sent": 0, "fail": 0}
+    return await _broadcast_photo(
+        bot,
+        photo_path=photo_path,
+        caption=SEPT_PROMO_CAPTION,
+        log_name="broadcast_sept",
+        extra_buttons=[
+            [InlineKeyboardButton(text="💎 Открыть подписку", callback_data="tariff:open")]
+        ],
+    )
+
+
+async def broadcast_sept_promo_once(bot, *, force: bool = False) -> dict:
+    """Один раз после деплоя (флаг в БД __broadcasts__)."""
+    from services.database import load_users, save_users
+
+    users = load_users()
+    meta = users.get("__broadcasts__")
+    if not isinstance(meta, dict):
+        meta = {}
+    if meta.get(_SEPT_BROADCAST_KEY) and not force:
+        return {"ok": False, "already": True, "sent": 0, "fail": 0}
+
+    result = await broadcast_sept_promo(bot)
+    if result.get("ok"):
+        users = load_users()
+        meta = users.get("__broadcasts__")
+        if not isinstance(meta, dict):
+            meta = {}
+            users["__broadcasts__"] = meta
+        meta[_SEPT_BROADCAST_KEY] = True
+        users["__broadcasts__"] = meta
+        save_users(users, only=["__broadcasts__"])
+    return result

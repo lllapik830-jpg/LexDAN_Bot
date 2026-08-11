@@ -107,6 +107,10 @@ def create_payment(
                 "kind": "initial",
             },
         }
+        from services.sept_promo import PROMO_META_KEY, is_sept_promo_active
+
+        if is_sept_promo_active():
+            payload["metadata"]["promo"] = PROMO_META_KEY
         if with_save:
             payload["save_payment_method"] = True
         r = requests.post(
@@ -228,14 +232,40 @@ def apply_successful_payment(payment: dict) -> dict[str, Any] | None:
     if _already_processed(user, payment_id):
         return None
 
-    if plan == PLAN_CHAT:
+    from services.sept_promo import (
+        PROMO_META_KEY,
+        is_sept_promo_active,
+        sept_promo_access_until_ts,
+    )
+
+    kind = str(meta.get("kind") or "")
+    promo_flag = str(meta.get("promo") or "") == PROMO_META_KEY
+    # Акция только на первичную оплату / апгрейд, не на автопродление
+    use_promo = kind != "renew" and (promo_flag or is_sept_promo_active())
+
+    if use_promo:
+        until = sept_promo_access_until_ts()
+        if plan == PLAN_CHAT:
+            user["chat_until"] = max(float(user.get("chat_until") or 0), until)
+            user["sub_plan"] = PLAN_CHAT
+        else:
+            user["premium_until"] = max(float(user.get("premium_until") or 0), until)
+            user["sub_plan"] = PLAN_FULL
+            user["in_promo_trial"] = False
+        user["sub_renew_at"] = until
+        days = max(1, int((until - time.time()) / 86400) + 1)
+    elif plan == PLAN_CHAT:
         extend_chat_pass(user, SUB_DAYS)
         user["sub_plan"] = PLAN_CHAT
+        user["sub_renew_at"] = time.time() + SUB_DAYS * 86400
+        days = SUB_DAYS
     else:
         # full или upgrade → полный доступ
         extend_premium(user, SUB_DAYS)
         user["sub_plan"] = PLAN_FULL
         user["in_promo_trial"] = False
+        user["sub_renew_at"] = time.time() + SUB_DAYS * 86400
+        days = SUB_DAYS
 
     consume_discount(user)
     _mark_processed(user, payment_id)
@@ -247,7 +277,6 @@ def apply_successful_payment(payment: dict) -> dict[str, Any] | None:
     elif meta.get("kind") == "renew" and user.get("yookassa_payment_method_id"):
         user["sub_auto"] = True
 
-    user["sub_renew_at"] = time.time() + SUB_DAYS * 86400
     user["yookassa_last_payment_id"] = payment_id
     user.pop("yookassa_renew_pending_id", None)
 
@@ -255,9 +284,11 @@ def apply_successful_payment(payment: dict) -> dict[str, Any] | None:
     return {
         "user_id": user_id,
         "plan": plan,
-        "days": SUB_DAYS,
+        "days": days,
         "renew": meta.get("kind") == "renew",
         "auto": bool(user.get("sub_auto")),
+        "promo": bool(use_promo),
+        "until_label": "30.09.2026" if use_promo else "",
     }
 
 
