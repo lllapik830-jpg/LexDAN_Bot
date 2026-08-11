@@ -297,11 +297,13 @@ async def _send_listening_audio(m: Message, item: dict) -> None:
         parse_mode="HTML",
     )
     try:
-        from services.elevenlabs import synthesize_speech, send_voice_from_mp3
+        from services.elevenlabs import send_rico_voice
+        from services.database import users_for, get_user
 
-        mp3, _ = await asyncio.to_thread(synthesize_speech, script)
-        if mp3:
-            await send_voice_from_mp3(m, mp3, title="Listening")
+        uid = str(m.from_user.id) if m.from_user else ""
+        user = get_user(users_for(uid), uid) if uid else None
+        ok = await send_rico_voice(m, script, user=user, title="Course listening")
+        if ok:
             return
     except Exception as e:
         log.warning("course listening TTS fail: %s", e)

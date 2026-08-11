@@ -31,6 +31,10 @@ def iter_registered() -> list[tuple[str, dict]]:
     for uid, raw in users.items():
         if not isinstance(raw, dict):
             continue
+        if str(uid).startswith("__"):
+            continue
+        if raw.get("imitating_registration"):
+            continue
         u = get_user(users, str(uid))
         ensure_growth(u)
         if is_registered(u):

@@ -177,12 +177,9 @@ async def _send_story_scene(m: Message, user: dict, scene: dict | None) -> None:
         if (scene.get("kind") or "") == "voice":
             line = (scene.get("voice_text") or "").strip()
             if line:
-                await send_voice_reply(
-                    m,
-                    line,
-                    title="Легенда · задание",
-                    voice_id=resolve_voice_id("rico", user),
-                )
+                from services.elevenlabs import send_rico_voice
+
+                await send_rico_voice(m, line, user=user, title="Легенда · задание")
         return
 
     html = format_line_html(scene)
@@ -190,12 +187,19 @@ async def _send_story_scene(m: Message, user: dict, scene: dict | None) -> None:
     en = (scene.get("en") or "").strip()
     if en:
         speaker = (scene.get("speaker") or "narrator").lower()
-        await send_voice_reply(
-            m,
-            en,
-            title=scene.get("label") or speaker,
-            voice_id=resolve_voice_id(speaker, user),
-        )
+        if speaker == "rico":
+            from services.elevenlabs import send_rico_voice
+
+            await send_rico_voice(
+                m, en, user=user, title=scene.get("label") or speaker
+            )
+        else:
+            await send_voice_reply(
+                m,
+                en,
+                title=scene.get("label") or speaker,
+                voice_id=resolve_voice_id(speaker, user),
+            )
 
 
 async def _send_pack_task(m: Message, user: dict, *, resumed: bool = False) -> None:
@@ -220,11 +224,9 @@ async def _send_pack_task(m: Message, user: dict, *, resumed: bool = False) -> N
     if (task.get("kind") or "") == "voice":
         line = (task.get("voice_text") or "").strip()
         if line:
-            from services.voices import resolve_rico_voice_id
+            from services.elevenlabs import send_rico_voice
 
-            await send_voice_reply(
-                m, line, title="Эксклюзив Рико", voice_id=resolve_rico_voice_id(user)
-            )
+            await send_rico_voice(m, line, user=user, title="Эксклюзив Рико")
 
 
 async def _resume_story_into(m: Message, user: dict) -> None:

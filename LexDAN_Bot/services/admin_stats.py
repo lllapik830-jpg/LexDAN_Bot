@@ -33,6 +33,11 @@ def _iter_users(*, persist_backfill: bool = False) -> list[tuple[str, dict]]:
     for uid, raw in users.items():
         if not isinstance(raw, dict):
             continue
+        if str(uid).startswith("__"):
+            continue
+        # Имитация регистрации — не в воронках/топах/статах
+        if raw.get("imitating_registration"):
+            continue
         u = get_user(users, str(uid))
         before = int(u.get("chat_text_total") or 0) + int(u.get("chat_voice_total") or 0)
         ensure_growth(u)

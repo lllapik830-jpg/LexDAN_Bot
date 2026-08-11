@@ -53,14 +53,26 @@ def _clean_models() -> list[str]:
     return out
 
 
-def elevenlabs_tts(text: str, voice_id: str | None = None, *, slow: bool = False) -> bytes | None:
+def elevenlabs_tts(
+    text: str,
+    voice_id: str | None = None,
+    *,
+    slow: bool = False,
+    timeout: float = 6,
+) -> bytes | None:
     """Текст → MP3 через ElevenLabs. None = не удалось."""
-    audio, _err = elevenlabs_tts_detail(text, voice_id=voice_id, slow=slow)
+    audio, _err = elevenlabs_tts_detail(
+        text, voice_id=voice_id, slow=slow, timeout=timeout
+    )
     return audio
 
 
 def elevenlabs_tts_detail(
-    text: str, voice_id: str | None = None, *, slow: bool = False
+    text: str,
+    voice_id: str | None = None,
+    *,
+    slow: bool = False,
+    timeout: float = 6,
 ) -> tuple[bytes | None, str]:
     text = (text or "").strip()
     if not text:
@@ -69,6 +81,7 @@ def elevenlabs_tts_detail(
         return None, "no ELEVENLABS_API_KEY"
 
     vid = (voice_id or VOICE_ID or "").strip() or VOICE_ID
+    el_timeout = max(3.0, float(timeout or 6))
 
     # Лимит символов на запрос
     if len(text) > 900:
@@ -101,7 +114,7 @@ def elevenlabs_tts_detail(
                     "model_id": model_id,
                     "voice_settings": voice_settings,
                 },
-                timeout=6,
+                timeout=el_timeout,
             )
             if response.status_code == 200 and response.content:
                 return response.content, ""
@@ -120,12 +133,12 @@ def elevenlabs_tts_detail(
             if response.status_code in (400, 422):
                 continue
         except requests.Timeout as e:
-            last_err = f"timeout model={model_id}: {e}"
+            last_err = f"timeout model={model_id} voice={vid}: {e}"
             logging.warning(f"ElevenLabs TTS timeout, fallback soon: {last_err}")
-            break  # не крутим следующую модель ещё 6с — сразу gTTS
+            break  # не крутим следующую модель ещё Nс — сразу gTTS / sticky
         except Exception as e:
-            last_err = str(e)
-            logging.error(f"ElevenLabs TTS exception: {e}")
+            last_err = f"exception voice={vid}: {e}"
+            logging.error(f"ElevenLabs TTS exception voice={vid}: {e}")
             break
     return None, last_err
 
@@ -150,29 +163,51 @@ def gtts_tts(text: str, *, slow: bool = False) -> bytes | None:
 
 
 def synthesize_speech(
-    text: str, voice_id: str | None = None, *, slow: bool = False,
+    text: str,
+    voice_id: str | None = None,
+    *,
+    slow: bool = False,
     allow_gtts_fallback: bool = True,
+    timeout: float = 6,
+    sticky_retry: bool | None = None,
 ) -> tuple[bytes | None, str]:
     """
     Сначала ElevenLabs, при ошибке — gTTS (если allow_gtts_fallback).
     Для listening-диалогов: allow_gtts_fallback=False, чтобы голос персонажа
     не прыгал на google mid-cast.
+    sticky_retry: один повтор EL при том же voice_id (по умолчанию — если voice_id задан).
+    После timeout повтор не делаем — сразу gTTS, иначе пользователь ждёт 2×timeout.
     """
-    audio, err = elevenlabs_tts_detail(text, voice_id=voice_id, slow=slow)
+    vid = (voice_id or "").strip() or None
+    audio, err = elevenlabs_tts_detail(
+        text, voice_id=vid, slow=slow, timeout=timeout
+    )
     if audio:
         return audio, "elevenlabs"
-    # один повтор для sticky-voice (часто timeout на Render)
-    if voice_id:
-        audio, err2 = elevenlabs_tts_detail(text, voice_id=voice_id, slow=slow)
+    do_sticky = (sticky_retry if sticky_retry is not None else bool(vid))
+    timed_out = "timeout" in (err or "").lower()
+    if do_sticky and vid and not timed_out:
+        audio, err2 = elevenlabs_tts_detail(
+            text, voice_id=vid, slow=slow, timeout=timeout
+        )
         if audio:
             return audio, "elevenlabs"
         err = err2 or err
-    logging.warning(f"ElevenLabs unavailable ({err}), falling back to gTTS={allow_gtts_fallback}")
+    logging.warning(
+        "ElevenLabs unavailable (voice=%s err=%s), falling back to gTTS=%s",
+        vid or VOICE_ID,
+        err,
+        allow_gtts_fallback,
+    )
     if not allow_gtts_fallback:
         return None, ""
     audio = gtts_tts(text, slow=slow)
     if audio:
+        logging.info("TTS fallback ok via gTTS (wanted voice=%s)", vid or VOICE_ID)
         return audio, "gtts"
+    logging.error(
+        "All TTS backends failed (voice=%s el_err=%s)", vid or VOICE_ID, err
+    )
     return None, ""
 
 
@@ -267,6 +302,8 @@ async def send_voice_reply(
     voice_id: str | None = None,
     slow: bool = False,
     allow_gtts_fallback: bool = True,
+    timeout: float = 6,
+    sticky_retry: bool | None = None,
 ) -> bool:
     """Сгенерировать и отправить голосовое. True если ушло."""
     import asyncio
@@ -278,7 +315,16 @@ async def send_voice_reply(
         vid,
         slow=slow,
         allow_gtts_fallback=allow_gtts_fallback,
+        timeout=timeout,
+        sticky_retry=sticky_retry,
     )
+    if not mp3_bytes:
+        logging.error(
+            "TTS produced no audio title=%s voice=%s text_len=%s",
+            title,
+            vid or VOICE_ID,
+            len((text or "").strip()),
+        )
     return await send_voice_from_mp3(
         message, mp3_bytes, source=source, title=title
     )
@@ -295,15 +341,26 @@ async def send_rico_voice(
     """
     Озвучка голосом Рико (уроки, огонь дня, реплики Рико).
     Не использовать для чата и персонажей Listening.
+    timeout=10: Rico-фразы чуть длиннее чата; без sticky после timeout → быстрее gTTS.
     """
     from services.voices import resolve_rico_voice_id
 
-    return await send_voice_reply(
+    vid = resolve_rico_voice_id(user)
+    if not (text or "").strip():
+        logging.warning("send_rico_voice skipped: empty text title=%s voice=%s", title, vid)
+        return False
+    logging.info("send_rico_voice start title=%s voice=%s chars=%s", title, vid, len(text.strip()))
+    ok = await send_voice_reply(
         message,
         text,
         title=title,
-        voice_id=resolve_rico_voice_id(user),
+        voice_id=vid,
         slow=slow,
         allow_gtts_fallback=True,
+        timeout=10,
+        sticky_retry=False,
     )
+    if not ok:
+        logging.error("send_rico_voice failed title=%s voice=%s", title, vid)
+    return ok
 

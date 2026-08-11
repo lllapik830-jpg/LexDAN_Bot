@@ -38,6 +38,27 @@ from services.elevenlabs import send_voice_reply, send_rico_voice
 
 router = Router()
 
+# Голос Рико запрещён в репликах диалога Listening (только cast-голоса).
+_RICO_VOICE_IDS = {
+    "fBD19tfE58bkETeiwUoC",
+    "XsmrVB66q3D4TaXVaWNF",
+}
+_CAST_FALLBACK_VOICE = "pNInz6obpgDQGcFmaJgB"  # Adam — не Рико
+
+
+def _cast_voice_id(voice_id: str | None) -> str:
+    """Voice ID персонажа диалога; никогда не Рико."""
+    try:
+        from services.voices import RICO_VOICE_ID, RICO_VOICE_ALT_ID
+
+        banned = {RICO_VOICE_ID, RICO_VOICE_ALT_ID} | _RICO_VOICE_IDS
+    except Exception:
+        banned = set(_RICO_VOICE_IDS)
+    vid = (voice_id or "").strip()
+    if not vid or vid in banned:
+        return _CAST_FALLBACK_VOICE
+    return vid
+
 BTN_READY = "✅ Готов"
 BTN_LISTENED = "✅ Прослушал(а)"
 BTN_TRUE = "✅ Верно"
@@ -380,7 +401,7 @@ async def listening_ready(m: Message):
             m,
             t["text"],
             title=label,
-            voice_id=t.get("voice_id"),
+            voice_id=_cast_voice_id(t.get("voice_id")),
             slow=slow,
             allow_gtts_fallback=False,
         )
@@ -448,7 +469,7 @@ async def listening_replay_turn(m: Message):
         m,
         turn["text"],
         title=label,
-        voice_id=turn.get("voice_id"),
+        voice_id=_cast_voice_id(turn.get("voice_id")),
         slow=_slow_for_level(level),
         allow_gtts_fallback=False,
     )

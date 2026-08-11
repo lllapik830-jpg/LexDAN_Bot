@@ -5,8 +5,7 @@ from __future__ import annotations
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 
 from data.event_congrats import get_congrats
-from services.elevenlabs import send_voice_reply
-from services.voices import resolve_rico_voice_id
+from services.elevenlabs import send_rico_voice
 
 BTN_CONGRATS_TRANSLATE = "🌍 Перевести поздравление"
 BTN_CONGRATS_BACK = "🔙 К выбору мест"
@@ -44,12 +43,7 @@ async def send_place_congrats(m: Message, user: dict, place: int) -> bool:
         reply_markup=congrats_kb(),
         parse_mode="HTML",
     )
-    await send_voice_reply(
-        m,
-        en,
-        title=f"Rico · {title}",
-        voice_id=resolve_rico_voice_id(user),
-    )
+    await send_rico_voice(m, en, user=user, title=f"Rico · {title}")
     return True
 
 

@@ -835,6 +835,8 @@ def format_session_wrap(
 
 def apply_referral_on_start(new_user: dict, ref_code: str, all_users: dict) -> str | None:
     ensure_growth(new_user)
+    if new_user.get("imitating_registration"):
+        return None
     if new_user.get("referred_by") or new_user.get("name"):
         return None
     ref_code = (ref_code or "").strip().lower()
@@ -842,6 +844,8 @@ def apply_referral_on_start(new_user: dict, ref_code: str, all_users: dict) -> s
         return None
     for uid, u in all_users.items():
         if not isinstance(u, dict):
+            continue
+        if str(uid).startswith("__"):
             continue
         ensure_growth(u)
         if (u.get("referral_code") or "").lower() == ref_code:
@@ -854,6 +858,9 @@ def grant_referral_bonuses(new_user_id: str, users: dict) -> None:
     """При регистрации по ссылке: считаем старт + welcome-буст другу (без +3 дней премиума)."""
     user = get_user(users, new_user_id)
     ensure_growth(user)
+    # Имитация регистрации: никаких бонусов себе/другу и invite_count чужим
+    if user.get("imitating_registration"):
+        return
     ref = user.get("referred_by")
     if not ref or user.get("referral_bonus_granted"):
         return
@@ -861,8 +868,10 @@ def grant_referral_bonuses(new_user_id: str, users: dict) -> None:
     from services.rewards import grant_invitee_welcome_boost
 
     grant_invitee_welcome_boost(user)
-    if str(ref) in users:
+    if str(ref) in users and not str(ref).startswith("__"):
         inviter = get_user(users, str(ref))
+        if inviter.get("imitating_registration"):
+            return
         ensure_growth(inviter)
         inviter["invite_count"] = int(inviter.get("invite_count") or 0) + 1
 

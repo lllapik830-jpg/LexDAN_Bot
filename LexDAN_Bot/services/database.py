@@ -370,8 +370,14 @@ def _save_users_file(data: dict) -> None:
 
 def get_user(users: dict, user_id: str) -> dict:
     """Достать пользователя. Если его ещё нет — создать карточку."""
-    if user_id not in users:
-        users[user_id] = {
+    uid = str(user_id)
+    # Служебные ключи (бэкапы имитации и т.п.) — без дефолтов и автосоздания
+    if uid.startswith("__"):
+        raw = users.get(uid)
+        return raw if isinstance(raw, dict) else {}
+
+    if uid not in users:
+        users[uid] = {
             "name": None,
             "step": "start",
             "mode": MODE_MENU,
@@ -448,9 +454,9 @@ def get_user(users: dict, user_id: str) -> dict:
         "chat_voice_total": 0,
     }
     for key, value in defaults.items():
-        users[user_id].setdefault(key, value)
-    users[user_id]["tg_id"] = str(user_id)
-    return users[user_id]
+        users[uid].setdefault(key, value)
+    users[uid]["tg_id"] = uid
+    return users[uid]
 
 
 def set_mode(user_id: str, mode: str) -> dict:

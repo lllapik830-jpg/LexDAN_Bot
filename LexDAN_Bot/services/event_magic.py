@@ -272,6 +272,8 @@ def add_points(user: dict, amount: float, *, kind: str) -> float:
     Начислить баллы, если ивент активен и ещё не финализирован.
     Возвращает новое значение points (или текущее, если не начислили).
     """
+    if user.get("imitating_registration"):
+        return get_points(user)
     state = load_event_state()
     if state.get("finalized"):
         return get_points(user)
@@ -333,6 +335,8 @@ def build_live_top(users: dict, *, limit: int = 10) -> list[dict]:
             continue
         # Админ тестирует карты — в гонке лидеров / итогах не участвует
         if str(uid) == manager_id:
+            continue
+        if payload.get("imitating_registration"):
             continue
         me = payload.get("magic_event")
         if not isinstance(me, dict) or me.get("event_id") != EVENT_ID:
@@ -602,6 +606,8 @@ def build_event_points_breakdown(users: dict | None = None) -> list[dict]:
     for uid, payload in (users or {}).items():
         if not isinstance(payload, dict) or str(uid).startswith("__"):
             continue
+        if payload.get("imitating_registration"):
+            continue
         me = payload.get("magic_event")
         if not isinstance(me, dict) or me.get("event_id") != EVENT_ID:
             continue
@@ -682,6 +688,8 @@ async def broadcast_event_start(bot, *, force: bool = False) -> dict:
     fail = 0
     for uid, payload in users.items():
         if not isinstance(payload, dict) or str(uid).startswith("__"):
+            continue
+        if payload.get("imitating_registration"):
             continue
         try:
             chat_id = int(uid)

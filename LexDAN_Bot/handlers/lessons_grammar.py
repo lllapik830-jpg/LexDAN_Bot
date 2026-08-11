@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import logging
 
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, CallbackQuery
@@ -381,6 +382,13 @@ async def _finish_exercise_ok(
             progress_lines.append(f"{mark} Задание {n} — {title}")
 
     speak_items = [] if skip_speak else _speak_items_for_exercise(ex)
+    if not skip_speak and not speak_items and ex:
+        logging.info(
+            "Rico speak skipped: no English phrase for subtype=%r answer=%r sentence_en=%r",
+            (ex.get("subtype") or ""),
+            (ex.get("answer") or "")[:80],
+            (ex.get("sentence_en") or "")[:80],
+        )
     if speak_items:
         # Сначала только «верно» + произношение; праздник темы — после ГС
         await m.answer(text, parse_mode="HTML")
@@ -1024,10 +1032,16 @@ async def _rico_chat_reply(m: Message, user: dict, user_text: str, *, show_heard
     if show_heard:
         text_out = f"🎧 <i>Услышал:</i> {user_text}\n\n" + text_out
     await m.answer(text_out, reply_markup=grammar_rico_chat_kb(), parse_mode="HTML")
-    asyncio.create_task(
-        send_rico_voice(m, reply_en, user=user, title="Rico grammar"),
-        name=f"rico-grammar-voice-{uid}",
-    )
+
+    async def _rico_voice_bg():
+        try:
+            await send_rico_voice(m, reply_en, user=user, title="Rico grammar")
+        except Exception as e:
+            logging.exception(
+                "Rico grammar voice background failed uid=%s: %s", uid, e
+            )
+
+    asyncio.create_task(_rico_voice_bg(), name=f"rico-grammar-voice-{uid}")
 
 
 async def _rico_chat_from_voice(m: Message, user: dict):
@@ -1461,6 +1475,7 @@ async def _do_exercise_help(m: Message, user: dict, uid: str):
             topic_id,
             num,
             tip + "\n\n✅ Задание засчитано (по подсказке с ответом).",
+            ex=ex,
         )
         return
 

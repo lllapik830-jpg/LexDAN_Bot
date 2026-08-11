@@ -133,7 +133,11 @@ def lottery_status_lines(user: dict) -> str:
 def list_lottery_30(users: dict) -> list[tuple[str, dict]]:
     out = []
     for uid, u in users.items():
-        if isinstance(u, dict) and u.get("lottery_30"):
+        if str(uid).startswith("__") or not isinstance(u, dict):
+            continue
+        if u.get("imitating_registration"):
+            continue
+        if u.get("lottery_30"):
             out.append((str(uid), u))
     return out
 
@@ -141,7 +145,11 @@ def list_lottery_30(users: dict) -> list[tuple[str, dict]]:
 def list_lottery_100(users: dict) -> list[tuple[str, dict]]:
     out = []
     for uid, u in users.items():
-        if isinstance(u, dict) and u.get("lottery_100"):
+        if str(uid).startswith("__") or not isinstance(u, dict):
+            continue
+        if u.get("imitating_registration"):
+            continue
+        if u.get("lottery_100"):
             out.append((str(uid), u))
     return out
 
@@ -150,7 +158,9 @@ def list_referral_ticket_pool(users: dict) -> list[tuple[str, dict]]:
     """Каждый билет = отдельный слот (uid может повторяться)."""
     pool: list[tuple[str, dict]] = []
     for uid, u in users.items():
-        if not isinstance(u, dict):
+        if str(uid).startswith("__") or not isinstance(u, dict):
+            continue
+        if u.get("imitating_registration"):
             continue
         n = int(u.get("referral_lottery_tickets") or 0)
         for _ in range(max(0, n)):
@@ -209,6 +219,10 @@ def clear_lottery_100_prize(user: dict) -> bool:
 def pending_lottery_100_prizes(users: dict) -> list[tuple[str, dict]]:
     out = []
     for uid, u in users.items():
-        if isinstance(u, dict) and u.get("lottery_100_prize_pending"):
+        if str(uid).startswith("__") or not isinstance(u, dict):
+            continue
+        if u.get("imitating_registration"):
+            continue
+        if u.get("lottery_100_prize_pending"):
             out.append((str(uid), u))
     return out

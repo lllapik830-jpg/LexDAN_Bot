@@ -69,6 +69,8 @@ HELP = (
     "/unban <code>id</code> — снять бан / кулдаун флуда\n"
     "/67 — превью оффера последнего дня триала (−15%)\n"
     "/trial_offer_send — оффер ≤24ч ([force] | user_id)\n"
+    "/imit_start — имитация регистрации нового пользователя (все этапы)\n"
+    "/imit_finish — выйти из имитации и вернуть свой аккаунт\n"
 )
 
 
@@ -1096,4 +1098,44 @@ async def admin_grant_batch_3d(m: Message):
         f"skipped={result.get('skipped')} fail={result.get('fail')} "
         f"total={result.get('total')}"
     )
+
+
+@router.message(Command("imit_start"))
+async def admin_imit_start(m: Message):
+    """Имитация регистрации нового пользователя — все этапы с нуля."""
+    if not _is_admin(m):
+        return
+    from aiogram.types import ReplyKeyboardRemove
+    from handlers.start import HELLO_NEW, ASK_NAME
+    from services.imit_reg import start_imitation
+
+    uid = str(m.from_user.id)
+    users = load_users()
+    ok, msg = start_imitation(
+        users,
+        uid,
+        tg_username=(m.from_user.username or "") if m.from_user else "",
+    )
+    await m.answer(msg, reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
+    if not ok:
+        return
+    await m.answer(HELLO_NEW, parse_mode="HTML")
+    await m.answer(ASK_NAME, parse_mode="HTML")
+
+
+@router.message(Command("imit_finish"))
+async def admin_imit_finish(m: Message):
+    """Завершить имитацию и восстановить админ-аккаунт."""
+    if not _is_admin(m):
+        return
+    from handlers.keyboards import main_menu
+    from services.imit_reg import finish_imitation
+
+    uid = str(m.from_user.id)
+    users = load_users()
+    ok, msg, restored = finish_imitation(users, uid)
+    if not ok or not restored:
+        await m.answer(msg, parse_mode="HTML")
+        return
+    await m.answer(msg, reply_markup=main_menu(restored), parse_mode="HTML")
 

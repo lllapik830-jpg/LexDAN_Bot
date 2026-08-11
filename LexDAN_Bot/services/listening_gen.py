@@ -9,6 +9,8 @@ log = logging.getLogger(__name__)
 
 # Классический Adam (чат/дефолт бота) — без импорта voices→config
 _DEFAULT_ADAM_ID = "pNInz6obpgDQGcFmaJgB"
+# Рико запрещён в cast Listening (уроки / чат — отдельно)
+_RICO_BLOCKED_IDS = {"fBD19tfE58bkETeiwUoC", "XsmrVB66q3D4TaXVaWNF"}
 # Голоса Listening: новые + уже используемые в боте.
 # tags — подбор под ситуацию; prefer_levels — бонус на CEFR.
 # accent — подпись рядом с именем героя в диалоге.
@@ -1580,6 +1582,9 @@ def _attach_voices_and_number(pack: dict, level: str, topic: dict) -> dict:
             "voice_name": vinfo_raw.get("name") or "",
             "key": vinfo_raw.get("key") or "",
         }
+        # Никогда не отдаём голос Рико в диалог Listening
+        if (vinfo.get("voice_id") or "") in _RICO_BLOCKED_IDS:
+            vinfo["voice_id"] = _DEFAULT_ADAM_ID
         # синхронизируем карту на случай опечатки имени в turn
         if speaker not in pack["voice_map"]:
             pack["voice_map"][speaker] = {

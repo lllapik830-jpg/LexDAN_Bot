@@ -83,6 +83,8 @@ async def _broadcast_photo(
     for uid, payload in users.items():
         if not isinstance(payload, dict) or str(uid).startswith("__"):
             continue
+        if payload.get("imitating_registration"):
+            continue
         if payload.get("tg_blocked"):
             continue
         try:

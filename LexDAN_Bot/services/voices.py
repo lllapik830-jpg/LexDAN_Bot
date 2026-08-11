@@ -1,5 +1,12 @@
 """
 Каталог голосов ElevenLabs для чата и Рико (уроки).
+
+Политика голоса Рико (RICO_VOICE_ID):
+  ИСПОЛЬЗОВАТЬ: Grammar / Vocabulary / Reading-озвучка / Daily Fire /
+  assessment listen / A0 / order-summary Listening / эксклюзив Рико /
+  поздравления ивента / курсы (монологи).
+  НЕ ИСПОЛЬЗОВАТЬ: раздел «Общаться» (чат) и реплики персонажей
+  в диалогах Listening — там cast / chat voice.
 """
 
 from __future__ import annotations

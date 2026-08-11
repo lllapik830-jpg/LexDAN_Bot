@@ -148,6 +148,8 @@ async def send_grammar_review_offers(bot, *, force_hour: bool = True) -> dict:
     for uid, raw in list(users.items()):
         if not isinstance(raw, dict):
             continue
+        if str(uid).startswith("__") or raw.get("imitating_registration"):
+            continue
         user = get_user(users, str(uid))
         if not _eligible_user(user):
             continue
@@ -220,6 +222,8 @@ async def send_vocab_review_offers(bot, *, force_hour: bool = True) -> dict:
     dirty_ids: list[str] = []
     for uid, raw in list(users.items()):
         if not isinstance(raw, dict):
+            continue
+        if str(uid).startswith("__") or raw.get("imitating_registration"):
             continue
         user = get_user(users, str(uid))
         if not _eligible_user(user):

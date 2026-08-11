@@ -1,4 +1,4 @@
-﻿"""
+"""
 Напоминания о боте для free / «Общение» (399): 2 раза в день — 12:00 и 18:00 МСК.
 Напоминания о заданиях (Grammar/Vocabulary) — только у полного тарифа (см. daily_reviews).
 """
@@ -68,6 +68,10 @@ def users_due_for_bot_ping(hour: int | None = None) -> list[tuple[str, dict, int
     due: list[tuple[str, dict, int]] = []
     for uid, raw in users.items():
         if not isinstance(raw, dict):
+            continue
+        if str(uid).startswith("__"):
+            continue
+        if raw.get("imitating_registration"):
             continue
         user = get_user(users, str(uid))
         ensure_growth(user)

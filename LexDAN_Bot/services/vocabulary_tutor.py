@@ -130,63 +130,291 @@ def generate_vocab_text(
     }
 
 
-def _diverse_word_examples(en: str, ru: str) -> tuple[str, str, str, str]:
-    """Локальные разнообразные примеры (не один шаблон на все слова)."""
+_COMMON_ADJECTIVES = frozenset(
+    {
+        "happy", "sad", "angry", "tired", "hungry", "thirsty", "cold", "hot",
+        "warm", "cool", "big", "small", "large", "little", "long", "short",
+        "tall", "new", "old", "young", "good", "bad", "nice", "kind", "funny",
+        "beautiful", "ugly", "easy", "hard", "difficult", "important", "busy",
+        "free", "ready", "late", "early", "fast", "slow", "strong", "weak",
+        "rich", "poor", "clean", "dirty", "quiet", "loud", "bright", "dark",
+        "soft", "hard", "sweet", "salty", "fresh", "empty", "full", "open",
+        "closed", "afraid", "scared", "bored", "excited", "nervous", "calm",
+        "friendly", "polite", "rude", "lucky", "useful", "useless", "interesting",
+        "boring", "expensive", "cheap", "safe", "dangerous", "healthy", "sick",
+        "ill", "right", "wrong", "true", "false", "possible", "necessary",
+    }
+)
+
+
+def _article(word: str) -> str:
+    w = (word or "").strip()
+    if not w:
+        return "a "
+    return "an " if w[0].lower() in "aeiou" else "a "
+
+
+def _word_example_kind(en: str) -> tuple[str, str]:
+    """Return (form_to_use_in_sentence, kind) where kind is verb|multi|adj|noun."""
     w = (en or "word").strip()
-    r = (ru or "").strip() or w
-    templates = [
-        (
-            f"I can't imagine my day without this {w}.",
-            f"Не представляю свой день без этого: «{r}».",
-            f"Could you explain what {w} means in this context?",
-            f"Можешь объяснить, что значит «{r}» в этом контексте?",
-        ),
-        (
-            f"She mentioned {w} twice during the meeting.",
-            f"Она дважды упомянула «{r}» на встрече.",
-            f"That's a useful {w} to remember.",
-            f"Это полезное слово «{r}», его стоит запомнить.",
-        ),
-        (
-            f"We talked about {w} all evening.",
-            f"Мы весь вечер говорили про «{r}».",
-            f"I finally understood {w} after a few examples.",
-            f"Я наконец понял(а) «{r}» после нескольких примеров.",
-        ),
-        (
-            f"Is {w} formal or casual English?",
-            f"«{r}» — это формальный или разговорный английский?",
-            f"He used {w} in a really natural way.",
-            f"Он использовал «{r}» очень естественно.",
-        ),
-        (
-            f"Don't forget to practise {w} out loud.",
-            f"Не забудь потренировать «{r}» вслух.",
-            f"I heard {w} in a podcast yesterday.",
-            f"Вчера услышал(а) «{r}» в подкасте.",
-        ),
-        (
-            f"My friend always says {w} when she's excited.",
-            f"Моя подруга всегда говорит «{r}», когда радуется.",
-            f"Using {w} correctly takes a bit of practice.",
-            f"Правильно использовать «{r}» — дело практики.",
-        ),
-        (
-            f"There's a big difference between {w} and similar words.",
-            f"Между «{r}» и похожими словами большая разница.",
-            f"Can you make a sentence with {w}?",
-            f"Можешь составить предложение со словом «{r}»?",
-        ),
-        (
-            f"I looked up {w} and it clicked immediately.",
-            f"Я посмотрел(а) «{r}» — и сразу щёлкнуло.",
-            f"Please write {w} in your notebook.",
-            f"Запиши «{r}» в тетрадь.",
-        ),
-    ]
-    # стабильный выбор по слову — разные слова → разные шаблоны
-    idx = sum(ord(c) for c in w.lower()) % len(templates)
+    low = w.lower()
+    if low.startswith("to ") and len(w) > 3:
+        base = w[3:].strip()
+        if base:
+            return base, "verb"
+    if " " in w:
+        return w, "multi"
+    if low in _COMMON_ADJECTIVES or (
+        len(low) > 4
+        and any(low.endswith(s) for s in ("ful", "less", "ous", "ive", "able", "ible", "ish"))
+    ):
+        return w, "adj"
+    return w, "noun"
+
+
+def _diverse_word_examples(en: str, ru: str) -> tuple[str, str, str, str]:
+    """Локальные примеры: слово USE в реальной ситуации (не мета про изучение)."""
+    raw = (en or "word").strip()
+    w, kind = _word_example_kind(raw)
+    r = (ru or "").strip() or raw
+    a = _article(w)
+
+    if kind == "verb":
+        templates = [
+            (
+                f"I {w} in the park every morning.",
+                f"Я каждое утро занимаюсь этим ({r}) в парке.",
+                f"Do you want to {w} with me after work?",
+                f"Хочешь {r} со мной после работы?",
+            ),
+            (
+                f"She can {w} really well.",
+                f"Она умеет отлично {r}.",
+                f"Let's {w} together this weekend.",
+                f"Давай {r} вместе в эти выходные.",
+            ),
+            (
+                f"I need to {w} before it gets dark.",
+                f"Мне нужно {r}, пока не стало темно.",
+                f"He likes to {w} when he has free time.",
+                f"Ему нравится {r}, когда есть свободное время.",
+            ),
+            (
+                f"Please {w} carefully.",
+                f"Пожалуйста, {r} осторожно.",
+                f"We usually {w} after dinner.",
+                f"Мы обычно делаем это ({r}) после ужина.",
+            ),
+            (
+                f"I forgot to {w} yesterday.",
+                f"Я вчера забыл(а) {r}.",
+                f"They {w} every day at school.",
+                f"Они каждый день делают это ({r}) в школе.",
+            ),
+            (
+                f"Can you {w} a little slower?",
+                f"Можешь {r} чуть медленнее?",
+                f"My brother wants to {w} too.",
+                f"Мой брат тоже хочет {r}.",
+            ),
+        ]
+    elif kind == "multi":
+        templates = [
+            (
+                f"\"{w},\" she said with a smile.",
+                f"«{r},» — сказала она с улыбкой.",
+                f"He waved and answered, \"{w}.\"",
+                f"Он помахал и ответил: «{r}.»",
+            ),
+            (
+                f"He replied, \"{w}!\" and waved goodbye.",
+                f"Он ответил: «{r}!» — и помахал на прощание.",
+                f"At the door I smiled and said \"{w}.\"",
+                f"У двери я улыбнулся(ась) и сказал(а) «{r}.»",
+            ),
+            (
+                f"When someone helps you, just say \"{w}\".",
+                f"Когда тебе помогают, просто скажи «{r}».",
+                f"I heard her whisper \"{w}\" on the phone.",
+                f"Я слышал(а), как она прошептала «{r}» по телефону.",
+            ),
+            (
+                f"\"{w}\" — that was the first thing he said.",
+                f"«{r}» — это было первое, что он сказал.",
+                f"We both said \"{w}\" at the same time.",
+                f"Мы оба сказали «{r}» одновременно.",
+            ),
+            (
+                f"At the door she smiled and said \"{w}\".",
+                f"У двери она улыбнулась и сказала «{r}».",
+                f"After the meeting everyone said \"{w}.\"",
+                f"После встречи все сказали «{r}.»",
+            ),
+        ]
+    elif kind == "adj":
+        templates = [
+            (
+                f"She looks {w} today.",
+                f"Она сегодня выглядит {r}.",
+                f"I feel {w} after a long walk.",
+                f"Я чувствую себя {r} после долгой прогулки.",
+            ),
+            (
+                f"Why do you look so {w}?",
+                f"Почему ты выглядишь таким {r}?",
+                f"The weather was {w} all weekend.",
+                f"Погода весь уикенд была {r}.",
+            ),
+            (
+                f"Everyone felt {w} after the good news.",
+                f"Все почувствовали себя {r} после хороших новостей.",
+                f"This room looks very {w}.",
+                f"Эта комната выглядит очень {r}.",
+            ),
+            (
+                f"I'm a bit {w} right now.",
+                f"Я сейчас немного {r}.",
+                f"He always stays {w}, even under pressure.",
+                f"Он всегда остаётся {r}, даже под давлением.",
+            ),
+            (
+                f"That was a really {w} day.",
+                f"Это был очень {r} день.",
+                f"You sound {w} — is everything okay?",
+                f"Ты звучишь {r} — всё в порядке?",
+            ),
+            (
+                f"The cake smells {w}.",
+                f"Торт пахнет {r}.",
+                f"She became {w} when she saw the gift.",
+                f"Она стала {r}, когда увидела подарок.",
+            ),
+        ]
+    else:  # noun
+        people = {
+            "brother", "sister", "mother", "father", "mum", "dad", "friend",
+            "teacher", "doctor", "nurse", "child", "baby", "boy", "girl",
+            "man", "woman", "uncle", "aunt", "cousin", "neighbour", "neighbor",
+            "classmate", "partner", "boss", "student",
+        }
+        if w.lower() in people:
+            templates = [
+                (
+                    f"My {w} called me after school.",
+                    f"Мой {r} позвонил(а) мне после школы.",
+                    f"I went to the park with my {w}.",
+                    f"Я пошёл(шла) в парк со своим {r}.",
+                ),
+                (
+                    f"Her {w} is very kind.",
+                    f"Её {r} очень добрый.",
+                    f"I met his {w} at the party.",
+                    f"Я встретил(а) его {r} на вечеринке.",
+                ),
+                (
+                    f"My {w} lives near the station.",
+                    f"Мой {r} живёт рядом со станцией.",
+                    f"Can your {w} help us tomorrow?",
+                    f"Твой {r} может помочь нам завтра?",
+                ),
+                (
+                    f"I talked to my {w} yesterday.",
+                    f"Я вчера говорил(а) со своим {r}.",
+                    f"She visits her {w} every Sunday.",
+                    f"Она навещает своего {r} каждое воскресенье.",
+                ),
+            ]
+        else:
+            templates = [
+                (
+                    f"I need {a}{w} for the trip.",
+                    f"Мне нужен {r} для поездки.",
+                    f"I left my {w} on the bus.",
+                    f"Я оставил(а) свой {r} в автобусе.",
+                ),
+                (
+                    f"Do you have {a}{w} I can borrow?",
+                    f"Есть у тебя {r}, который можно одолжить?",
+                    f"I bought {a}{w} yesterday.",
+                    f"Я вчера купил(а) {r}.",
+                ),
+                (
+                    f"Where did you put the {w}?",
+                    f"Куда ты положил(а) {r}?",
+                    f"This {w} belongs to my friend.",
+                    f"Этот {r} принадлежит моему другу.",
+                ),
+                (
+                    f"There's {a}{w} on the table.",
+                    f"На столе лежит {r}.",
+                    f"Can you pass me the {w}, please?",
+                    f"Передай мне, пожалуйста, {r}.",
+                ),
+                (
+                    f"She gave me her {w} for a moment.",
+                    f"Она на минуту дала мне свой {r}.",
+                    f"Is this your {w}?",
+                    f"Это твой {r}?",
+                ),
+                (
+                    f"I saw your {w} near the door.",
+                    f"Я видел(а) твой {r} у двери.",
+                    f"Don't forget the {w} tomorrow.",
+                    f"Не забудь {r} завтра.",
+                ),
+                (
+                    f"We need {a}{w} before we leave.",
+                    f"Нам нужен {r}, прежде чем уйдём.",
+                    f"He always takes his {w} with him.",
+                    f"Он всегда берёт с собой свой {r}.",
+                ),
+                (
+                    f"I found {a}{w} under the chair.",
+                    f"Я нашёл(нашла) {r} под стулом.",
+                    f"Put the {w} back on the shelf.",
+                    f"Положи {r} обратно на полку.",
+                ),
+            ]
+
+    idx = sum(ord(c) for c in raw.lower()) % len(templates)
     return templates[idx]
+
+
+def _example_is_bland(text: str, target: str) -> bool:
+    """True if example talks ABOUT the word instead of using it naturally."""
+    t = (text or "").lower()
+    w = (target or "").strip().lower()
+    if not t:
+        return True
+    checks = [
+        "today i learned",
+        "i know the word",
+        "i learned the word",
+        "make a sentence with",
+        "can't imagine my day without",
+        "cannot imagine my day without",
+        "people often say",
+        "native speakers use",
+        "i'd probably say",
+        "i would probably say",
+    ]
+    if any(c in t for c in checks):
+        return True
+    if w:
+        meta_bits = [
+            f"practise {w} out loud",
+            f"practice {w} out loud",
+            f"what {w} means",
+            f"looked up {w}",
+            f"look up {w}",
+            f"using {w} correctly",
+            f"mentioned {w} twice",
+            f"talked about {w}",
+            f"talk about {w}",
+        ]
+        if any(m in t for m in meta_bits):
+            return True
+    return False
 
 
 def _format_word_card(word: dict, data: dict) -> str:
@@ -200,12 +428,10 @@ def _format_word_card(word: dict, data: dict) -> str:
     e1r = (data.get("example1_ru") or e1rd).strip()
     e2 = (data.get("example2_en") or e2d).strip()
     e2r = (data.get("example2_ru") or e2rd).strip()
-    # если GPT/старый фолбэк выдал один и тот же банальный шаблон — подменим
+    # если GPT/старый фолбэк выдал мета-шаблон — подменим на живые примеры
     bland = (
-        f"today i learned {en}".lower() in e1.lower()
-        or f"today i learned {en}".lower() in e2.lower()
-        or e1.lower().startswith("i know the word")
-        or e2.lower().startswith("i know the word")
+        _example_is_bland(e1, en)
+        or _example_is_bland(e2, en)
         or e1.lower() == e2.lower()
     )
     if bland:
@@ -262,8 +488,13 @@ def rico_word_card(level: str, topic_title: str, word: dict) -> str:
                         '"example2_ru":"перевод примера 2 на русский"'
                         "}\n"
                         "FORBIDDEN templates: 'Today I learned …', 'I know the word …', "
+                        "'I can't imagine my day without …', 'Could you explain what … means', "
+                        "'Don't forget to practise …', 'I looked up …', 'make a sentence with …', "
+                        "'using … correctly', 'mentioned … twice', 'talked about …', "
                         "'This is my …', 'I use … every day' as the only pattern. "
-                        "Make two DIFFERENT natural sentences. "
+                        "Examples must USE the word as vocabulary in a real-life situation, "
+                        "not talk about learning the word. "
+                        "Make two DIFFERENT natural sentences that contain the word. "
                         f"Эмодзи для ассоциации: {emoji}. Уровень CEFR: {level}."
                     ),
                 },
@@ -283,38 +514,45 @@ def rico_word_card(level: str, topic_title: str, word: dict) -> str:
 
 
 def _diverse_phrase_examples(en: str, ru: str) -> tuple[str, str, str, str]:
+    """Фраза в живом диалоге/контексте — не мета «People often say…»."""
     p = (en or "phrase").strip()
     r = (ru or "").strip() or p
     templates = [
         (
-            f"In that situation I'd probably say, \"{p}\".",
-            f"В такой ситуации я, скорее всего, скажу: «{r}».",
-            f"Native speakers use \"{p}\" all the time in chats.",
-            f"Носители постоянно пишут «{r}» в переписке.",
+            f"\"{p},\" she said and waved.",
+            f"«{r},» — сказала она и помахала.",
+            f"He smiled and answered, \"{p}.\"",
+            f"Он улыбнулся и ответил: «{r}.»",
         ),
         (
-            f"She replied with \"{p}\" and smiled.",
-            f"Она ответила «{r}» и улыбнулась.",
-            f"If someone helps you, \"{p}\" sounds natural.",
-            f"Если тебе помогли, «{r}» звучит естественно.",
+            f"Before leaving, my friend called out, \"{p}!\"",
+            f"Перед уходом подруга крикнула: «{r}!»",
+            f"At the door I just said \"{p}\" and left.",
+            f"У двери я просто сказал(а) «{r}» и ушёл/ушла.",
         ),
         (
-            f"I overheard someone say \"{p}\" on the bus.",
-            f"В автобусе услышал(а), как кто-то сказал «{r}».",
-            f"Try dropping \"{p}\" into your next conversation.",
-            f"Попробуй вставить «{r}» в следующий разговор.",
+            f"When the call ended, she whispered \"{p}.\"",
+            f"Когда звонок закончился, она прошептала «{r}.»",
+            f"I texted him \"{p}\" and put my phone away.",
+            f"Я написал(а) ему «{r}» и убрал(а) телефон.",
         ),
         (
-            f"\"{p}\" fits better than a long formal sentence here.",
-            f"Здесь «{r}» уместнее, чем длинная формальная фраза.",
-            f"He always opens with \"{p}\" when he calls.",
-            f"Он всегда начинает звонок с «{r}».",
+            f"\"{p}\" — that's what I told my brother.",
+            f"«{r}» — вот что я сказал(а) брату.",
+            f"Everyone in the room answered together: \"{p}!\"",
+            f"Все в комнате хором ответили: «{r}!»",
         ),
         (
-            f"Don't translate it word for word — just say \"{p}\".",
-            f"Не переводи дословно — просто скажи «{r}».",
-            f"I finally started using \"{p}\" without thinking.",
-            f"Я наконец начал(а) говорить «{r}» не задумываясь.",
+            f"She opened the chat with \"{p}\" this morning.",
+            f"Сегодня утром она начала переписку с «{r}».",
+            f"After lunch he stood up and said \"{p}.\"",
+            f"После обеда он встал и сказал «{r}.»",
+        ),
+        (
+            f"I heard someone shout \"{p}\" from across the street.",
+            f"Я услышал(а), как кто-то крикнул «{r}» с другой стороны улицы.",
+            f"\"{p},\" my mum said as she hugged me.",
+            f"«{r},» — сказала мама, обнимая меня.",
         ),
     ]
     idx = sum(ord(c) for c in p.lower()) % len(templates)
@@ -334,7 +572,9 @@ def _format_phrase_card(phrase: dict, data: dict) -> str:
     e2 = (data.get("example2_en") or e2d).strip()
     e2r = (data.get("example2_ru") or e2rd).strip()
     bland = (
-        f"i say '{en}'".lower() in e1.lower()
+        _example_is_bland(e1, en)
+        or _example_is_bland(e2, en)
+        or f"i say '{en}'".lower() in e1.lower()
         or f"everyone knows '{en}'".lower() in e2.lower()
         or e1.lower() == e2.lower()
     )
@@ -395,8 +635,12 @@ def rico_phrase_card(level: str, topic_title: str, phrase: dict) -> str:
                         '"example2_en":"другое живое предложение",'
                         '"example2_ru":"..."'
                         "}\n"
-                        "FORBIDDEN: 'I say … to friends', 'Everyone knows …' as templates. "
-                        "Two DIFFERENT natural examples. "
+                        "FORBIDDEN: 'I say … to friends', 'Everyone knows …', "
+                        "'People often say …', 'Native speakers use …', "
+                        "'I'd probably say …', 'Try dropping … into your conversation'. "
+                        "Examples must USE the phrase in a real-life dialogue or situation, "
+                        "not talk about learning or explaining the phrase. "
+                        "Two DIFFERENT natural examples that contain the phrase. "
                         f"Эмодзи: {emoji}. Уровень: {level}."
                     ),
                 },
@@ -512,12 +756,9 @@ def rico_dont_remember(item: dict, *, is_phrase: bool = False) -> str:
     emoji = item.get("emoji") or "💡"
     kind = "фраза" if is_phrase else "слово"
     if is_phrase:
-        ex_en = f"People often say '{en}'."
-        ex_ru = f"Люди часто говорят: «{ru}»."
+        ex_en, ex_ru, _, _ = _diverse_phrase_examples(en, ru)
     else:
-        base = en[3:].strip() if en.lower().startswith("to ") else en
-        ex_en = f"I learned the word {en} today."
-        ex_ru = f"Сегодня я выучил(а) слово «{ru}»."
+        ex_en, ex_ru, _, _ = _diverse_word_examples(en, ru)
     return (
         f"🦜 {emoji} Не страшно! <b>{en}</b> — <i>{ru}</i>\n\n"
         f"Запомни: {kind} «{en}» = {ru}.\n"
