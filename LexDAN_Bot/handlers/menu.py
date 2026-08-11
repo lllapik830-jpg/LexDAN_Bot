@@ -264,7 +264,7 @@ async def open_support(m: Message):
             "🆘 Поддержка скоро будет с личным контактом.\n"
             "Пока добавь в Render переменную <code>SUPPORT_USERNAME</code>."
         )
-    await say(m, tip, replace=True, delete_tap=True, reply_markup=main_menu(user), parse_mode="HTML")
+    await say(m, tip, replace=True, delete_tap=True, reply_markup=main_menu(user, user_id=str(m.from_user.id)), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_MENU), StepFilter("ready"), F.text)
@@ -279,5 +279,5 @@ async def menu_foolproof(m: Message):
     await say(
         m,
         "🙂 Пожалуйста, выбери действие кнопкой ниже.",
-        reply_markup=main_menu(user),
+        reply_markup=main_menu(user, user_id=str(m.from_user.id)),
     )

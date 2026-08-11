@@ -36,16 +36,25 @@ from services.moderation import (
     is_banned,
     ban_remaining_text,
 )
-from config import CHANNEL_URL, CHANNEL_USERNAME
 
 router = Router()
 
 HELLO_NEW = (
-    "Привет! Я LexDan, а рядом со мной всегда попугай Рико 🦜. "
-    "Мы здесь, чтобы превратить твой английский из «страшно сказать» в «легко болтать».\n\n"
-    "Наш рецепт простой: 15 минут в день в Telegram — болтовня, слова, грамматика. "
-    "Без стресса, с твоим темпом.\n\n"
-    "Сначала познакомимся — как тебя зовут?"
+    "👋 <b>Привет!</b> Я <b>LexDan</b>, а рядом всегда мой попугай <b>Рико</b> 🦜✨\n\n"
+    "Мы здесь, чтобы превратить твой английский из "
+    "«😱 страшно сказать» в «💬 легко болтать».\n\n"
+    "🍳 <b>Наш рецепт простой:</b>\n"
+    "⏱ <b>15 минут в день</b> в Telegram — болтовня, слова, грамматика.\n"
+    "😌 Без стресса, в твоём темпе, с Рико рядом.\n\n"
+    "🤝 Сначала познакомимся — <b>как тебя зовут?</b>"
+)
+
+# Английская озвучка первого приветствия (дублирует смысл HELLO_NEW)
+HELLO_NEW_EN = (
+    "Hi! I'm LexDan, and my parrot Rico is always with me. "
+    "We're here to turn your English from 'scary to speak' into 'easy to chat'. "
+    "Our recipe is simple: fifteen minutes a day in Telegram — chatting, words, grammar. "
+    "No stress, at your pace. First, let's get to know each other — what's your name?"
 )
 
 ASK_NAME = "🥰 Как мне тебя называть? Напиши <b>только имя</b>, например: <b>Анна</b>"
@@ -58,25 +67,44 @@ NAME_CONFIRM = (
 )
 
 WELCOME_AFTER_NAME = (
-    "Приятно познакомиться, {name}! 🦜\n\n"
+    "🎉 <b>Приятно познакомиться, {name}!</b> 🦜💛\n\n"
     "Я тут придумал для тебя план:\n\n"
-    "Сначала проверим, что ты уже знаешь. Потом будем по чуть-чуть, минут по 15 в день, "
-    "разбирать слова и грамматику. И обязательно разговаривать — это самое важное!\n\n"
-    "Серия дней и друзья дают бустеры и секреты Рико — смотри в профиле 🔥\n\n"
-    "📣 Загляни в канал <b>@LexDan_Rico</b> — там посты об обновлениях, конкурсах и промокодах: "
+    "1️⃣ Сначала <b>проверим уровень</b> — короткий тест, чтобы понять, с чего начать.\n"
+    "2️⃣ Потом по чуть-чуть, минут по <b>15 в день</b>: слова, грамматика и разговоры.\n"
+    "3️⃣ Серия дней и друзья дают бустеры и секреты Рико — смотри в <b>Профиле</b> 🔥\n\n"
+    "📣 Канал <b>@LexDan_Rico</b> — обновления, конкурсы и промокоды:\n"
     "https://t.me/LexDan_Rico\n\n"
-    "Ну что, готов начать? 👇"
+    "🎯 <b>Рико советует:</b> начни со вступительного теста уровня — "
+    "так занятия сразу попадут в твою зону комфорта.\n"
+    "Жми кнопку ниже 👇"
 )
 
 WELCOME_AGAIN = (
     "Снова привет, {name}! 🦜 Чем займёмся сегодня?"
 )
 
-CHANNEL_INVITE = (
-    "📣 <b>Канал LexDAN · @LexDan_Rico</b>\n\n"
-    "Там информационные посты об обновлениях бота, конкурсах и промокодах.\n"
-    "Подпишись, чтобы ничего не пропустить 👇"
+# Карта главного меню (после теста уровня)
+NAV_MAP_HTML = (
+    "🗺 <b>Карта бота — куда жать</b>\n\n"
+    "🗣️ <b>Общаться</b> — живой чат с Рико на английском "
+    "(текст и голос). Внутри: перевод реплики и выбор голоса озвучки.\n\n"
+    "📚 <b>Уроки</b> — основной путь обучения. Сначала уровни A0–C2, "
+    "внутри каждого:\n"
+    "· 📘 <b>Grammar</b> — темы и задания + помощь Рико\n"
+    "· 📗 <b>Vocabulary</b> — слова и фразы с практикой\n"
+    "· 🎧 <b>Listening</b> — диалоги и задания на слух\n"
+    "· 📖 <b>Reading</b> — тексты и понимание\n\n"
+    "🔥 <b>Огонь дня</b> — короткий микс на сегодня "
+    "(грамматика / слова / аудирование), чтобы не пропускать серию.\n\n"
+    "📊 <b>Профиль</b> — имя, подписка, стрик, рефералка, промокод; "
+    "там же коллекция и лидеры ивента (когда активен).\n\n"
+    "🆘 <b>Поддержка</b> — если что-то сломалось или нужна помощь.\n\n"
+    "🔐 <b>Секрет Рико</b> — появляется как награда "
+    "(серия / ивент) — особые миссии.\n\n"
+    "Готов? Выбирай кнопку в меню и вперёд 🚀"
 )
+
+BTN_ONBOARD_LEVEL_TEST = "🎯 Пройти вступительный тест"
 
 
 def _rules_kb() -> ReplyKeyboardMarkup:
@@ -94,17 +122,30 @@ def _name_sure_kb() -> InlineKeyboardMarkup:
     )
 
 
-def _channel_kb() -> InlineKeyboardMarkup | None:
-    url = (CHANNEL_URL or "").strip()
-    if not url and CHANNEL_USERNAME:
-        url = f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"
-    if not url:
-        return None
+def _onboard_assess_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📣 Подписаться на канал", url=url)]
+            [
+                InlineKeyboardButton(
+                    text=BTN_ONBOARD_LEVEL_TEST,
+                    callback_data="onboard:level_test",
+                )
+            ]
         ]
     )
+
+
+async def _send_hello_new(m: Message, *, user: dict | None = None) -> None:
+    """Текст приветствия + голос Рико на английском."""
+    await m.answer(HELLO_NEW, parse_mode="HTML")
+    try:
+        from services.elevenlabs import send_rico_voice
+
+        await send_rico_voice(
+            m, HELLO_NEW_EN, user=user, title="Rico · hello"
+        )
+    except Exception:
+        pass
 
 
 def _esc(text: str) -> str:
@@ -207,12 +248,13 @@ async def _send_welcome_after_promo(m: Message, user_id: str, *, promo_msg: str 
     name = user.get("name") or "друг"
     await m.answer(
         WELCOME_AFTER_NAME.format(name=_esc(name)) + extra,
-        reply_markup=main_menu(user),
+        reply_markup=_onboard_assess_kb(),
         parse_mode="HTML",
     )
-    ch_kb = _channel_kb()
-    if ch_kb:
-        await m.answer(CHANNEL_INVITE, reply_markup=ch_kb, parse_mode="HTML")
+    await m.answer(
+        "👇 Главное меню всегда снизу — а тест можно начать кнопкой выше.",
+        reply_markup=main_menu(user, user_id=user_id),
+    )
 
 
 @router.message(Command("start"))
@@ -241,7 +283,7 @@ async def start_cmd(m: Message, command: CommandObject = None):
     if not user.get("name"):
         user["step"] = "awaiting_name"
         save_users(users, only=user_id)
-        await m.answer(HELLO_NEW, parse_mode="HTML")
+        await _send_hello_new(m, user=user)
         await m.answer(ASK_NAME, parse_mode="HTML")
         return
 
@@ -268,9 +310,47 @@ async def start_cmd(m: Message, command: CommandObject = None):
     save_users(users, only=user_id)
     await m.answer(
         WELCOME_AGAIN.format(name=user["name"]),
-        reply_markup=main_menu(user),
+        reply_markup=main_menu(user, user_id=user_id),
         parse_mode="HTML",
     )
+
+
+@router.callback_query(F.data == "onboard:level_test")
+async def onboard_level_test(c: CallbackQuery):
+    """Кнопка «Пройти вступительный тест» после регистрации."""
+    await c.answer()
+    if not c.from_user or not c.message:
+        return
+    uid = str(c.from_user.id)
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_growth(user)
+    ensure_moderation(user)
+
+    if not user.get("name") or not user.get("rules_accepted"):
+        await c.message.answer(
+            "Сначала закончи регистрацию — имя и правила 🙂",
+            parse_mode="HTML",
+        )
+        return
+
+    if user.get("assessment_done") or user.get("dev_unlock"):
+        from handlers.lessons import send_lessons_home
+        from services.database import MODE_LESSONS, set_mode
+
+        set_mode(uid, MODE_LESSONS)
+        await c.message.answer(
+            "Тест уровня уже пройден — открываю уроки 👇",
+            parse_mode="HTML",
+        )
+        await send_lessons_home(c.message)
+        return
+
+    from handlers.lessons import start_level_test_flow
+    from services.database import MODE_LESSONS, set_mode
+
+    set_mode(uid, MODE_LESSONS)
+    await start_level_test_flow(c.message)
 
 
 @router.message(Command("danil_test_messi"))

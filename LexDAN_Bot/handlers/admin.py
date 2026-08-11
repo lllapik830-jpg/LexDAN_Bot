@@ -1106,7 +1106,7 @@ async def admin_imit_start(m: Message):
     if not _is_admin(m):
         return
     from aiogram.types import ReplyKeyboardRemove
-    from handlers.start import HELLO_NEW, ASK_NAME
+    from handlers.start import ASK_NAME, _send_hello_new
     from services.imit_reg import start_imitation
 
     uid = str(m.from_user.id)
@@ -1119,7 +1119,8 @@ async def admin_imit_start(m: Message):
     await m.answer(msg, reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
     if not ok:
         return
-    await m.answer(HELLO_NEW, parse_mode="HTML")
+    user = get_user(users, uid)
+    await _send_hello_new(m, user=user)
     await m.answer(ASK_NAME, parse_mode="HTML")
 
 

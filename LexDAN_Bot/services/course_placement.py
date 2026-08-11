@@ -36,12 +36,13 @@ BTN_COURSE_FINISH_NOW = "📋 Завершить и показать резул�
 
 
 def courses_allowed(user_id: str | int | None) -> bool:
+    """Раздел «Курсы» виден и доступен только MANAGER_ID."""
     if user_id is None:
         return False
     from config import MANAGER_ID
 
     try:
-        return int(user_id) == int(MANAGER_ID)
+        return int(str(user_id).strip()) == int(MANAGER_ID)
     except (TypeError, ValueError):
         return False
 

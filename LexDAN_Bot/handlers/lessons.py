@@ -247,6 +247,9 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         "(открою Vocabulary и первую тему твоего уровня)."
     )
     await m.answer(msg, parse_mode="HTML")
+    from handlers.start import NAV_MAP_HTML
+
+    await m.answer(NAV_MAP_HTML, parse_mode="HTML")
     await send_lessons_home(
         m,
         intro=(
@@ -273,6 +276,11 @@ async def start_level_test(m: Message):
         )
         return
 
+    await start_level_test_flow(m)
+
+
+async def start_level_test_flow(m: Message) -> None:
+    """Запуск вступительного теста уровня (из Уроков или кнопки онбординга)."""
     await m.answer(RICO_BEFORE_TEST, parse_mode="HTML")
     from services.tg_out import status
 

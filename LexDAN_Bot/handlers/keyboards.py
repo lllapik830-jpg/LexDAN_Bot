@@ -24,7 +24,12 @@ def main_menu(user: dict | None = None, *, user_id: str | int | None = None) -> 
     ]
     uid = user_id
     if uid is None and isinstance(user, dict):
-        uid = user.get("tg_id") or user.get("id")
+        uid = (
+            user.get("tg_id")
+            or user.get("telegram_id")
+            or user.get("id")
+        )
+    # Курсы — только менеджеру; у остальных кнопки нет вообще
     if courses_allowed(uid):
         rows.append([KeyboardButton(text=BTN_COURSES)])
     rows.append([KeyboardButton(text=BTN_DAILY_FIRE)])
