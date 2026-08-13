@@ -78,49 +78,30 @@ async def subscription_info(m: Message):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     from services.rewards import user_plan
 
-    await m.answer(subscription_blurb(user), reply_markup=profile_menu(user, user_id=m.from_user.id), parse_mode="HTML")
+    await m.answer(
+        subscription_blurb(user),
+        reply_markup=profile_menu(user, user_id=m.from_user.id),
+        parse_mode="HTML",
+    )
     plan = user_plan(user)
-    if plan == "free":
-        rows = tariffs_inline_kb(user).inline_keyboard
-        await m.answer(
-            "Выбери тариф:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
-        )
-    elif plan == "chat":
-        await m.answer(
-            "Хочешь уроки без лимита, все голоса и 150 тем?\n"
-            "Апгрейд до полного доступа — доплата <b>399₽</b> (или со скидкой).",
-            reply_markup=upgrade_inline_kb(user),
-            parse_mode="HTML",
-        )
-        if user.get("sub_auto") and user.get("yookassa_payment_method_id"):
-            await m.answer(
-                "Управление подпиской:",
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="⏹ Отключить автопродление",
-                                callback_data="tariff:cancel_auto",
-                            )
-                        ]
-                    ]
-                ),
-            )
-    elif user.get("sub_auto") and user.get("yookassa_payment_method_id"):
-        await m.answer(
-            "Управление подпиской:",
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="⏹ Отключить автопродление",
-                            callback_data="tariff:cancel_auto",
-                        )
-                    ]
-                ]
-            ),
-        )
+    rows = list(tariffs_inline_kb(user).inline_keyboard)
+    if plan == "chat":
+        rows = list(upgrade_inline_kb(user).inline_keyboard) + rows
+    if user.get("sub_auto") and user.get("yookassa_payment_method_id"):
+        rows = rows + [
+            [
+                InlineKeyboardButton(
+                    text="⏹ Отключить автопродление",
+                    callback_data="tariff:cancel_auto",
+                )
+            ]
+        ]
+    caption = "Выбери тариф:" if plan == "free" else "Тарифы и управление:"
+    await m.answer(
+        caption,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        parse_mode="HTML",
+    )
 
 
 @router.message(ModeFilter(MODE_PROFILE), F.text == BTN_ENTER_PROMO)

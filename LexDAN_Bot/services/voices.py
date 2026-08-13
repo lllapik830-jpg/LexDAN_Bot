@@ -3,10 +3,11 @@
 
 Политика голоса Рико (RICO_VOICE_ID):
   ИСПОЛЬЗОВАТЬ: Grammar / Vocabulary / Reading-озвучка / Daily Fire /
-  assessment listen / A0 / order-summary Listening / эксклюзив Рико /
+  A0 / order-summary Listening / эксклюзив Рико /
   поздравления ивента / курсы (монологи).
-  НЕ ИСПОЛЬЗОВАТЬ: раздел «Общаться» (чат) и реплики персонажей
-  в диалогах Listening — там cast / chat voice.
+  НЕ ИСПОЛЬЗОВАТЬ: раздел «Общаться» (чат), реплики персонажей
+  в диалогах Listening, и аудирование во вступительном тесте уровня
+  (там 3 разных голоса из CHAT_VOICES).
 """
 
 from __future__ import annotations

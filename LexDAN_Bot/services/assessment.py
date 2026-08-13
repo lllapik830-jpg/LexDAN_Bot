@@ -4,7 +4,7 @@
 
 import uuid
 
-from data.assessment_data import LEVELS, lower_level, raise_level, level_index
+from data.assessment_data import LEVELS, lower_level, raise_level, level_index, pick_topic
 from services.database import users_for, save_users, get_user
 from services.assessment_gen import (
     generate_translation,
@@ -181,6 +181,7 @@ def begin_write(user_id: str, level: str) -> dict:
         a["write_level"] = level
         a["cefr"] = level
         a["write_topic"] = topic
+        a["write_topics_used"] = [topic]
         a["write_replacements_left"] = 3
         a["write_failed"] = False
 
@@ -216,12 +217,27 @@ def replace_write_topic(user_id: str) -> tuple[dict | None, str]:
 
     left -= 1
     level = a.get("write_level") or "A2"
-    topic = generate_write_topic(level)
+    used = list(a.get("write_topics_used") or [])
+    current = (a.get("write_topic") or "").strip()
+    if current and current not in used:
+        used.append(current)
+    topic = generate_write_topic(level, avoid=used)
+    # гарантируем смену темы
+    tries = 0
+    while topic == current and tries < 4:
+        topic = generate_write_topic(level, avoid=used + [current, topic])
+        tries += 1
+    if topic == current:
+        topic = pick_topic(level, avoid=used + [current])
 
     def mut(u):
         aa = u["assessment"]
         aa["write_replacements_left"] = left
         aa["write_topic"] = topic
+        used2 = list(aa.get("write_topics_used") or [])
+        if topic not in used2:
+            used2.append(topic)
+        aa["write_topics_used"] = used2
 
     return update_user(user_id, mut), "ok"
 

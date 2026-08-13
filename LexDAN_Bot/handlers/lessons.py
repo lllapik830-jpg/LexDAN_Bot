@@ -224,7 +224,6 @@ def _write_prompt(topic: str, left: int) -> str:
 async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     from services.growth import ensure_growth, touch_activity
     from services.database import load_users, get_user, save_users
-    from handlers.keyboards import BTN_START_TODAY
 
     finish_assessment(user_id, final)
     users = load_users()
@@ -243,8 +242,7 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         f"{rico}\n\n"
         "Рецепт: <b>~15 минут в день</b>. Серия дней и друзья дают бустеры — смотри в профиле 🔥\n"
         "🛡️ Стрик-сейфы копятся за длинную серию: <b>30</b>, <b>70</b>, <b>100</b>, <b>150</b>…\n\n"
-        f"👇 Лучший старт прямо сейчас — жми <b>{BTN_START_TODAY}</b>\n"
-        "(открою Vocabulary и первую тему твоего уровня)."
+        "👇 Выбери уровень ниже и начни с Vocabulary или Grammar."
     )
     await m.answer(msg, parse_mode="HTML")
     from handlers.start import NAV_MAP_HTML
@@ -255,9 +253,9 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         intro=(
             f"📚 Уроки\n\n"
             f"Твой уровень: <b>{final}</b> (открыт он и ниже).\n"
-            f"Жми «Начать сегодня» или выбери уровень 👇"
+            f"Выбери уровень 👇"
         ),
-        show_start_today=True,
+        show_start_today=False,
     )
 
 
@@ -630,14 +628,39 @@ async def _start_listen_flow(m: Message, level: str):
 
 
 async def _send_listen_audio(m: Message, text: str, number: int):
-    from services.database import users_for, get_user
-    from services.elevenlabs import send_rico_voice
+    import random
+
+    from services.database import users_for, get_user, save_users
+    from services.elevenlabs import send_voice_reply
+    from services.voices import CHAT_VOICES, RICO_VOICE_ID, RICO_VOICE_ALT_ID
 
     await m.answer(f"🎧 {number}/3", reply_markup=assess_dont_know_kb())
     uid = str(m.from_user.id)
-    user = get_user(users_for(uid), uid)
-    await send_rico_voice(m, text, user=user, title=f"Listen {number}")
-
+    users = users_for(uid)
+    user = get_user(users, uid)
+    a = user.get("assessment") or {}
+    voice_ids = list(a.get("listen_voice_ids") or [])
+    if len(voice_ids) < 3:
+        pool = [
+            v["voice_id"]
+            for v in CHAT_VOICES
+            if v.get("voice_id")
+            and v["voice_id"] not in {RICO_VOICE_ID, RICO_VOICE_ALT_ID}
+        ]
+        random.shuffle(pool)
+        # 3 разных голоса
+        voice_ids = pool[:3] if len(pool) >= 3 else (pool * 3)[:3]
+        a["listen_voice_ids"] = voice_ids
+        user["assessment"] = a
+        save_users(users, only=uid)
+    idx = max(0, min(number - 1, len(voice_ids) - 1))
+    vid = voice_ids[idx]
+    await send_voice_reply(
+        m,
+        text,
+        title=f"Listen {number}",
+        voice_id=vid,
+    )
 
 async def _handle_listen_answer(m: Message, user: dict, text: str):
     a = user["assessment"]

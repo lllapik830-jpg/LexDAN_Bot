@@ -1008,18 +1008,88 @@ def check_one_gap(user_word: str, expected: str) -> bool:
 
 
 def check_comprehension_answer(user_text: str, accept: list[str]) -> bool:
-    """Быстрая проверка смысла (ключ из accept есть в ответе)."""
+    """
+    Строгая проверка смысла по ключам accept.
+    Короткий ключ вроде «tea» НЕ засчитывает «black tea», если в accept есть «green tea».
+    """
     u = normalize_gap_token(user_text)
     if not u:
         return False
-    for a in accept:
-        ea = normalize_gap_token(a)
-        if not ea:
+    accepts = [normalize_gap_token(a) for a in accept if normalize_gap_token(a)]
+    if not accepts:
+        return False
+
+    # точное совпадение
+    if u in accepts:
+        return True
+
+    # сначала длинные фразы — они специфичнее
+    accepts_sorted = sorted(set(accepts), key=len, reverse=True)
+    u_words = set(re.findall(r"[a-z0-9']+", u))
+
+    for ea in accepts_sorted:
+        ea_words = re.findall(r"[a-z0-9']+", ea)
+        if not ea_words:
             continue
-        if u == ea:
-            return True
-        shorter, longer = (u, ea) if len(u) <= len(ea) else (ea, u)
-        if len(shorter) >= 3 and shorter in longer:
+        # multi-word: все слова ключа должны быть в ответе как целые слова
+        if len(ea_words) >= 2:
+            if all(w in u_words for w in ea_words):
+                # и фраза целиком (порядок) или все токены без конфликтующих уточнений
+                if ea in u or all(w in u_words for w in ea_words):
+                    # конфликт: у ответа есть другой модификатор того же head-noun
+                    head = ea_words[-1]
+                    mods_expected = set(ea_words[:-1])
+                    # слова перед head в ответе
+                    u_list = re.findall(r"[a-z0-9']+", u)
+                    for i, w in enumerate(u_list):
+                        if w == head and i > 0:
+                            prev = u_list[i - 1]
+                            # цвет/прилагательное перед head, которого нет в ключе
+                            if prev not in mods_expected and prev not in {
+                                "a", "an", "the", "some", "his", "her", "their", "my", "our",
+                                "dan", "sara", "he", "she", "ordered", "chose", "chooses",
+                                "bought", "wants", "wanted", "drinks", "drink",
+                            }:
+                                # чужой модификатор при том же существительном → не ок
+                                if any(
+                                    other != ea
+                                    and head in other.split()
+                                    and prev in other.split()
+                                    for other in accepts_sorted
+                                ):
+                                    continue
+                                # если есть более полный ключ с другим модом — отвергаем
+                                rivals = [
+                                    a
+                                    for a in accepts_sorted
+                                    if a != ea and head in re.findall(r"[a-z0-9']+", a)
+                                ]
+                                if rivals and prev not in mods_expected:
+                                    # black vs green
+                                    return False
+                    return True
+            continue
+
+        # single-word key
+        if ea not in u_words and ea not in u:
+            continue
+        # если есть более длинные ключи, где это слово — «голова», короткий ключ сам по себе слаб
+        longer = [
+            a
+            for a in accepts_sorted
+            if a != ea and ea in re.findall(r"[a-z0-9']+", a) and len(a) > len(ea)
+        ]
+        if longer:
+            # засчитываем short только если один из длинных тоже матчится
+            if any(
+                all(w in u_words for w in re.findall(r"[a-z0-9']+", a))
+                for a in longer
+            ):
+                return True
+            # ответ содержит head, но не полный ключ (black tea vs green tea)
+            return False
+        # нет более длинных вариантов — одиночный ключ ок как целое слово
+        if ea in u_words:
             return True
     return False
 
@@ -1257,7 +1327,8 @@ def judge_comprehension_answer(
                     "- fact_ok=true if the student's meaning correctly answers the question "
                     "using information from the text (even if grammar is imperfect).\n"
                     "- fact_ok=false if they answer the wrong thing "
-                    "(e.g. give a job when asked for age, or invent facts).\n"
+                    "(e.g. give a job when asked for age, invent facts, OR "
+                    "change a critical detail: black tea vs green tea, wrong name/number/colour).\n"
                     "- grammar_ok=false only for real grammar/spelling/tense/word-form errors.\n"
                     "- need_full_sentence=true ONLY for tiny fragments like «doctor» / «ten» "
                     "with no subject+verb. If there is already a clause with a verb "
@@ -1291,13 +1362,23 @@ def judge_comprehension_answer(
     if not isinstance(data, dict):
         data = fallback
 
-    fact_ok = bool(data.get("fact_ok"))
-    # Локальный матч по ключам — сильный сигнал, что парафраз ок
-    if meaning_local and is_sentence:
+    gpt_fact = data.get("fact_ok")
+    # Строгий локальный матч важнее слабого substring прошлого.
+    # - local False → fact_ok False (black tea ≠ green tea)
+    # - local True + предложение → можно принять, даже если GPT ошибся
+    # - local True + обрывок → факт ок, но просим полное предложение
+    if not meaning_local:
+        fact_ok = False
+    elif not is_sentence:
         fact_ok = True
+    else:
+        fact_ok = True if gpt_fact is None else bool(gpt_fact)
+        # сильный локальный матч перекрывает ложный GPT false
+        if meaning_local:
+            fact_ok = True
+
     grammar_ok = bool(data.get("grammar_ok", True))
     need_fs = bool(data.get("need_full_sentence"))
-    # Уже есть предложение с глаголом — нельзя требовать «полный ответ» снова
     if is_sentence:
         need_fs = False
     if meaning_local and not is_sentence:
@@ -1324,6 +1405,13 @@ def judge_comprehension_answer(
     feedback = str(data.get("feedback_ru") or fallback["feedback_ru"]).strip()
     if fact_ok and grammar_ok and is_sentence:
         feedback = "🦜 Рико: Верно!"
+    elif not fact_ok:
+        feedback = str(data.get("feedback_ru") or fallback["feedback_ru"]).strip()
+        if not feedback or "Верно" in feedback:
+            feedback = (
+                "🦜 Рико: По факту из текста не совсем так. "
+                "Перечитай вопрос и ответь точнее."
+            )
     elif fact_ok and not grammar_ok:
         if not feedback or "полн" in feedback.lower():
             feedback = "🦜 Рико: Факт верный, чуть поправлю грамматику."
@@ -1335,11 +1423,55 @@ def judge_comprehension_answer(
         "feedback_ru": feedback,
         "better_en": better,
         "review_topic": review_topic,
-        "review_level": review_level or rev["review_level"],
-        # совместимость со старым полем
+        "review_level": review_level,
         "ok": bool(fact_ok and grammar_ok and not need_fs),
         "meaning_ok": fact_ok,
     }
+
+
+def _retell_copy_ratio(user_text: str, full_text: str) -> float:
+    """Доля длинных n-грамм пересказа, совпадающих с исходником (0..1)."""
+    src = normalize_gap_token(full_text)
+    usr = normalize_gap_token(user_text)
+    if not src or not usr:
+        return 0.0
+    src_words = re.findall(r"[a-z0-9']+", src)
+    usr_words = re.findall(r"[a-z0-9']+", usr)
+    if len(usr_words) < 8:
+        return 0.0
+    n = 5
+    if len(usr_words) < n:
+        return 0.0
+    src_set = {
+        " ".join(src_words[i : i + n]) for i in range(len(src_words) - n + 1)
+    }
+    if not src_set:
+        return 0.0
+    hits = 0
+    total = 0
+    for i in range(len(usr_words) - n + 1):
+        total += 1
+        if " ".join(usr_words[i : i + n]) in src_set:
+            hits += 1
+    return hits / total if total else 0.0
+
+
+def _facts_coverage(user_text: str, facts: list[str]) -> float:
+    """Грубая доля фактов, которые хоть как-то отражены в пересказе."""
+    if not facts:
+        return 1.0
+    u = normalize_gap_token(user_text)
+    u_words = set(re.findall(r"[a-z0-9']+", u))
+    hit = 0
+    for f in facts:
+        fw = [w for w in re.findall(r"[a-z0-9']+", normalize_gap_token(f)) if len(w) > 3]
+        if not fw:
+            continue
+        # хотя бы половина значимых слов факта
+        ok = sum(1 for w in fw if w in u_words)
+        if ok >= max(1, len(fw) // 2):
+            hit += 1
+    return hit / max(1, len(facts))
 
 
 def judge_retelling(
@@ -1350,12 +1482,43 @@ def judge_retelling(
     level: str = "A1",
 ) -> dict:
     """
-    Пересказ: план — мягкая подсказка, не шаблон.
-    Проверяем факты vs текст и грамматику; задание всегда засчитывается.
+    Пересказ своими словами: нельзя копировать текст.
+    Нужны ключевые факты; passed может быть false.
     """
     from services.gpt import _ask_json
 
     rev = _default_review(level)
+    copy_ratio = _retell_copy_ratio(user_text, full_text)
+    coverage = _facts_coverage(user_text, facts)
+
+    if copy_ratio >= 0.45:
+        return {
+            "passed": False,
+            "feedback_ru": (
+                "🦜 Рико: Это почти копия текста. Перескажи <b>своими словами</b>: "
+                "главные факты своими предложениями, без копипаста."
+            ),
+            "better_en": "",
+            "tips_ru": "Составь 3–5 предложений по плану: кто / что сделал / чем закончилось.",
+            "review_topics": [],
+            "copy_ratio": copy_ratio,
+            "coverage": coverage,
+        }
+
+    if coverage < 0.35 and len(facts) >= 2:
+        return {
+            "passed": False,
+            "feedback_ru": (
+                "🦜 Рико: В пересказе мало фактов из текста. "
+                "Добавь ключевые детали (кто, что, где) своими словами."
+            ),
+            "better_en": "",
+            "tips_ru": "Ориентируйся на план и факты — но не копируй абзацы.",
+            "review_topics": [],
+            "copy_ratio": copy_ratio,
+            "coverage": coverage,
+        }
+
     fallback = {
         "passed": True,
         "feedback_ru": (
@@ -1372,34 +1535,33 @@ def judge_retelling(
                 "role": "system",
                 "content": (
                     "You are Rico judging an English READING retelling. ONLY JSON.\n"
-                    "ALWAYS set passed=true — one submission completes the task.\n"
-                    "The PLAN is only a soft hint / scaffold, NOT a checklist. "
-                    "Do NOT punish the student for skipping a plan point or using another order. "
-                    "Do NOT force template structure.\n"
-                    "Judge only:\n"
-                    "1) LOGIC/FACTS vs the source TEXT (no invented facts; "
-                    "do not require details the text never states).\n"
-                    "2) GRAMMAR (tense, agreement, spelling, word form) — ignore case/punctuation.\n"
-                    "Accept free paraphrase and imagination in wording.\n"
+                    "Set passed=false if the student mostly copied the source OR "
+                    "missed most key facts OR wrote almost nothing relevant.\n"
+                    "Set passed=true if it is a real paraphrase covering the main facts "
+                    "(wording can be imperfect).\n"
+                    "The PLAN is a soft hint, not a rigid checklist.\n"
+                    "Judge:\n"
+                    "1) FACTS vs source TEXT (no invented facts).\n"
+                    "2) GRAMMAR — ignore case/punctuation.\n"
                     "Return {"
-                    '"passed":true,'
-                    '"feedback_ru":"warm Russian feedback; mention fact issues and/or grammar softly",'
-                    '"better_en":"improved English keeping the student meaning; empty if already fine",'
-                    '"tips_ru":"optional one tip; empty if not needed",'
+                    '"passed":bool,'
+                    '"feedback_ru":"warm Russian feedback",'
+                    '"better_en":"improved English keeping student meaning; empty if fine",'
+                    '"tips_ru":"optional tip; empty if not needed",'
                     '"review_topics":[{"topic":"Grammar theme","level":"A1"}]'
                     "}.\n"
-                    "review_topics: 0-2 items only for real grammar problems; empty if solid.\n"
                     f"Student CEFR level: {level}."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    "PLAN (soft hint only — do not require covering every point):\n"
+                    "PLAN (soft hint):\n"
                     + "\n".join(f"{i}. {p}" for i, p in enumerate(plan, 1))
-                    + "\n\nFACTS FROM TEXT:\n"
+                    + "\n\nKEY FACTS:\n"
                     + "\n".join(f"- {f}" for f in facts)
-                    + f"\n\nTEXT:\n{full_text}\n\nSTUDENT RETELLING:\n{user_text}"
+                    + f"\n\nSOURCE TEXT:\n{full_text}\n\nSTUDENT RETELLING:\n{user_text}"
+                    + f"\n\nLOCAL_HINTS: copy_ratio={copy_ratio:.2f}, facts_coverage={coverage:.2f}"
                 ),
             },
         ],
@@ -1421,13 +1583,16 @@ def judge_retelling(
             elif isinstance(t, str) and t.strip():
                 clean_topics.append({"topic": t.strip(), "level": (level or "A1").upper()})
     better = str(data.get("better_en") or "").strip()
-    # не подменять пересказ шаблоном по плану, если студент уже написал нормально
-    if better and normalize_gap_token(better) == normalize_gap_token(user_text or ""):
-        better = ""
+    passed = bool(data.get("passed", True))
+    # локальные стоп-условия сильнее GPT
+    if copy_ratio >= 0.45:
+        passed = False
     return {
-        "passed": True,
+        "passed": passed,
         "feedback_ru": str(data.get("feedback_ru") or fallback["feedback_ru"]).strip(),
         "better_en": better,
         "tips_ru": str(data.get("tips_ru") or "").strip(),
         "review_topics": clean_topics,
+        "copy_ratio": copy_ratio,
+        "coverage": coverage,
     }

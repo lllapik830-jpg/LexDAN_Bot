@@ -560,16 +560,16 @@ async def _start_task3(m: Message, uid: str) -> None:
     sess = get_session(user) or {}
     pack = sess.get("content") or {}
     plan = pack.get("plan") or []
-    full = pack.get("full_text") or ""
+    facts = pack.get("facts") or []
     lines = "\n".join(f"{n}. {p}" for n, p in enumerate(plan, start=1))
+    fact_lines = "\n".join(f"• {f}" for f in facts[:6]) if facts else "• опирайся на то, что помнишь из текста"
     await m.answer(
         "📝 <b>Задание 3 · Пересказ</b>\n\n"
-        "🦜 Рико: Напиши пересказ своими словами. "
-        "План ниже — только подсказка, не шаблон: можно другой порядок и не все пункты.\n"
-        "Главное — не противоречить тексту и не выдумывать то, чего в нём нет.\n"
-        "Проверю факты и грамматику, сразу дам правки и засчитаю задание.\n\n"
-        f"<b>Текст:</b>\n{full}\n\n"
-        f"<b>План (подсказка):</b>\n{lines}",
+        "🦜 Рико: Перескажи текст <b>своими словами</b> "
+        "(не копируй абзацы). Можно другой порядок.\n"
+        "Нужны главные факты: кто / что сделал / чем закончилось.\n\n"
+        f"<b>План (подсказка):</b>\n{lines}\n\n"
+        f"<b>Ключевые факты:</b>\n{fact_lines}",
         reply_markup=_exit_kb(),
         parse_mode="HTML",
     )
@@ -602,6 +602,16 @@ async def reading_task3_answer(m: Message):
             text,
             level=level,
         )
+
+    if not verdict.get("passed", True):
+        parts = [
+            str(verdict.get("feedback_ru") or "").strip(),
+        ]
+        tips = str(verdict.get("tips_ru") or "").strip()
+        if tips:
+            parts.append(f"💡 {tips}")
+        await m.answer("\n\n".join(p for p in parts if p), parse_mode="HTML")
+        return
 
     parts = [
         "✅ <b>Задание 3 пройдено!</b>",

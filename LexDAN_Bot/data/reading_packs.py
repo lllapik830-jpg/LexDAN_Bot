@@ -430,7 +430,7 @@ READING_PACKS: dict[str, dict[str, dict]] = {'A0': {'family': {'full_text': 'My 
                                 'quote': 'Sara orders a cup of black coffee…',
                                 'model_en': 'Sara orders a cup of black coffee.'},
                                {'q': 'What does Dan choose to drink?',
-                                'accept': ['green tea', 'tea'],
+                                'accept': ['green tea', 'a green tea', 'green tea and a cheese sandwich'],
                                 'hint_ru': 'Что выбирает Дэн?',
                                 'quote': 'Dan chooses green tea…',
                                 'model_en': 'Dan chooses green tea.'},

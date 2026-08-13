@@ -699,7 +699,7 @@ def format_tutor_message(result: dict, heard_text: str | None = None) -> tuple[s
     parts.append("")
     parts.append("────────")
     parts.append("")
-    parts.append(f"💬 <b>Рико:</b> {_esc(reply)}")
+    parts.append(f"💬 <b>LexDan:</b> {_esc(reply)}")
 
     return "\n".join(parts), reply
 

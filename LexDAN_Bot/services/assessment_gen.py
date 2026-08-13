@@ -156,8 +156,10 @@ def generate_listen(level: str, used: list[str] | None = None) -> str:
     return text or fallback
 
 
-def generate_write_topic(level: str) -> str:
-    fallback = pick_topic(level)
+def generate_write_topic(level: str, *, avoid: list[str] | None = None) -> str:
+    avoid = list(avoid or [])
+    fallback = pick_topic(level, avoid=avoid)
+    avoid_line = "; ".join(avoid[:5]) if avoid else "(none)"
     data = _ask_json(
         [
             {
@@ -165,12 +167,16 @@ def generate_write_topic(level: str) -> str:
                 "content": (
                     "Create ONE unique English writing prompt for a placement test. "
                     f"CEFR {level}. One clear sentence in English. "
+                    "It MUST be different from the avoided topics. "
                     'Return ONLY JSON: {"topic":"..."}'
                 ),
             },
             {
                 "role": "user",
-                "content": f"Level {level}. Seed {random.random()}",
+                "content": (
+                    f"Level {level}. Seed {random.random()}. "
+                    f"Avoid these topics: {avoid_line}"
+                ),
             },
         ],
         {"topic": fallback},
@@ -178,7 +184,13 @@ def generate_write_topic(level: str) -> str:
         max_tokens=80,
     )
     topic = (data.get("topic") or "").strip()
-    return topic or fallback
+    if not topic:
+        return fallback
+    # если GPT повторил avoided — берём fallback
+    avoid_norm = {" ".join(a.lower().split()) for a in avoid if a}
+    if " ".join(topic.lower().split()) in avoid_norm:
+        return fallback
+    return topic
 
 
 def estimate_level_from_translation(text_level: str, score: int) -> str:

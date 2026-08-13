@@ -319,13 +319,41 @@ LISTEN_BANK = {
 }
 
 WRITE_TOPICS = {
-    "C2": "Write about a social issue in your country and propose a realistic solution.",
-    "C1": "Describe a difficult decision you made and explain what you learned from it.",
-    "B2": "Write about your plans for the next five years and why they matter to you.",
-    "B1": "Describe your typical weekend and what you enjoy most.",
-    "A2": "Write about your family and your daily routine.",
-    "A1": "Write about your home and your favourite food.",
-    "A0": "Write simple sentences about yourself: name, city, likes.",
+    "C2": [
+        "Write about a social issue in your country and propose a realistic solution.",
+        "Discuss whether technology has improved or damaged modern education.",
+        "Argue for or against remote work as the future of employment.",
+    ],
+    "C1": [
+        "Describe a difficult decision you made and explain what you learned from it.",
+        "Write about a book or film that changed your perspective on life.",
+        "Explain a challenge young people face today and how they can overcome it.",
+    ],
+    "B2": [
+        "Write about your plans for the next five years and why they matter to you.",
+        "Describe a trip that taught you something important.",
+        "Explain how you deal with stress and what helps you most.",
+    ],
+    "B1": [
+        "Describe your typical weekend and what you enjoy most.",
+        "Write about your best friend and why you like spending time together.",
+        "Describe a holiday you remember well.",
+    ],
+    "A2": [
+        "Write about your family and your daily routine.",
+        "Describe your school or job and what you do there.",
+        "Write about your favourite place in your city.",
+    ],
+    "A1": [
+        "Write about your home and your favourite food.",
+        "Describe your morning: what you do after you wake up.",
+        "Write about your hobby and when you do it.",
+    ],
+    "A0": [
+        "Write simple sentences about yourself: name, city, likes.",
+        "Write about your family: who lives with you.",
+        "Write about your favourite colour and animal.",
+    ],
 }
 
 
@@ -432,5 +460,16 @@ def pick_listen(level: str, used: list[str] | None = None) -> str:
     return random.choice(unused or bank)
 
 
-def pick_topic(level: str) -> str:
-    return WRITE_TOPICS.get(level) or WRITE_TOPICS["A1"]
+def pick_topic(level: str, *, avoid: list[str] | None = None) -> str:
+    import random
+
+    raw = WRITE_TOPICS.get(level) or WRITE_TOPICS["A1"]
+    options = list(raw) if isinstance(raw, (list, tuple)) else [raw]
+    avoid_set = {normalize_soft(x) for x in (avoid or []) if x}
+    unused = [t for t in options if normalize_soft(t) not in avoid_set]
+    pool = unused or options
+    return random.choice(pool)
+
+
+def normalize_soft(s: str) -> str:
+    return " ".join((s or "").lower().split())

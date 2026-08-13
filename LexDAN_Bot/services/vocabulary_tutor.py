@@ -296,8 +296,26 @@ def _diverse_word_examples(en: str, ru: str) -> tuple[str, str, str, str]:
             "teacher", "doctor", "nurse", "child", "baby", "boy", "girl",
             "man", "woman", "uncle", "aunt", "cousin", "neighbour", "neighbor",
             "classmate", "partner", "boss", "student",
+            "dependant", "dependent", "guardian", "orphan", "breadwinner",
+            "host", "guest", "colleague", "coworker", "client", "customer",
+            "patient", "passenger", "stranger", "roommate", "flatmate",
+            "landlord", "tenant", "relative", "spouse", "husband", "wife",
+            "son", "daughter", "parent", "parents", "kid", "kids", "adult",
+            "teenager", "chef", "waiter", "waitress", "pilot", "driver",
+            "engineer", "lawyer", "manager", "tourist", "visitor", "owner",
+            "member", "leader", "family",
         }
-        if w.lower() in people:
+        abstracts = {
+            "kinship", "upbringing", "inheritance", "custody", "freedom",
+            "happiness", "sadness", "anger", "love", "fear", "hope", "advice",
+            "knowledge", "patience", "courage", "honesty", "loyalty", "respect",
+            "trust", "privacy", "responsibility", "independence", "poverty",
+            "wealth", "success", "failure", "education", "career", "marriage",
+            "friendship", "relationship", "habit", "tradition", "culture",
+            "society", "justice", "opportunity",
+        }
+        low = w.lower()
+        if low in people:
             templates = [
                 (
                     f"My {w} called me after school.",
@@ -322,6 +340,42 @@ def _diverse_word_examples(en: str, ru: str) -> tuple[str, str, str, str]:
                     f"Я вчера говорил(а) со своим {r}.",
                     f"She visits her {w} every Sunday.",
                     f"Она навещает своего {r} каждое воскресенье.",
+                ),
+                (
+                    f"He still lives as {a}{w} of his parents.",
+                    f"Он всё ещё живёт как {r} своих родителей.",
+                    f"Being {a}{w} is hard when you want freedom.",
+                    f"Быть {r} трудно, когда хочешь свободы.",
+                ),
+            ]
+        elif low in abstracts or any(
+            low.endswith(s)
+            for s in ("ness", "ment", "tion", "sion", "ship", "hood", "dom", "ance", "ence")
+        ):
+            templates = [
+                (
+                    f"{w.capitalize()} is important in every family.",
+                    f"{r.capitalize()} важно в каждой семье.",
+                    f"We talked about {w} for a long time.",
+                    f"Мы долго говорили про {r}.",
+                ),
+                (
+                    f"He learned the value of {w} the hard way.",
+                    f"Он на горьком опыте понял ценность ({r}).",
+                    f"Without {w}, life feels empty.",
+                    f"Без {r} жизнь кажется пустой.",
+                ),
+                (
+                    f"Her story is about {w} and growing up.",
+                    f"Её история — про {r} и взросление.",
+                    f"I need more {w} in my daily life.",
+                    f"Мне нужно больше {r} в повседневной жизни.",
+                ),
+                (
+                    f"They discussed {w} in class today.",
+                    f"Сегодня на уроке они обсуждали {r}.",
+                    f"True {w} takes time and honesty.",
+                    f"Настоящий/настоящая {r} требует времени и честности.",
                 ),
             ]
         else:
@@ -417,6 +471,44 @@ def _example_is_bland(text: str, target: str) -> bool:
     return False
 
 
+def _example_is_nonsensical(text: str, target: str) -> bool:
+    """Предметные шаблоны для людей/абстракций (dependant on the table и т.п.)."""
+    t = (text or "").lower()
+    w = (target or "").strip().lower()
+    if not t or not w or w not in t:
+        return False
+    people_ish = {
+        "dependant", "dependent", "guardian", "orphan", "breadwinner",
+        "colleague", "coworker", "client", "customer", "patient", "passenger",
+        "stranger", "roommate", "landlord", "tenant", "relative", "spouse",
+        "husband", "wife", "son", "daughter", "parent", "teacher", "doctor",
+        "friend", "brother", "sister", "mother", "father", "boss", "student",
+    }
+    abstract_ish = w.endswith(
+        ("ness", "ment", "tion", "sion", "ship", "hood", "dom", "ance", "ence")
+    ) or w in {
+        "kinship", "upbringing", "inheritance", "custody", "freedom", "advice",
+        "knowledge", "patience", "courage", "honesty", "loyalty", "respect",
+        "trust", "privacy", "responsibility", "independence",
+    }
+    object_patterns = (
+        "on the table",
+        "on the bus",
+        "under the chair",
+        "on the shelf",
+        "pass me the",
+        "left my ",
+        "borrow",
+        "bought a ",
+        "bought an ",
+        "put the ",
+        "belongs to my friend",
+    )
+    if (w in people_ish or abstract_ish) and any(p in t for p in object_patterns):
+        return True
+    return False
+
+
 def _format_word_card(word: dict, data: dict) -> str:
     en = word["en"]
     ru = word["ru"]
@@ -428,11 +520,13 @@ def _format_word_card(word: dict, data: dict) -> str:
     e1r = (data.get("example1_ru") or e1rd).strip()
     e2 = (data.get("example2_en") or e2d).strip()
     e2r = (data.get("example2_ru") or e2rd).strip()
-    # если GPT/старый фолбэк выдал мета-шаблон — подменим на живые примеры
+    # если GPT/старый фолбэк выдал мета-шаблон или бессмыслицу для роли/абстракции — подменим
     bland = (
         _example_is_bland(e1, en)
         or _example_is_bland(e2, en)
         or e1.lower() == e2.lower()
+        or _example_is_nonsensical(e1, en)
+        or _example_is_nonsensical(e2, en)
     )
     if bland:
         e1, e1r, e2, e2r = e1d, e1rd, e2d, e2rd
@@ -494,6 +588,9 @@ def rico_word_card(level: str, topic_title: str, word: dict) -> str:
                         "'This is my …', 'I use … every day' as the only pattern. "
                         "Examples must USE the word as vocabulary in a real-life situation, "
                         "not talk about learning the word. "
+                        "CRITICAL: if the word means a PERSON/ROLE (dependant, teacher, guardian…) "
+                        "or an ABSTRACT idea (freedom, kinship…), do NOT treat it like an object "
+                        "(never 'on the table', 'on the bus', 'pass me the …'). "
                         "Make two DIFFERENT natural sentences that contain the word. "
                         f"Эмодзи для ассоциации: {emoji}. Уровень CEFR: {level}."
                     ),

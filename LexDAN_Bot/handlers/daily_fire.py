@@ -217,14 +217,26 @@ async def daily_fire_go(cq: CallbackQuery):
     if m is None:
         return
 
-    if sec == "g":
-        await _go_grammar(m, uid, user, level, topic_index)
-    elif sec == "v":
-        await _go_vocab(m, uid, user, level, topic_index)
-    elif sec == "l":
-        await _go_listening(m, uid, user, level, topic_index)
-    else:
-        await m.answer("Не понял раздел — открой Уроки из меню 📚", reply_markup=main_menu(user))
+    try:
+        if sec == "g":
+            await _go_grammar(m, uid, user, level, topic_index)
+        elif sec == "v":
+            await _go_vocab(m, uid, user, level, topic_index)
+        elif sec == "l":
+            await _go_listening(m, uid, user, level, topic_index)
+        else:
+            await m.answer(
+                "Не понял раздел — открой Уроки из меню 📚",
+                reply_markup=main_menu(user),
+            )
+    except Exception as e:
+        import logging
+
+        logging.exception("daily_fire_go failed: %s", e)
+        await m.answer(
+            "Не удалось открыть раздел. Зайди через 📚 Уроки — там всё на месте.",
+            reply_markup=main_menu(user),
+        )
 
 
 async def _go_grammar(m: Message, uid: str, user: dict, level: str, topic_index: int | None) -> None:
@@ -281,8 +293,8 @@ async def _go_vocab(m: Message, uid: str, user: dict, level: str, topic_index: i
     from data.vocabulary_words import get_words, words_total
     from data.vocabulary_phrases import phrases_total
     from handlers.vocabulary_keyboards import vocab_topics_kb
+    from data.vocabulary_words import has_vocabulary_level
     from handlers.lessons_vocabulary import _send_word_story, VOCAB_INTRO
-    from services.vocab_banks import has_vocabulary_level
 
     if assessment_busy(user):
         await m.answer("Сначала закончи тест уровня 🙂")
@@ -385,6 +397,7 @@ async def _go_listening(m: Message, uid: str, user: dict, level: str, topic_inde
             return
 
     roles = _roles_phrase(topic)
+    set_listening_list(uid, level)
     set_session(
         uid,
         {
