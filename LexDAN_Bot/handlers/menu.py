@@ -32,8 +32,29 @@ from services.tg_out import say
 router = Router()
 
 
+async def _block_if_imit(m: Message) -> bool:
+    """Во время полной имитации онбординга меню закрыто."""
+    from services.onboard_guided import is_imit_active
+
+    uid = str(m.from_user.id)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    if not is_imit_active(user):
+        return False
+    from aiogram.types import ReplyKeyboardRemove
+
+    await m.answer(
+        "🧪 Сейчас идёт сценарий знакомства — меню откроется после него.\n"
+        "Выход из имитации: /imit_finish",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    return True
+
+
 @router.message(F.text == "🗣️ Общаться")
 async def open_chat(m: Message):
+    if await _block_if_imit(m):
+        return
     set_mode(str(m.from_user.id), MODE_CHAT)
     users = users_for(str(m.from_user.id))
     user = get_user(users, str(m.from_user.id))
@@ -134,6 +155,8 @@ def _esc(text: str) -> str:
 
 @router.message(F.text == "📚 Уроки")
 async def open_lessons(m: Message):
+    if await _block_if_imit(m):
+        return
     user_id = str(m.from_user.id)
     set_mode(user_id, MODE_LESSONS)
 
@@ -183,6 +206,8 @@ async def open_lessons(m: Message):
 
 @router.message(F.text == "📊 Профиль")
 async def open_profile(m: Message):
+    if await _block_if_imit(m):
+        return
     set_mode(str(m.from_user.id), MODE_PROFILE)
     user_id = str(m.from_user.id)
     users = users_for(str(m.from_user.id))
@@ -250,6 +275,8 @@ async def open_profile(m: Message):
 
 @router.message(F.text == "🆘 Поддержка")
 async def open_support(m: Message):
+    if await _block_if_imit(m):
+        return
     from config import SUPPORT_USERNAME
 
     set_mode(str(m.from_user.id), MODE_MENU)

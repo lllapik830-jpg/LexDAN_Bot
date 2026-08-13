@@ -1,6 +1,6 @@
 """
 Имитация направляемого онбординга: /imit_start · /imit_finish.
-Слайды to be, CTA после Огня дня, «Уточнить».
+Слайды to be (одно сообщение), Уточнить → Понял (удаление), без меню.
 """
 
 import asyncio
@@ -33,7 +33,6 @@ from services.growth import ensure_growth
 from services.onboard_guided import (
     BTN_ONBOARD_START_TASKS,
     DF_DONE_HTML,
-    DF_TOUR_HTML,
     ONBOARD_TOPIC_ID,
     ONBOARD_TOPIC_LEVEL,
     ONBOARD_TOPIC_TITLE,
@@ -71,34 +70,33 @@ class OnboardClarifyFilter(BaseFilter):
         return bool(ensure_onboard(user).get("awaiting_clarify"))
 
 
-def _slide_kb(*, last: bool = False) -> InlineKeyboardMarkup:
+def _slide_kb(idx: int) -> InlineKeyboardMarkup:
+    last = idx >= len(SLIDES) - 1
+    rows: list[list[InlineKeyboardButton]] = []
+    nav: list[InlineKeyboardButton] = []
+    if idx > 0:
+        nav.append(
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="og:prev")
+        )
+    if not last:
+        nav.append(
+            InlineKeyboardButton(text="➡️ Далее", callback_data="og:next")
+        )
+    if nav:
+        rows.append(nav)
+    rows.append(
+        [InlineKeyboardButton(text="❓ Уточнить", callback_data="og:ask")]
+    )
     if last:
-        return InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="📝 Перейти к заданиям",
-                        callback_data="og:tasks",
-                    )
-                ]
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="📝 Перейти к заданиям",
+                    callback_data="og:tasks",
+                )
             ]
         )
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="➡️ Далее",
-                    callback_data="og:next",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="❓ Уточнить",
-                    callback_data="og:ask",
-                )
-            ],
-        ]
-    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def grammar_cta_kb() -> InlineKeyboardMarkup:
@@ -121,14 +119,17 @@ def tasks_start_kb() -> ReplyKeyboardMarkup:
     )
 
 
-async def send_df_tour_intro(m: Message, user: dict) -> None:
-    ob = ensure_onboard(user)
-    if not ob.get("active") or ob.get("df_intro_sent"):
-        return
-    if onboard_stage(user) != "daily_fire":
-        return
-    ob["df_intro_sent"] = True
-    await m.answer(DF_TOUR_HTML, parse_mode="HTML")
+def _got_it_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Понял",
+                    callback_data="og:got_it",
+                )
+            ]
+        ]
+    )
 
 
 async def maybe_send_df_done_cta(m: Message, user: dict, users: dict, uid: str) -> bool:
@@ -147,25 +148,34 @@ async def maybe_send_df_done_cta(m: Message, user: dict, users: dict, uid: str) 
     ob["df_done_sent"] = True
     ob["stage"] = "grammar_cta"
     save_users(users, only=uid)
+    # Убрать кнопки разделов Огня дня
+    await m.answer("✨", reply_markup=ReplyKeyboardRemove())
     await m.answer(DF_DONE_HTML, reply_markup=grammar_cta_kb(), parse_mode="HTML")
     return True
 
 
-async def send_slide(m: Message, user: dict, *, edit: bool = False) -> None:
+async def _render_slide(bot, user: dict, *, chat_id: int | None = None) -> None:
+    """Одно сообщение со слайдом — только edit, без новых текстов объяснения."""
     ob = ensure_onboard(user)
     idx = int(ob.get("slide") or 0)
     idx = max(0, min(idx, len(SLIDES) - 1))
     ob["slide"] = idx
-    last = idx >= len(SLIDES) - 1
     text = SLIDES[idx]
-    kb = _slide_kb(last=last)
-    if edit and getattr(m, "edit_text", None):
+    kb = _slide_kb(idx)
+    msg_id = ob.get("slide_msg_id")
+    cid = chat_id or ob.get("slide_chat_id")
+    if msg_id and cid:
         try:
-            await m.edit_text(text, reply_markup=kb, parse_mode="HTML")
+            await bot.edit_message_text(
+                text,
+                chat_id=int(cid),
+                message_id=int(msg_id),
+                reply_markup=kb,
+                parse_mode="HTML",
+            )
             return
         except Exception:
             pass
-    await m.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 async def begin_to_be_slides(m: Message, uid: str) -> None:
@@ -177,11 +187,10 @@ async def begin_to_be_slides(m: Message, uid: str) -> None:
         return
 
     set_mode(uid, MODE_LESSONS)
-    from services.lesson_state import set_grammar_list
+    from services.lesson_state import set_grammar_list, update_lesson, ensure_lesson
 
     set_grammar_list(uid, ONBOARD_TOPIC_LEVEL)
     open_topic(uid, ONBOARD_TOPIC_ID, ONBOARD_TOPIC_TITLE)
-    from services.lesson_state import update_lesson, ensure_lesson
 
     def _hub_slides(u):
         ensure_lesson(u)
@@ -195,14 +204,23 @@ async def begin_to_be_slides(m: Message, uid: str) -> None:
     ob["stage"] = "slides"
     ob["slide"] = 0
     ob["awaiting_clarify"] = False
+    ob["clarify_ids"] = []
+    ob["slide_msg_id"] = None
+    ob["slide_chat_id"] = None
     save_users(users, only=uid)
 
-    await m.answer(
-        f"📚 Тема: <b>{ONBOARD_TOPIC_TITLE}</b>",
+    await m.answer("📚", reply_markup=ReplyKeyboardRemove())
+    sent = await m.answer(
+        SLIDES[0],
+        reply_markup=_slide_kb(0),
         parse_mode="HTML",
-        reply_markup=ReplyKeyboardRemove(),
     )
-    await send_slide(m, user)
+    users = load_users()
+    user = get_user(users, uid)
+    ob = ensure_onboard(user)
+    ob["slide_msg_id"] = sent.message_id
+    ob["slide_chat_id"] = sent.chat.id
+    save_users(users, only=uid)
 
 
 @router.message(Command("imit_start"))
@@ -222,7 +240,8 @@ async def imit_start_cmd(m: Message):
     await m.answer(
         "🧪 <b>Имитация полного онбординга</b>\n"
         "Привет → имя → тест → подарок → Огонь дня → to be → 8 заданий.\n"
-        "Выход в любой момент: /imit_finish",
+        "Выход: /imit_finish",
+        reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML",
     )
     await m.answer(HELLO_NEW, reply_markup=_hello_cta_kb(), parse_mode="HTML")
@@ -273,12 +292,36 @@ async def cb_slide_next(c: CallbackQuery):
         await c.answer("Сейчас это недоступно", show_alert=True)
         return
     ob = ensure_onboard(user)
-    ob["awaiting_clarify"] = False
-    ob["slide"] = int(ob.get("slide") or 0) + 1
-    if ob["slide"] >= len(SLIDES):
-        ob["slide"] = len(SLIDES) - 1
+    if ob.get("awaiting_clarify") or ob.get("clarify_ids"):
+        await c.answer("Сначала закрой уточнение кнопкой «Понял»", show_alert=True)
+        return
+    ob["slide"] = min(int(ob.get("slide") or 0) + 1, len(SLIDES) - 1)
+    # закрепить id текущего сообщения-слайда
+    ob["slide_msg_id"] = c.message.message_id
+    ob["slide_chat_id"] = c.message.chat.id
     save_users(users, only=uid)
-    await send_slide(c.message, user, edit=True)
+    await _render_slide(c.bot, user, chat_id=c.message.chat.id)
+
+
+@router.callback_query(F.data == "og:prev")
+async def cb_slide_prev(c: CallbackQuery):
+    await c.answer()
+    if not c.from_user or not c.message:
+        return
+    uid = str(c.from_user.id)
+    users = load_users()
+    user = get_user(users, uid)
+    if not is_guided_onboard(user) or onboard_stage(user) != "slides":
+        return
+    ob = ensure_onboard(user)
+    if ob.get("awaiting_clarify") or ob.get("clarify_ids"):
+        await c.answer("Сначала закрой уточнение кнопкой «Понял»", show_alert=True)
+        return
+    ob["slide"] = max(int(ob.get("slide") or 0) - 1, 0)
+    ob["slide_msg_id"] = c.message.message_id
+    ob["slide_chat_id"] = c.message.chat.id
+    save_users(users, only=uid)
+    await _render_slide(c.bot, user, chat_id=c.message.chat.id)
 
 
 @router.callback_query(F.data == "og:ask")
@@ -293,11 +336,44 @@ async def cb_slide_ask(c: CallbackQuery):
         return
     ob = ensure_onboard(user)
     ob["awaiting_clarify"] = True
+    # слайд остаётся тем же сообщением
+    ob["slide_msg_id"] = c.message.message_id
+    ob["slide_chat_id"] = c.message.chat.id
     save_users(users, only=uid)
-    await c.message.answer(
+    ask = await c.message.answer(
         "🦜 Спрашивай <b>только про эту тему</b> (to be) — напиши вопрос текстом 👇",
         parse_mode="HTML",
     )
+    users = load_users()
+    user = get_user(users, uid)
+    ob = ensure_onboard(user)
+    ids = list(ob.get("clarify_ids") or [])
+    ids.append(ask.message_id)
+    ob["clarify_ids"] = ids
+    save_users(users, only=uid)
+
+
+@router.callback_query(F.data == "og:got_it")
+async def cb_got_it(c: CallbackQuery):
+    await c.answer()
+    if not c.from_user or not c.message:
+        return
+    uid = str(c.from_user.id)
+    users = load_users()
+    user = get_user(users, uid)
+    ob = ensure_onboard(user)
+    ids = list(ob.get("clarify_ids") or [])
+    # удалить и само сообщение с «Понял»
+    ids.append(c.message.message_id)
+    chat_id = c.message.chat.id
+    for mid in ids:
+        try:
+            await c.bot.delete_message(chat_id, int(mid))
+        except Exception:
+            pass
+    ob["clarify_ids"] = []
+    ob["awaiting_clarify"] = False
+    save_users(users, only=uid)
 
 
 @router.callback_query(F.data == "og:tasks")
@@ -311,6 +387,9 @@ async def cb_go_tasks(c: CallbackQuery):
     if not is_guided_onboard(user):
         return
     ob = ensure_onboard(user)
+    if ob.get("clarify_ids"):
+        await c.answer("Сначала закрой уточнение кнопкой «Понял»", show_alert=True)
+        return
     ob["stage"] = "tasks_menu"
     ob["awaiting_clarify"] = False
     save_users(users, only=uid)
@@ -363,6 +442,9 @@ async def onboard_clarify_text(m: Message):
 
     ob = ensure_onboard(user)
     ob["awaiting_clarify"] = False
+    ids = list(ob.get("clarify_ids") or [])
+    ids.append(m.message_id)  # вопрос пользователя тоже уберём по «Понял»
+    ob["clarify_ids"] = ids
     save_users(users, only=uid)
 
     name = (user.get("name") or "друг").strip()
@@ -371,14 +453,24 @@ async def onboard_clarify_text(m: Message):
     async with status(m, "🦜 Рико думает…"):
         answer = clarify_rico(m.text or "", user_name=name)
 
-    await m.answer(answer, parse_mode="HTML")
+    ans = await m.answer(answer, parse_mode="HTML")
     await send_rico_voice(
         m,
         plain_for_tts(answer),
         user=user,
         title="Rico · уточнение",
     )
-    await send_slide(m, user)
+    got = await m.answer(
+        "Если ясно — жми 👇",
+        reply_markup=_got_it_kb(),
+    )
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ob = ensure_onboard(user)
+    ids = list(ob.get("clarify_ids") or [])
+    ids.extend([ans.message_id, got.message_id])
+    ob["clarify_ids"] = ids
+    save_users(users, only=uid)
 
 
 async def finish_guided_after_topic(m: Message, uid: str) -> None:

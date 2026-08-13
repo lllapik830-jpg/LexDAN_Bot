@@ -43,7 +43,8 @@ router = Router()
 HELLO_NEW = (
     "👋 <b>Привет!</b> Я <b>LexDan</b>, а рядом всегда мой попугай <b>Рико</b> 🦜✨\n\n"
     "Здесь мы превращаем английский из «😱 страшно сказать» в «💬 легко болтать».\n\n"
-    "⏱️ Всего <b>15 минут в день</b>, в твоём темпе и без стресса.\n\n"
+    "💚 <b>Наш рецепт простой:</b> 15 минут в день — болтовня, слова, грамматика. "
+    "Без стресса, в твоём темпе.\n\n"
     "🎯 Давай проверим твой уровень? Это 3–4 минуты."
 )
 
@@ -217,10 +218,19 @@ async def _send_pre_test(m: Message, user_id: str, name: str) -> None:
     save_users(users, only=user_id)
 
     await m.answer(PRE_TEST_HTML, reply_markup=_pre_test_kb(), parse_mode="HTML")
-    await m.answer(
-        "Когда будешь готов — жми «Погнали!» 👇",
-        reply_markup=main_menu(user, user_id=user_id),
-    )
+    from services.onboard_guided import is_imit_active
+    from aiogram.types import ReplyKeyboardRemove
+
+    if is_imit_active(user):
+        await m.answer(
+            "Когда будешь готов — жми «Погнали!» 👇",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    else:
+        await m.answer(
+            "Когда будешь готов — жми «Погнали!» 👇",
+            reply_markup=main_menu(user, user_id=user_id),
+        )
 
 
 # ─── legacy helpers (промо/правила — оставляем для тех, кто уже в середине старого флоу) ───
@@ -431,12 +441,13 @@ async def onboard_daily_fire(c: CallbackQuery):
         reply_markup=daily_fire_kb(user),
         parse_mode="HTML",
     )
-    from handlers.onboard_guided import send_df_tour_intro
+    from services.onboard_guided import ensure_onboard, is_guided_onboard, onboard_stage
 
-    users = users_for(uid)
-    user = get_user(users, uid)
-    await send_df_tour_intro(c.message, user)
-    save_users(users, only=uid)
+    if is_guided_onboard(user) and onboard_stage(user) == "daily_fire":
+        users = users_for(uid)
+        user = get_user(users, uid)
+        ensure_onboard(user)["df_intro_sent"] = True
+        save_users(users, only=uid)
 
 
 @router.callback_query(F.data == "onboard:level_test")

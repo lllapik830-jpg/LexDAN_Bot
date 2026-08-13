@@ -145,38 +145,35 @@ def lessons_home_levels(
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def assess_translate_kb(show_skip: bool = True) -> ReplyKeyboardMarkup:
+def assess_translate_kb(show_skip: bool = True, *, no_menu: bool = False) -> ReplyKeyboardMarkup:
     rows = [[KeyboardButton(text="⬇️ Дай текст проще")]]
     if show_skip:
         rows.append([KeyboardButton(text="⏭️ Пропустить задание")])
-    rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+    if not no_menu:
+        rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def assess_simple_kb() -> ReplyKeyboardMarkup:
+def assess_simple_kb(*, no_menu: bool = False) -> ReplyKeyboardMarkup:
+    if no_menu:
+        return ReplyKeyboardMarkup(keyboard=[], resize_keyboard=True)
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="🔙 Вернуться в меню")]],
         resize_keyboard=True,
     )
 
 
-def assess_dont_know_kb() -> ReplyKeyboardMarkup:
+def assess_dont_know_kb(*, no_menu: bool = False) -> ReplyKeyboardMarkup:
     """Словарь / аудирование."""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🙈 Не знаю")],
-            [KeyboardButton(text="🔙 Вернуться в меню")],
-        ],
-        resize_keyboard=True,
-    )
+    rows = [[KeyboardButton(text="🙈 Не знаю")]]
+    if not no_menu:
+        rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def assess_write_kb() -> ReplyKeyboardMarkup:
+def assess_write_kb(*, no_menu: bool = False) -> ReplyKeyboardMarkup:
     """Письмо: замена темы."""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🔄 Заменить текст")],
-            [KeyboardButton(text="🔙 Вернуться в меню")],
-        ],
-        resize_keyboard=True,
-    )
+    rows = [[KeyboardButton(text="🔄 Заменить текст")]]
+    if not no_menu:
+        rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)

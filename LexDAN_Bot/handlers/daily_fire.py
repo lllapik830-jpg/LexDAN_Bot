@@ -52,20 +52,23 @@ router = Router()
 BTN_BACK_MENU = "🔙 Вернуться в меню"
 
 
-def daily_fire_kb(user: dict) -> ReplyKeyboardMarkup:
+def daily_fire_kb(user: dict, *, guided: bool | None = None) -> ReplyKeyboardMarkup:
     ensure_daily_fire(user)
+    if guided is None:
+        from services.onboard_guided import is_guided_onboard
+
+        guided = is_guided_onboard(user)
 
     def mark(btn: str, kind: str) -> str:
         return f"✅ {btn}" if is_opened(user, kind) else btn
 
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=mark(BTN_DF_WORD, "word")), KeyboardButton(text=mark(BTN_DF_PHRASE, "phrase"))],
-            [KeyboardButton(text=mark(BTN_DF_VOICE, "voice")), KeyboardButton(text=mark(BTN_DF_FACT, "fact"))],
-            [KeyboardButton(text=BTN_BACK_MENU)],
-        ],
-        resize_keyboard=True,
-    )
+    rows = [
+        [KeyboardButton(text=mark(BTN_DF_WORD, "word")), KeyboardButton(text=mark(BTN_DF_PHRASE, "phrase"))],
+        [KeyboardButton(text=mark(BTN_DF_VOICE, "voice")), KeyboardButton(text=mark(BTN_DF_FACT, "fact"))],
+    ]
+    if not guided:
+        rows.append([KeyboardButton(text=BTN_BACK_MENU)])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def _offer_kb(offer: dict) -> InlineKeyboardMarkup:
@@ -127,12 +130,13 @@ async def open_daily_fire(m: Message):
     ensure_daily_fire(user)
     save_users(users, only=uid)
     await m.answer(hub_intro(user), reply_markup=daily_fire_kb(user), parse_mode="HTML")
-    from handlers.onboard_guided import send_df_tour_intro
+    # тур-сообщение убрано по сценарию — только хаб с кнопками
+    from services.onboard_guided import ensure_onboard, is_guided_onboard, onboard_stage
 
-    users = users_for(uid)
-    user = get_user(users, uid)
-    await send_df_tour_intro(m, user)
-    save_users(users, only=uid)
+    if is_guided_onboard(user) and onboard_stage(user) == "daily_fire":
+        ob = ensure_onboard(user)
+        ob["df_intro_sent"] = True
+        save_users(users, only=uid)
 
 
 @router.message(ModeFilter(MODE_DAILY_FIRE), F.text == BTN_DF_BACK)
@@ -147,9 +151,20 @@ async def back_to_fire_hub(m: Message):
 @router.message(ModeFilter(MODE_DAILY_FIRE), F.text == BTN_BACK_MENU)
 async def leave_daily_fire(m: Message):
     uid = _uid(m)
-    set_mode(uid, MODE_MENU)
     users = users_for(uid)
     user = get_user(users, uid)
+    from services.onboard_guided import is_imit_active
+    from aiogram.types import ReplyKeyboardRemove
+
+    if is_imit_active(user):
+        await m.answer(
+            "🧪 В сценарии выход в меню закрыт. Смотри Огонь дня или /imit_finish",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        # вернуть кнопки огня без «в меню»
+        await m.answer(hub_intro(user), reply_markup=daily_fire_kb(user, guided=True), parse_mode="HTML")
+        return
+    set_mode(uid, MODE_MENU)
     await m.answer("Главное меню:", reply_markup=main_menu(user))
 
 

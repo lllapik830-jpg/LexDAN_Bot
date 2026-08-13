@@ -576,6 +576,25 @@ def _answer_aliases(text: str) -> set[str]:
     out.add(n.replace("there are", "therere"))
     out.add(n.replace("i am", "im"))
     out.add(n.replace("im", "i am"))
+    # RU краткие/полные формы: я голоден ↔ я голодный
+    for full, short in (
+        ("голодный", "голоден"),
+        ("голодная", "голодна"),
+        ("голодные", "голодны"),
+        ("голодного", "голоден"),
+        ("усталый", "устал"),
+        ("усталая", "устала"),
+        ("счастливый", "счастлив"),
+        ("счастливая", "счастлива"),
+        ("готовый", "готов"),
+        ("готовая", "готова"),
+        ("занятый", "занят"),
+        ("занятая", "занята"),
+    ):
+        if full in n:
+            out.add(n.replace(full, short))
+        if short in n:
+            out.add(n.replace(short, full))
     # НЕ уравниваем its ↔ it is: это разные слова (possessive vs it's)
     return {x for x in out if x}
 

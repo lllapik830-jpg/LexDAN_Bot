@@ -221,12 +221,35 @@ def _write_prompt(topic: str, left: int) -> str:
     return text
 
 
+def _assess_no_menu(user: dict) -> bool:
+    from services.onboard_guided import is_imit_active
+
+    return is_imit_active(user)
+
+
+def _atk(user: dict, *, show_skip: bool = True):
+    return assess_translate_kb(show_skip=show_skip, no_menu=_assess_no_menu(user))
+
+
+def _adk(user: dict):
+    return assess_dont_know_kb(no_menu=_assess_no_menu(user))
+
+
+def _awk(user: dict):
+    return assess_write_kb(no_menu=_assess_no_menu(user))
+
+
+def _ask(user: dict):
+    return assess_simple_kb(no_menu=_assess_no_menu(user))
+
+
 async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     from services.growth import ensure_growth, touch_activity
     from services.database import load_users, get_user, save_users, MODE_MENU
     from services.reg_campaign import grant_reg_full_trial_if_active, REG_FULL_TRIAL_DAYS
     from handlers.start import _post_test_fire_kb
     from handlers.keyboards import main_menu
+    from aiogram.types import ReplyKeyboardRemove
 
     finish_assessment(user_id, final)
     users = load_users()
@@ -239,7 +262,8 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     user["last_section"] = "главное меню"
     from services.onboard_guided import advance_imit_after_test, is_imit_active
 
-    if is_imit_active(user):
+    imit = is_imit_active(user)
+    if imit:
         advance_imit_after_test(user)
     save_users(users, only=user_id)
 
@@ -255,15 +279,19 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         "Сейчас начнём с «🔥 Огня дня» — тут ежедневно появляются интересные "
         "и необычные слова, факты и голоса.»"
     )
+    # Сначала убрать reply-клавиатуру (меню), потом inline CTA
+    if imit:
+        await m.answer("🔥", reply_markup=ReplyKeyboardRemove())
     await m.answer(
         msg,
         reply_markup=_post_test_fire_kb(),
         parse_mode="HTML",
     )
-    await m.answer(
-        "Главное меню всегда под рукой 👇",
-        reply_markup=main_menu(user, user_id=user_id),
-    )
+    if not imit:
+        await m.answer(
+            "Главное меню всегда под рукой 👇",
+            reply_markup=main_menu(user, user_id=user_id),
+        )
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == BTN_CHECK)
@@ -289,16 +317,32 @@ async def start_level_test_flow(m: Message, *, skip_intro: bool = False) -> None
     if not skip_intro:
         await m.answer(RICO_BEFORE_TEST, parse_mode="HTML")
     from services.tg_out import status
+    from aiogram.types import ReplyKeyboardRemove
+    from services.onboard_guided import is_imit_active
 
     async with status(m, "Секунду, готовлю тебе тест… 🦜"):
         user = start_assessment(str(m.from_user.id))
     a = user["assessment"]
+    # На имитации сразу убираем меню, чтобы не мешало кнопкам теста
+    if is_imit_active(user):
+        await m.answer("🎯 Начинаем тест", reply_markup=ReplyKeyboardRemove())
+    # phase должен быть translate после start_assessment
+    if (user.get("assessment") or {}).get("phase") != "translate":
+        user = start_assessment(str(m.from_user.id))
+    a = user["assessment"]
+    a["phase"] = "translate"
+    from services.database import load_users as _lu, save_users as _su, get_user as _gu
+
+    _users = _lu()
+    _u = _gu(_users, str(m.from_user.id))
+    _u["assessment"] = a
+    _su(_users, only=str(m.from_user.id))
     await m.answer(
         "🎯 Тест уровня — задание 1/4: перевод\n\n"
         "Переведи текст на русский.\n"
         "Если сложно — нажми «Дай текст проще» или «Пропустить задание».\n\n"
         f"🇬🇧 Текст:\n{a['translate_source_en']}",
-        reply_markup=assess_translate_kb(show_skip=True),
+        reply_markup=_atk(user, show_skip=True),
     )
 
 
@@ -323,12 +367,12 @@ async def easier_text(m: Message):
             a = user["assessment"]
             await m.answer(
                 f"🇬🇧 Текст:\n{a['translate_source_en']}",
-                reply_markup=assess_translate_kb(show_skip=True),
+                reply_markup=_atk(user, show_skip=True),
             )
         else:
             await m.answer(
                 "Больше упрощать некуда. Переведи или нажми «Пропустить задание».",
-                reply_markup=assess_translate_kb(show_skip=True),
+                reply_markup=_atk(user, show_skip=True),
             )
         return
 
@@ -340,18 +384,35 @@ async def easier_text(m: Message):
     a = user["assessment"]
     await m.answer(
         f"🇬🇧 Текст:\n{a['translate_source_en']}",
-        reply_markup=assess_translate_kb(show_skip=True),
+        reply_markup=_atk(user, show_skip=True),
     )
 
 
-@router.message(ModeFilter(MODE_LESSONS), F.text == BTN_SKIP)
+@router.message(
+    ModeFilter(MODE_LESSONS),
+    F.text.in_(
+        {
+            BTN_SKIP,
+            "⏭ Пропустить задание",
+            "Пропустить задание",
+        }
+    ),
+)
 async def skip_translate(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     ensure_user_fields(user)
     a = user["assessment"]
+    phase = a.get("phase")
+    # Иногда phase теряется при гонке сохранений — если текст перевода есть, это translate
+    if phase != "translate" and (a.get("translate_source_en") or "").strip():
+        a["phase"] = "translate"
+        phase = "translate"
+        from services.database import save_users as _save
 
-    if a.get("phase") != "translate":
+        _save(users, only=str(m.from_user.id))
+
+    if phase != "translate":
         await m.answer("Сейчас нечего пропускать.", reply_markup=lessons_keyboard_for(user))
         return
 
@@ -406,7 +467,7 @@ async def replace_write(m: Message):
         return
 
     if status == "none":
-        await m.answer("Замен больше нет.", reply_markup=assess_write_kb())
+        await m.answer("Замен больше нет.", reply_markup=_awk(user))
         return
 
     left = int(a.get("write_replacements_left", 0))
@@ -416,7 +477,7 @@ async def replace_write(m: Message):
     await try_delete(m.bot, m.chat.id, status_msg.message_id)
     await m.answer(
         _write_prompt(a["write_topic"], left),
-        reply_markup=assess_write_kb(),
+        reply_markup=_awk(user),
     )
 
 
@@ -549,11 +610,11 @@ async def lessons_other(m: Message):
 
     kb = lessons_keyboard_for(user)
     if phase in {"vocab", "listen"}:
-        kb = assess_dont_know_kb()
+        kb = _adk(user)
     elif phase == "write":
-        kb = assess_write_kb()
+        kb = _awk(user)
     elif phase:
-        kb = assess_simple_kb()
+        kb = _ask(user)
     await m.answer("Пришли текстовый ответ или нажми кнопку.", reply_markup=kb)
 
 
@@ -589,7 +650,7 @@ async def _start_vocab_flow(m: Message, level: str):
         "Переведи слово на русский. Всего 4 слова.\n"
         "Если не знаешь — жми «Не знаю».\n\n"
         f"1/4 🇬🇧 {a['vocab_en']}",
-        reply_markup=assess_dont_know_kb(),
+        reply_markup=_adk(user),
     )
 
 
@@ -619,16 +680,20 @@ async def _advance_vocab(m: Message, user: dict, success: bool):
     a = user["assessment"]
     await m.answer(
         f"{a['vocab_i'] + 1}/4 🇬🇧 {a['vocab_en']}",
-        reply_markup=assess_dont_know_kb(),
+        reply_markup=_adk(user),
     )
 
 
 async def _start_listen_flow(m: Message, level: str):
+    from services.database import users_for, get_user as _gu
+
+    uid = str(m.from_user.id)
+    probe = _gu(users_for(uid), uid)
     await m.answer(
         "🎯 Задание 3/4: аудирование\n\n"
         "Слушай голосовое и напиши, что услышал(а), на английском.\n"
         "Всего 3 голосовых. Если не распознал — жми «Не знаю».",
-        reply_markup=assess_dont_know_kb(),
+        reply_markup=_adk(probe),
     )
     user = begin_listen(str(m.from_user.id), level)
     a = user["assessment"]
@@ -642,10 +707,10 @@ async def _send_listen_audio(m: Message, text: str, number: int):
     from services.elevenlabs import send_voice_reply
     from services.voices import CHAT_VOICES, RICO_VOICE_ID, RICO_VOICE_ALT_ID
 
-    await m.answer(f"🎧 {number}/3", reply_markup=assess_dont_know_kb())
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
+    await m.answer(f"🎧 {number}/3", reply_markup=_adk(user))
     a = user.get("assessment") or {}
     voice_ids = list(a.get("listen_voice_ids") or [])
     if len(voice_ids) < 3:
@@ -699,7 +764,7 @@ async def _start_write_flow(m: Message, level: str):
     left = int(a.get("write_replacements_left", 3))
     await m.answer(
         _write_prompt(a["write_topic"], left),
-        reply_markup=assess_write_kb(),
+        reply_markup=_awk(user),
     )
 
 

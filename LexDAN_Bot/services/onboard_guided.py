@@ -33,12 +33,8 @@ PRAISE_OK = [
     "✅ Класс! Продолжаем 🚀",
 ]
 
-DF_TOUR_HTML = (
-    "🦜 <b>Рико:</b> Эй! Раз ты только с нами — давай быстро осмотримся.\n\n"
-    "Просмотри <b>все разделы Огня дня по очереди</b>:\n"
-    "📖 Слово · 💬 Фраза · 🎙 Голос · 💡 Факт.\n\n"
-    "Жми кнопки ниже одну за другой — я рядом 🔥"
-)
+DF_TOUR_HTML = ""  # тур-текст отключён по сценарию
+
 
 DF_DONE_HTML = (
     "🦜 <b>Рико:</b> Отлично, так держать! 👏\n\n"
@@ -119,6 +115,9 @@ def _blank() -> dict[str, Any]:
         "awaiting_clarify": False,
         "df_intro_sent": False,
         "df_done_sent": False,
+        "slide_msg_id": None,
+        "slide_chat_id": None,
+        "clarify_ids": [],
     }
 
 
