@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher
 from flask import Flask, jsonify, request
 
 from config import BOT_TOKEN, PUBLIC_BASE_URL
-from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews, a0_course
+from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews, a0_course, onboard_guided
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +29,7 @@ dp.update.middleware(TimingMiddleware())
 
 dp.include_routers(
     start.router,
+    onboard_guided.router,  # /imit_start · слайды to be до catch-all
     admin.router,  # админ-команды до catch-all
     exclusive_rico.router,  # /test_winners + эксклюзив паки
     common.router,

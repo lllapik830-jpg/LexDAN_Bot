@@ -1,5 +1,6 @@
 """
 Старт и регистрация имени + рефералка + правила.
+Онбординг (часть 1): привет → CTA → имя → подтверждение → Погнали → тест → подарок + Огонь дня.
 """
 
 from aiogram import Router, F
@@ -41,49 +42,35 @@ router = Router()
 
 HELLO_NEW = (
     "👋 <b>Привет!</b> Я <b>LexDan</b>, а рядом всегда мой попугай <b>Рико</b> 🦜✨\n\n"
-    "Мы здесь, чтобы превратить твой английский из "
-    "«😱 страшно сказать» в «💬 легко болтать».\n\n"
-    "🍳 <b>Наш рецепт простой:</b>\n"
-    "⏱ <b>15 минут в день</b> в Telegram — болтовня, слова, грамматика.\n"
-    "😌 Без стресса, в твоём темпе, с Рико рядом.\n\n"
-    "🤝 Сначала познакомимся — <b>как тебя зовут?</b>"
+    "Здесь мы превращаем английский из «😱 страшно сказать» в «💬 легко болтать».\n\n"
+    "⏱️ Всего <b>15 минут в день</b>, в твоём темпе и без стресса.\n\n"
+    "🎯 Давай проверим твой уровень? Это 3–4 минуты."
 )
 
-# Английская озвучка первого приветствия (дублирует смысл HELLO_NEW)
-HELLO_NEW_EN = (
-    "Hi! I'm LexDan, and my parrot Rico is always with me. "
-    "We're here to turn your English from 'scary to speak' into 'easy to chat'. "
-    "Our recipe is simple: fifteen minutes a day in Telegram — chatting, words, grammar. "
-    "No stress, at your pace. First, let's get to know each other — what's your name?"
+ASK_NAME_RICO = (
+    "🦜 <b>Рико:</b> «Отлично! Прежде чем начать, давай познакомимся поближе.\n"
+    "Как тебя зовут?»"
 )
-
-ASK_NAME = "🥰 Как мне тебя называть? Напиши <b>только имя</b>, например: <b>Анна</b>"
 
 NAME_CONFIRM = (
-    "Это точно твоё имя — <b>{name}</b>?\n\n"
-    "Нужно написать <b>только имя</b>, а не фразу вроде «Hello, I'm Ann».\n"
-    "Если ошибся — просто напиши имя ещё раз.\n"
-    "Если всё верно — нажми кнопку ниже 👇"
+    "Приятно познакомиться, <b>{name}</b>! 💚\n\n"
+    "🦜 <b>Рико:</b> «Хочу убедиться, что правильно расслышал. "
+    "Мне нужно только твоё имя, а не фразы вроде «Hello, I'm Ann».»\n\n"
+    "Если всё верно — жми кнопку 👇"
 )
 
-WELCOME_AFTER_NAME = (
-    "🎉 <b>Приятно познакомиться, {name}!</b> 🦜💛\n\n"
-    "Я тут придумал для тебя план:\n\n"
-    "1️⃣ Сначала <b>проверим уровень</b> — короткий тест, чтобы понять, с чего начать.\n"
-    "2️⃣ Потом по чуть-чуть, минут по <b>15 в день</b>: слова, грамматика и разговоры.\n"
-    "3️⃣ Серия дней и друзья дают бустеры и секреты Рико — смотри в <b>Профиле</b> 🔥\n\n"
-    "📣 Канал <b>@LexDan_Rico</b> — обновления, конкурсы и промокоды:\n"
-    "https://t.me/LexDan_Rico\n\n"
-    "🎯 <b>Рико советует:</b> начни со вступительного теста уровня — "
-    "так занятия сразу попадут в твою зону комфорта.\n"
-    "Жми кнопку ниже 👇"
+PRE_TEST_HTML = (
+    "Супер! Тогда начинаем 🎯\n\n"
+    "📝 Сейчас будет небольшой тест. Отвечай как умеешь — здесь нет ошибок, "
+    "это просто проверка твоего уровня, чтобы качественнее подобрать тебе задания!\n"
+    "После прохождения тебя будет ждать подарок 🎁"
 )
 
 WELCOME_AGAIN = (
     "Снова привет, {name}! 🦜 Чем займёмся сегодня?"
 )
 
-# Карта главного меню (после теста уровня)
+# Карта главного меню (может пригодиться позже)
 NAV_MAP_HTML = (
     "🗺 <b>Карта бота — куда жать</b>\n\n"
     "🗣️ <b>Общаться</b> — живой чат с Рико на английском "
@@ -95,16 +82,16 @@ NAV_MAP_HTML = (
     "· 🎧 <b>Listening</b> — диалоги и задания на слух\n"
     "· 📖 <b>Reading</b> — тексты и понимание\n\n"
     "🔥 <b>Огонь дня</b> — короткий микс на сегодня "
-    "(грамматика / слова / аудирование), чтобы не пропускать серию.\n\n"
-    "📊 <b>Профиль</b> — имя, подписка, стрик, рефералка, промокод; "
-    "там же коллекция и лидеры ивента (когда активен).\n\n"
-    "🆘 <b>Поддержка</b> — если что-то сломалось или нужна помощь.\n\n"
-    "🔐 <b>Секрет Рико</b> — появляется как награда "
-    "(серия / ивент) — особые миссии.\n\n"
+    "(слово / фраза / голос / факт).\n\n"
+    "📊 <b>Профиль</b> — имя, подписка, стрик, рефералка, промокод.\n\n"
     "Готов? Выбирай кнопку в меню и вперёд 🚀"
 )
 
-BTN_ONBOARD_LEVEL_TEST = "🎯 Пройти вступительный тест"
+BTN_ONBOARD_CHECK_LEVEL = "🎯 Проверить уровень"
+BTN_NAME_YES = "✅ Да, это моё имя"
+BTN_NAME_REDO = "✍️ Написать заново"
+BTN_ONBOARD_GO = "✅ Погнали!"
+BTN_ONBOARD_DAILY_FIRE = "🔥 Огонь дня"
 
 
 def _rules_kb() -> ReplyKeyboardMarkup:
@@ -114,38 +101,62 @@ def _rules_kb() -> ReplyKeyboardMarkup:
     )
 
 
-def _name_sure_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=BTN_NAME_SURE, callback_data="name_confirm:yes")]
-        ]
-    )
-
-
-def _onboard_assess_kb() -> InlineKeyboardMarkup:
+def _hello_cta_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=BTN_ONBOARD_LEVEL_TEST,
-                    callback_data="onboard:level_test",
+                    text=BTN_ONBOARD_CHECK_LEVEL,
+                    callback_data="onboard:check_level",
                 )
             ]
         ]
     )
 
 
-async def _send_hello_new(m: Message, *, user: dict | None = None) -> None:
-    """Текст приветствия + голос Рико на английском."""
-    await m.answer(HELLO_NEW, parse_mode="HTML")
-    try:
-        from services.elevenlabs import send_rico_voice
+def _name_confirm_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=BTN_NAME_YES,
+                    callback_data="name_confirm:yes",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=BTN_NAME_REDO,
+                    callback_data="name_confirm:redo",
+                )
+            ],
+        ]
+    )
 
-        await send_rico_voice(
-            m, HELLO_NEW_EN, user=user, title="Rico · hello"
-        )
-    except Exception:
-        pass
+
+def _pre_test_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=BTN_ONBOARD_GO,
+                    callback_data="onboard:go_test",
+                )
+            ]
+        ]
+    )
+
+
+def _post_test_fire_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=BTN_ONBOARD_DAILY_FIRE,
+                    callback_data="onboard:daily_fire",
+                )
+            ]
+        ]
+    )
 
 
 def _esc(text: str) -> str:
@@ -169,15 +180,25 @@ def _banned_name_tokens() -> set[str]:
         "🎁 Пригласить друга",
         BTN_ACCEPT_RULES,
         BTN_NAME_SURE,
+        BTN_NAME_YES,
+        BTN_NAME_REDO,
+        BTN_ONBOARD_CHECK_LEVEL,
+        BTN_ONBOARD_GO,
         "✏️ Изменить имя",
         "🎟 Промокод",
     }
 
 
-async def _finish_registration(m: Message, user_id: str, name: str) -> None:
-    from services.promo import BTN_SKIP_PROMO
-    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+async def _ask_name_after_cta(m: Message, user_id: str) -> None:
+    users = load_users()
+    user = get_user(users, user_id)
+    user["step"] = "awaiting_name"
+    save_users(users, only=user_id)
+    await m.answer(ASK_NAME_RICO, parse_mode="HTML")
 
+
+async def _send_pre_test(m: Message, user_id: str, name: str) -> None:
+    """После подтверждения имени — экран перед тестом (подарок обещаем, выдадим после теста)."""
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
@@ -185,23 +206,25 @@ async def _finish_registration(m: Message, user_id: str, name: str) -> None:
     bind_referral_code(user_id, user)
     user["name"] = name
     user["pending_name"] = ""
-    # правила — после промокода
-    user["rules_accepted"] = False
+    user["rules_accepted"] = True  # часть 1: без отдельного экрана правил
     user["mode"] = MODE_MENU
-    user["step"] = "awaiting_promo"
+    user["step"] = "awaiting_onboard_go"
     grant_referral_bonuses(user_id, users)
     save_users(users, only=user_id)
 
+    await m.answer(PRE_TEST_HTML, reply_markup=_pre_test_kb(), parse_mode="HTML")
     await m.answer(
-        f"Приятно познакомиться, {_esc(name)}! 🦜\n\n"
-        "Если есть <b>промокод</b> — введи его сейчас.\n"
-        "Нет кода — нажми «Пропустить».",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text=BTN_SKIP_PROMO)]],
-            resize_keyboard=True,
-        ),
-        parse_mode="HTML",
+        "Когда будешь готов — жми «Погнали!» 👇",
+        reply_markup=main_menu(user, user_id=user_id),
     )
+
+
+# ─── legacy helpers (промо/правила — оставляем для тех, кто уже в середине старого флоу) ───
+
+
+async def _finish_registration(m: Message, user_id: str, name: str) -> None:
+    """Старый путь: имя → промо. Новый онбординг идёт через _send_pre_test."""
+    await _send_pre_test(m, user_id, name)
 
 
 async def _ask_rules_after_promo(m: Message, user_id: str, *, promo_msg: str = "") -> None:
@@ -218,43 +241,16 @@ async def _ask_rules_after_promo(m: Message, user_id: str, *, promo_msg: str = "
 
 
 async def _send_welcome_after_promo(m: Message, user_id: str, *, promo_msg: str = "") -> None:
+    """Старый welcome после правил → теперь тоже ведём на pre-test."""
     users = load_users()
     user = get_user(users, user_id)
-    ensure_growth(user)
-    user["step"] = "ready"
-    user["mode"] = MODE_MENU
+    name = (user.get("name") or "друг").strip()
     user["rules_accepted"] = True
     user.pop("pending_promo_msg", None)
-
-    from services.reg_campaign import (
-        grant_reg_full_trial_if_active,
-        reg_full_trial_welcome_html,
-        reg_event_welcome_html,
-    )
-
-    grant_reg_full_trial_if_active(user)
     save_users(users, only=user_id)
-
-    extra = ""
-    if user.get("referred_by"):
-        extra = (
-            "\n\n🎁 Ты пришёл по ссылке друга — сегодня больше баллов на уроки!"
-        )
     if promo_msg:
-        extra = "\n\n" + promo_msg + extra
-    extra += reg_full_trial_welcome_html()
-    extra += reg_event_welcome_html()
-
-    name = user.get("name") or "друг"
-    await m.answer(
-        WELCOME_AFTER_NAME.format(name=_esc(name)) + extra,
-        reply_markup=_onboard_assess_kb(),
-        parse_mode="HTML",
-    )
-    await m.answer(
-        "👇 Главное меню всегда снизу — а тест можно начать кнопкой выше.",
-        reply_markup=main_menu(user, user_id=user_id),
-    )
+        await m.answer(promo_msg, parse_mode="HTML")
+    await _send_pre_test(m, user_id, name)
 
 
 @router.message(Command("start"))
@@ -279,12 +275,21 @@ async def start_cmd(m: Message, command: CommandObject = None):
         await m.answer(ban_remaining_text(user), parse_mode="HTML")
         return
 
-    # Имя → промо → правила → welcome
+    # Новый пользователь: привет + CTA (имя спросим после кнопки)
     if not user.get("name"):
-        user["step"] = "awaiting_name"
+        user["step"] = "awaiting_onboard_cta"
         save_users(users, only=user_id)
-        await _send_hello_new(m, user=user)
-        await m.answer(ASK_NAME, parse_mode="HTML")
+        await m.answer(HELLO_NEW, reply_markup=_hello_cta_kb(), parse_mode="HTML")
+        return
+
+    if user.get("step") == "awaiting_onboard_cta":
+        save_users(users, only=user_id)
+        await m.answer(HELLO_NEW, reply_markup=_hello_cta_kb(), parse_mode="HTML")
+        return
+
+    if user.get("step") == "awaiting_onboard_go":
+        save_users(users, only=user_id)
+        await m.answer(PRE_TEST_HTML, reply_markup=_pre_test_kb(), parse_mode="HTML")
         return
 
     if user.get("step") == "awaiting_promo":
@@ -315,9 +320,9 @@ async def start_cmd(m: Message, command: CommandObject = None):
     )
 
 
-@router.callback_query(F.data == "onboard:level_test")
-async def onboard_level_test(c: CallbackQuery):
-    """Кнопка «Пройти вступительный тест» после регистрации."""
+@router.callback_query(F.data == "onboard:check_level")
+async def onboard_check_level(c: CallbackQuery):
+    """Первая кнопка после /start → знакомство (имя)."""
     await c.answer()
     if not c.from_user or not c.message:
         return
@@ -327,11 +332,46 @@ async def onboard_level_test(c: CallbackQuery):
     ensure_growth(user)
     ensure_moderation(user)
 
-    if not user.get("name") or not user.get("rules_accepted"):
-        await c.message.answer(
-            "Сначала закончи регистрацию — имя и правила 🙂",
-            parse_mode="HTML",
-        )
+    if user.get("name") and user.get("assessment_done"):
+        from handlers.lessons import send_lessons_home
+        from services.database import MODE_LESSONS, set_mode
+
+        set_mode(uid, MODE_LESSONS)
+        await c.message.answer("Тест уже пройден — открываю уроки 👇")
+        await send_lessons_home(c.message)
+        return
+
+    if user.get("name") and user.get("step") == "awaiting_onboard_go":
+        await c.message.answer(PRE_TEST_HTML, reply_markup=_pre_test_kb(), parse_mode="HTML")
+        return
+
+    if user.get("name"):
+        # Имя есть, теста нет — сразу к pre-test
+        await _send_pre_test(c.message, uid, user["name"])
+        return
+
+    try:
+        await c.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await _ask_name_after_cta(c.message, uid)
+
+
+@router.callback_query(F.data == "onboard:go_test")
+async def onboard_go_test(c: CallbackQuery):
+    """Кнопка «Погнали!» → вступительный тест."""
+    await c.answer()
+    if not c.from_user or not c.message:
+        return
+    uid = str(c.from_user.id)
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_growth(user)
+    ensure_moderation(user)
+
+    if not user.get("name"):
+        await c.message.answer("Сначала напиши, как тебя зовут 🙂")
+        await _ask_name_after_cta(c.message, uid)
         return
 
     if user.get("assessment_done") or user.get("dev_unlock"):
@@ -339,18 +379,66 @@ async def onboard_level_test(c: CallbackQuery):
         from services.database import MODE_LESSONS, set_mode
 
         set_mode(uid, MODE_LESSONS)
-        await c.message.answer(
-            "Тест уровня уже пройден — открываю уроки 👇",
-            parse_mode="HTML",
-        )
+        await c.message.answer("Тест уровня уже пройден — открываю уроки 👇")
         await send_lessons_home(c.message)
         return
+
+    user["step"] = "ready"
+    user["rules_accepted"] = True
+    save_users(users, only=uid)
+
+    try:
+        await c.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
 
     from handlers.lessons import start_level_test_flow
     from services.database import MODE_LESSONS, set_mode
 
     set_mode(uid, MODE_LESSONS)
-    await start_level_test_flow(c.message)
+    await start_level_test_flow(c.message, skip_intro=True)
+
+
+@router.callback_query(F.data == "onboard:daily_fire")
+async def onboard_daily_fire(c: CallbackQuery):
+    """После теста — переход в Огонь дня."""
+    await c.answer()
+    if not c.from_user or not c.message:
+        return
+    uid = str(c.from_user.id)
+    from services.database import MODE_DAILY_FIRE, set_mode, users_for
+    from services.daily_fire import ensure_daily_fire, hub_intro
+    from handlers.daily_fire import daily_fire_kb
+    from services.growth import note_lesson_activity
+
+    set_mode(uid, MODE_DAILY_FIRE)
+    users = users_for(uid)
+    user = get_user(users, uid)
+    ensure_growth(user)
+    note_lesson_activity(user)
+    ensure_daily_fire(user)
+    save_users(users, only=uid)
+    try:
+        await c.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await c.message.answer(
+        hub_intro(user),
+        reply_markup=daily_fire_kb(user),
+        parse_mode="HTML",
+    )
+    from handlers.onboard_guided import send_df_tour_intro
+
+    users = users_for(uid)
+    user = get_user(users, uid)
+    await send_df_tour_intro(c.message, user)
+    save_users(users, only=uid)
+
+
+@router.callback_query(F.data == "onboard:level_test")
+async def onboard_level_test_legacy(c: CallbackQuery):
+    """Старая кнопка — направляем в новый флоу."""
+    await onboard_check_level(c)
 
 
 @router.message(Command("danil_test_messi"))
@@ -416,7 +504,7 @@ async def accept_rules(m: Message):
 
     user["step"] = "awaiting_name"
     save_users(users, only=user_id)
-    await m.answer(ASK_NAME, parse_mode="HTML")
+    await m.answer(ASK_NAME_RICO, parse_mode="HTML")
 
 
 @router.message(StepFilter("awaiting_rules"))
@@ -424,6 +512,25 @@ async def rules_nudge(m: Message):
     await m.answer(
         "Сначала прими правила — кнопка <b>✅ Принимаю правила</b> ниже.",
         reply_markup=_rules_kb(),
+        parse_mode="HTML",
+    )
+
+
+@router.message(StepFilter("awaiting_onboard_cta"))
+async def onboard_cta_nudge(m: Message):
+    await m.answer(
+        "Жми кнопку <b>🎯 Проверить уровень</b> под приветствием — "
+        "сначала познакомимся, потом тест 🙂",
+        reply_markup=_hello_cta_kb(),
+        parse_mode="HTML",
+    )
+
+
+@router.message(StepFilter("awaiting_onboard_go"))
+async def onboard_go_nudge(m: Message):
+    await m.answer(
+        "Когда будешь готов — жми <b>✅ Погнали!</b> под сообщением про тест 👇",
+        reply_markup=_pre_test_kb(),
         parse_mode="HTML",
     )
 
@@ -451,13 +558,12 @@ async def save_name_draft(m: Message):
         )
         return
 
-    # Фразы вроде Hello, I'm Ann — мягко подскажем, но всё равно спросим подтверждение
     user["pending_name"] = name
     user["step"] = "awaiting_name_confirm"
     save_users(users, only=user_id)
     await m.answer(
         NAME_CONFIRM.format(name=_esc(name)),
-        reply_markup=_name_sure_kb(),
+        reply_markup=_name_confirm_kb(),
         parse_mode="HTML",
     )
 
@@ -496,9 +602,27 @@ async def rename_during_confirm(m: Message):
     save_users(users, only=user_id)
     await m.answer(
         NAME_CONFIRM.format(name=_esc(name)),
-        reply_markup=_name_sure_kb(),
+        reply_markup=_name_confirm_kb(),
         parse_mode="HTML",
     )
+
+
+@router.callback_query(F.data == "name_confirm:redo")
+async def name_confirm_redo(c: CallbackQuery):
+    await c.answer()
+    if not c.from_user or not c.message:
+        return
+    uid = str(c.from_user.id)
+    users = load_users()
+    user = get_user(users, uid)
+    user["pending_name"] = ""
+    user["step"] = "awaiting_name"
+    save_users(users, only=uid)
+    try:
+        await c.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await c.message.answer(ASK_NAME_RICO, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "name_confirm:yes")
@@ -516,7 +640,7 @@ async def name_confirm_yes(c: CallbackQuery):
             await c.message.edit_reply_markup(reply_markup=None)
         except Exception:
             pass
-        await _finish_registration(c.message, user_id, name)
+        await _send_pre_test(c.message, user_id, name)
     else:
         await c.bot.send_message(int(user_id), "Напиши /start ещё раз.")
 

@@ -199,6 +199,20 @@ async def profile_promo_enter(m: Message):
     await m.answer(msg, reply_markup=profile_menu(user, user_id=m.from_user.id), parse_mode="HTML")
 
 
+@router.message(ModeFilter(MODE_PROFILE), F.text == "🗺 Навигация")
+async def profile_navigation(m: Message):
+    from handlers.start import NAV_MAP_HTML
+
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_growth(user)
+    await m.answer(
+        NAV_MAP_HTML,
+        reply_markup=profile_menu(user, user_id=m.from_user.id),
+        parse_mode="HTML",
+    )
+
+
 @router.message(ModeFilter(MODE_PROFILE), F.text == BTN_STREAK)
 async def streak_rewards_info(m: Message):
     users = load_users()

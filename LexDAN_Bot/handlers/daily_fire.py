@@ -88,7 +88,16 @@ def _uid(m: Message | CallbackQuery) -> str:
 
 
 async def _maybe_celebrate(m: Message, user: dict, users: dict, uid: str) -> None:
+    from services.onboard_guided import is_guided_onboard
+    from handlers.onboard_guided import maybe_send_df_done_cta
+
+    # Направляемый онбординг: своё сообщение + CTA на to be
+    if await maybe_send_df_done_cta(m, user, users, uid):
+        return
+
     if not should_celebrate_ritual(user):
+        return
+    if is_guided_onboard(user):
         return
     offer = pick_practice_offer(user)
     mark_ritual_celebrated(user)
@@ -118,6 +127,12 @@ async def open_daily_fire(m: Message):
     ensure_daily_fire(user)
     save_users(users, only=uid)
     await m.answer(hub_intro(user), reply_markup=daily_fire_kb(user), parse_mode="HTML")
+    from handlers.onboard_guided import send_df_tour_intro
+
+    users = users_for(uid)
+    user = get_user(users, uid)
+    await send_df_tour_intro(m, user)
+    save_users(users, only=uid)
 
 
 @router.message(ModeFilter(MODE_DAILY_FIRE), F.text == BTN_DF_BACK)

@@ -223,39 +223,42 @@ def _write_prompt(topic: str, left: int) -> str:
 
 async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     from services.growth import ensure_growth, touch_activity
-    from services.database import load_users, get_user, save_users
+    from services.database import load_users, get_user, save_users, MODE_MENU
+    from services.reg_campaign import grant_reg_full_trial_if_active, REG_FULL_TRIAL_DAYS
+    from handlers.start import _post_test_fire_kb
+    from handlers.keyboards import main_menu
 
     finish_assessment(user_id, final)
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
     touch_activity(user)
-    save_users(users)
+    grant_reg_full_trial_if_active(user)
+    user["step"] = "ready"
+    user["mode"] = MODE_MENU
+    user["last_section"] = "главное меню"
+    save_users(users, only=user_id)
 
-    rico = RICO_AFTER_LEVEL.get(final, RICO_AFTER_LEVEL["A1"])
+    note_block = f"{note}" if note else ""
     msg = (
-        f"🏁 <b>Тест позади!</b> 🙂\n\n"
-        f"{note}"
-        f"Ваш предполагаемый уровень — <b>{final}</b>.\n"
-        f"Открыты <b>{final}</b> и все уровни ниже. Следующий выше откроется "
-        f"после сдачи теста по Grammar на текущем уровне.\n\n"
-        f"{rico}\n\n"
-        "Рецепт: <b>~15 минут в день</b>. Серия дней и друзья дают бустеры — смотри в профиле 🔥\n"
-        "🛡️ Стрик-сейфы копятся за длинную серию: <b>30</b>, <b>70</b>, <b>100</b>, <b>150</b>…\n\n"
-        "👇 Выбери уровень ниже и начни с Vocabulary или Grammar."
+        f"🏁 <b>Тест позади!</b>\n\n"
+        f"{note_block}"
+        f"Твой уровень: <b>{final}</b> 🎯\n\n"
+        f"🎁 <b>Подарок за прохождение теста:</b>\n"
+        f"<b>{REG_FULL_TRIAL_DAYS} дня</b> полного доступа бесплатно.\n"
+        f"Уроки без лимита, все голоса и общение.\n\n"
+        "🦜 <b>Рико:</b> «Ты уже кое-что знаешь — это круто! 👏\n"
+        "Сейчас начнём с «🔥 Огня дня» — тут ежедневно появляются интересные "
+        "и необычные слова, факты и голоса.»"
     )
-    await m.answer(msg, parse_mode="HTML")
-    from handlers.start import NAV_MAP_HTML
-
-    await m.answer(NAV_MAP_HTML, parse_mode="HTML")
-    await send_lessons_home(
-        m,
-        intro=(
-            f"📚 Уроки\n\n"
-            f"Твой уровень: <b>{final}</b> (открыт он и ниже).\n"
-            f"Выбери уровень 👇"
-        ),
-        show_start_today=False,
+    await m.answer(
+        msg,
+        reply_markup=_post_test_fire_kb(),
+        parse_mode="HTML",
+    )
+    await m.answer(
+        "Главное меню всегда под рукой 👇",
+        reply_markup=main_menu(user, user_id=user_id),
     )
 
 
@@ -277,9 +280,10 @@ async def start_level_test(m: Message):
     await start_level_test_flow(m)
 
 
-async def start_level_test_flow(m: Message) -> None:
+async def start_level_test_flow(m: Message, *, skip_intro: bool = False) -> None:
     """Запуск вступительного теста уровня (из Уроков или кнопки онбординга)."""
-    await m.answer(RICO_BEFORE_TEST, parse_mode="HTML")
+    if not skip_intro:
+        await m.answer(RICO_BEFORE_TEST, parse_mode="HTML")
     from services.tg_out import status
 
     async with status(m, "Секунду, готовлю тебе тест… 🦜"):

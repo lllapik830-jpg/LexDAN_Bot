@@ -354,6 +354,9 @@ async def _finish_exercise_ok(
     topic_title = (user.get("lesson") or {}).get("topic_title") or "тема"
     extra = ""
     topic_just_done = False
+    from services.onboard_guided import is_guided_onboard
+
+    guided_early = is_guided_onboard(user)
     if is_topic_exercises_done(user, level, topic_id) and not was_exercises_complete:
         mark_topic_done(user_id, level, topic_id)
         users = load_users()
@@ -362,11 +365,12 @@ async def _finish_exercise_ok(
         note_lesson_completed(user)
         save_users(users, only=user_id)
         topic_just_done = True
-        extra = f"\n\n🎉 <b>Тема «{topic_title}» полностью пройдена!</b> ✅"
-        users = load_users()
-        user = get_user(users, user_id)
-        if all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
-            extra += "\n\n🔓 Основные темы пройдены — открой <b>🎯 Тест по Grammar</b> в списке тем!"
+        if not guided_early:
+            extra = f"\n\n🎉 <b>Тема «{topic_title}» полностью пройдена!</b> ✅"
+            users = load_users()
+            user = get_user(users, user_id)
+            if all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
+                extra += "\n\n🔓 Основные темы пройдены — открой <b>🎯 Тест по Grammar</b> в списке тем!"
 
     done = get_done_exercises(user, level, topic_id)
     next_num = None
@@ -382,6 +386,13 @@ async def _finish_exercise_ok(
             progress_lines.append(f"{mark} Задание {n} — {title}")
 
     speak_items = [] if skip_speak else _speak_items_for_exercise(ex)
+    from services.onboard_guided import is_guided_onboard, praise_ok
+
+    guided = is_guided_onboard(user)
+    if guided:
+        skip_speak = True
+        speak_items = []
+
     if not skip_speak and not speak_items and ex:
         logging.info(
             "Rico speak skipped: no English phrase for subtype=%r answer=%r sentence_en=%r",
@@ -424,13 +435,25 @@ async def _finish_exercise_ok(
         )
         return
 
+    if guided and (topic_just_done or next_num is None):
+        clear_active_exercise(user_id)
+        await m.answer(text + extra, parse_mode="HTML")
+        from handlers.onboard_guided import finish_guided_after_topic
+
+        await finish_guided_after_topic(m, user_id)
+        return
+
     if topic_just_done or next_num is None:
         clear_active_exercise(user_id)
         lines = [text + extra, "", "📝 Прогресс:"] + progress_lines
         await m.answer("\n".join(lines), reply_markup=exercises_menu_kb(done), parse_mode="HTML")
         return
 
-    await m.answer(text + extra, parse_mode="HTML")
+    out = text + extra
+    if guided and newly_done and "✅" in (text or ""):
+        # уже есть похвала из exercise_answer
+        pass
+    await m.answer(out, parse_mode="HTML")
     await _launch_exercise(m, user_id, level, topic_id, topic_title, next_num)
 
 
@@ -1339,34 +1362,42 @@ async def _launch_exercise(
     users = load_users()
     user = get_user(users, user_id)
     ensure_growth(user)
-    ok, tip = can_do_grammar_exercise(user)
-    if not ok:
-        done = get_done_exercises(user, level, topic_id)
-        await m.answer(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
-        await m.answer(
-            "📝 Прогресс по теме сохранён — завтра продолжим с галочками:",
-            reply_markup=exercises_menu_kb(done),
-        )
-        open_exercises_menu(user_id)
-        return
+    from services.onboard_guided import is_guided_onboard
+
+    if not is_guided_onboard(user):
+        ok, tip = can_do_grammar_exercise(user)
+        if not ok:
+            done = get_done_exercises(user, level, topic_id)
+            await m.answer(tip or "", reply_markup=lesson_limit_inline_kb(), parse_mode="HTML")
+            await m.answer(
+                "📝 Прогресс по теме сохранён — завтра продолжим с галочками:",
+                reply_markup=exercises_menu_kb(done),
+            )
+            open_exercises_menu(user_id)
+            return
 
     from services.tg_out import status
 
     async with status(m, "🦜 Рико готовит задание…"):
         ex = generate_grammar_exercise(level, topic_title, num, topic_id=topic_id)
         start_exercise(user_id, num, ex)
-    await _send_exercise_card(m, num, ex)
+    await _send_exercise_card(m, num, ex, user_id=user_id)
 
 
-async def _send_exercise_card(m: Message, num: int, ex: dict):
+async def _send_exercise_card(m: Message, num: int, ex: dict, *, user_id: str | None = None):
     inline = exercise_help_inline_kb()
+    uid = user_id or (str(m.from_user.id) if m.from_user else "")
+    users = load_users()
+    user = get_user(users, uid) if uid else {}
+    kb = _exercise_kb(ex, user=user)
+
     if ex["kind"] == "mcq":
         body = ex.get("prompt") or ""
         text = (
             f"<b>Задание {num}/8</b>\n\n{body}\n\n"
             "👇 Ответ — кнопкой внизу. Не понял фразу — <b>🌍 Перевести</b>."
         )
-        await m.answer(text, reply_markup=exercise_mcq_kb(ex["options"]), parse_mode="HTML")
+        await m.answer(text, reply_markup=kb, parse_mode="HTML")
         await m.answer("👇 Подсказки к заданию:", reply_markup=inline)
     else:
         body = ex.get("prompt") or ""
@@ -1375,7 +1406,7 @@ async def _send_exercise_card(m: Message, num: int, ex: dict):
             text += "\n\nНе понятно слово — спроси: «как переводится …»"
         else:
             text += "\n\nНе понятно — жми кнопки под этим сообщением."
-        await m.answer(text, reply_markup=exercise_write_kb(), parse_mode="HTML")
+        await m.answer(text, reply_markup=kb, parse_mode="HTML")
         await m.answer("👇 Подсказки к заданию:", reply_markup=inline)
 
 
@@ -1402,9 +1433,18 @@ async def start_assignment(m: Message):
     await _launch_exercise(m, str(m.from_user.id), level, topic_id, title, num)
 
 
-def _exercise_kb(ex: dict) -> ReplyKeyboardMarkup:
+def _exercise_kb(ex: dict, *, user: dict | None = None) -> ReplyKeyboardMarkup:
+    from services.onboard_guided import is_guided_onboard
+    from aiogram.types import ReplyKeyboardRemove
+
+    guided = bool(user and is_guided_onboard(user))
     if ex.get("kind") == "mcq" and ex.get("options"):
+        if guided:
+            rows = [[KeyboardButton(text=opt)] for opt in ex["options"]]
+            return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
         return exercise_mcq_kb(ex["options"])
+    if guided:
+        return ReplyKeyboardRemove()
     return exercise_write_kb()
 
 
@@ -1416,7 +1456,7 @@ async def _show_exercise_translation(m: Message, user: dict):
             "🦜 Здесь задание — <b>перевести на русский самому</b>.\n"
             "Не подскажу готовый ответ. Не понял слово — спроси "
             "«как переводится …» или жми помощь Рико.",
-            reply_markup=_exercise_kb(ex),
+            reply_markup=_exercise_kb(ex, user=user),
             parse_mode="HTML",
         )
         return
@@ -1424,7 +1464,7 @@ async def _show_exercise_translation(m: Message, user: dict):
         await m.answer(
             "🦜 Здесь задание — <b>перевести на английский</b>.\n"
             "Русский текст уже в задании. Нужна подсказка — жми помощь Рико.",
-            reply_markup=_exercise_kb(ex),
+            reply_markup=_exercise_kb(ex, user=user),
             parse_mode="HTML",
         )
         return
@@ -1432,12 +1472,12 @@ async def _show_exercise_translation(m: Message, user: dict):
     if not ru:
         await m.answer(
             "🦜 Не получилось перевести. Попробуй ещё раз или спроси помощь.",
-            reply_markup=_exercise_kb(ex),
+            reply_markup=_exercise_kb(ex, user=user),
         )
         return
     await m.answer(
         f"🌍 <b>Перевод:</b>\n<i>{ru}</i>",
-        reply_markup=_exercise_kb(ex),
+        reply_markup=_exercise_kb(ex, user=user),
         parse_mode="HTML",
     )
     await m.answer("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
@@ -1488,7 +1528,7 @@ async def _do_exercise_help(m: Message, user: dict, uid: str):
     )
     ex["help_count"] = help_count + 1
     update_active_exercise(uid, ex)
-    await m.answer(tip, reply_markup=_exercise_kb(ex), parse_mode="HTML")
+    await m.answer(tip, reply_markup=_exercise_kb(ex, user=user), parse_mode="HTML")
     await m.answer("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
 
 
@@ -1558,16 +1598,36 @@ async def exercise_answer(m: Message):
         if m.text not in options:
             await m.answer(
                 "Выбери один из вариантов кнопок ниже.",
-                reply_markup=_exercise_kb(ex),
+                reply_markup=_exercise_kb(ex, user=user),
             )
             return
 
         answer = (ex.get("answer") or "").strip()
         correct = m.text.strip() == answer
 
+        from services.onboard_guided import is_guided_onboard, praise_ok
+
         if correct:
+            ok_text = praise_ok(num) if is_guided_onboard(user) else "✅ Верно! Красава 🦜"
             await _finish_exercise_ok(
-                m, uid, level, topic_id, num, "✅ Верно! Красава 🦜", ex=ex
+                m, uid, level, topic_id, num, ok_text, ex=ex
+            )
+            return
+
+        # guided: сразу объясняем и идём дальше
+        if is_guided_onboard(user):
+            explain = rico_explain_wrong_final(
+                level, title, ex.get("prompt") or "", answer
+            )
+            await _finish_exercise_ok(
+                m,
+                uid,
+                level,
+                topic_id,
+                num,
+                explain + "\n\nИдём дальше 👇",
+                ex=ex,
+                skip_speak=True,
             )
             return
 
@@ -1594,7 +1654,7 @@ async def exercise_answer(m: Message):
         update_active_exercise(uid, ex)
         await m.answer(
             "🦜 Неправильно, попробуй ещё раз!",
-            reply_markup=_exercise_kb(ex),
+            reply_markup=_exercise_kb(ex, user=user),
         )
         await m.answer("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
         return
@@ -1603,7 +1663,7 @@ async def exercise_answer(m: Message):
     subtype = ex.get("subtype") or "write"
     if subtype in {"translate_en", "translate_ru"} and is_word_lookup_question(m.text):
         tip = rico_word_lookup(level, title, m.text, ex)
-        await m.answer(tip, reply_markup=exercise_write_kb(), parse_mode="HTML")
+        await m.answer(tip, reply_markup=_exercise_kb(ex, user=user), parse_mode="HTML")
         await m.answer("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
         return
 
@@ -1616,10 +1676,33 @@ async def exercise_answer(m: Message):
         subtype=subtype,
         accept=list(ex.get("accept") or []),
     )
+    from services.onboard_guided import is_guided_onboard, praise_ok
+
     if _as_bool(result.get("correct")):
-        fb = result.get("feedback_ru") or "Отлично!"
+        if is_guided_onboard(user):
+            fb = praise_ok(num)
+        else:
+            fb = f"✅ {result.get('feedback_ru') or 'Отлично!'}"
         await _finish_exercise_ok(
-            m, uid, level, topic_id, num, f"✅ {fb}", ex=ex
+            m, uid, level, topic_id, num, fb if fb.startswith("✅") else f"✅ {fb}", ex=ex
+        )
+        return
+
+    if is_guided_onboard(user):
+        model = (ex.get("answer") or "").strip()
+        fb = (result.get("feedback_ru") or "").strip()
+        explain = fb or f"Правильный ответ: <b>{model}</b>"
+        if model and model not in explain:
+            explain = f"{explain}\nПравильный ответ: <b>{model}</b>"
+        await _finish_exercise_ok(
+            m,
+            uid,
+            level,
+            topic_id,
+            num,
+            f"❌ {explain}\n\nИдём дальше 👇",
+            ex=ex,
+            skip_speak=True,
         )
         return
 
@@ -1652,7 +1735,7 @@ async def exercise_answer(m: Message):
             "❌ Не совсем так.\n"
             "Можно взять <b>подсказку</b> кнопкой ниже — или попробуй ещё раз "
             "своими словами (без раскрытия ответа).",
-            reply_markup=exercise_write_kb(),
+            reply_markup=_exercise_kb(ex, user=user),
             parse_mode="HTML",
         )
         await m.answer("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
@@ -1676,7 +1759,7 @@ async def exercise_answer(m: Message):
     tip = fb or "Не совсем так. Подумай ещё раз."
     if "Нужна форма:" in tip or "Правильнее:" in tip:
         tip = "Не совсем так. Можно взять подсказку или попробуй ещё раз."
-    await m.answer(f"❌ {tip}", reply_markup=exercise_write_kb(), parse_mode="HTML")
+    await m.answer(f"❌ {tip}", reply_markup=_exercise_kb(ex, user=user), parse_mode="HTML")
     await m.answer("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
 
 

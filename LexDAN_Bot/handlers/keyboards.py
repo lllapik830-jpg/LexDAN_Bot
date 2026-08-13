@@ -85,6 +85,7 @@ def profile_menu(
     if task_btn:
         rows.append([KeyboardButton(text=task_btn)])
     rows.append([KeyboardButton(text="✏️ Изменить имя"), KeyboardButton(text=BTN_ENTER_PROMO)])
+    rows.append([KeyboardButton(text="🗺 Навигация")])
     rows.append([KeyboardButton(text=BTN_STREAK), KeyboardButton(text=BTN_REFERRAL)])
     if user is not None and can_restore_streak(user):
         rows.append([KeyboardButton(text=BTN_RESTORE_STREAK)])
