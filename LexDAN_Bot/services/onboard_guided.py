@@ -133,33 +133,78 @@ def ensure_onboard(user: dict) -> dict:
 
 
 def is_guided_onboard(user: dict) -> bool:
+    """Спец-флоу после теста: Огонь дня → to be → задания."""
     ob = ensure_onboard(user)
-    return bool(ob.get("active"))
+    if not ob.get("active"):
+        return False
+    return onboard_stage(user) in {
+        "daily_fire",
+        "grammar_cta",
+        "slides",
+        "tasks_menu",
+        "tasks",
+    }
 
 
 def is_imit_onboard(user: dict) -> bool:
     return bool(ensure_onboard(user).get("imit"))
 
 
+def is_imit_active(user: dict) -> bool:
+    """Любая стадия полной имитации (включая привет / имя / тест)."""
+    ob = ensure_onboard(user)
+    return bool(ob.get("active") and ob.get("imit"))
+
+
 def onboard_stage(user: dict) -> str:
     return str(ensure_onboard(user).get("stage") or "")
 
 
-def start_imit_onboard(user: dict) -> None:
-    """Включить имитацию направляемого онбординга с Огня дня."""
+def advance_imit_after_test(user: dict) -> None:
+    """После вступительного теста → стадия Огня дня."""
     from services.daily_fire import KINDS, ensure_daily_fire
-    from services.growth import ensure_growth, start_trial
+
+    ob = ensure_onboard(user)
+    if not (ob.get("active") and ob.get("imit")):
+        return
+    ob["stage"] = "daily_fire"
+    ob["slide"] = 0
+    ob["awaiting_clarify"] = False
+    ob["df_intro_sent"] = False
+    ob["df_done_sent"] = False
+    df = ensure_daily_fire(user)
+    df["opened"] = {k: False for k in KINDS}
+    df["celebrated"] = False
+    df["cache"] = {}
+
+
+def start_imit_onboard(user: dict) -> None:
+    """Полная имитация онбординга с нуля: привет → имя → тест → огонь → to be."""
+    from services.daily_fire import KINDS, ensure_daily_fire
+    from services.growth import ensure_growth
     from services.lesson_state import ensure_progress, progress_key
 
     ensure_growth(user)
     ensure_progress(user)
+
+    # Бэкап, чтобы /imit_finish вернул профиль
+    user["onboard_imit_backup"] = {
+        "name": user.get("name") or "",
+        "pending_name": user.get("pending_name") or "",
+        "assessment_done": bool(user.get("assessment_done")),
+        "level": user.get("level") or "A0",
+        "grammar_unlock_ceiling": user.get("grammar_unlock_ceiling") or "A0",
+        "step": user.get("step") or "ready",
+        "dev_unlock": bool(user.get("dev_unlock")),
+        "reg_full_trial_granted": bool(user.get("reg_full_trial_granted")),
+    }
 
     ob = ensure_onboard(user)
     ob.update(
         {
             "active": True,
             "imit": True,
-            "stage": "daily_fire",
+            "stage": "intro",
             "slide": 0,
             "awaiting_clarify": False,
             "df_intro_sent": False,
@@ -167,7 +212,6 @@ def start_imit_onboard(user: dict) -> None:
         }
     )
 
-    # Чтобы тур и задания прошли «с нуля»
     df = ensure_daily_fire(user)
     df["opened"] = {k: False for k in KINDS}
     df["celebrated"] = False
@@ -179,30 +223,45 @@ def start_imit_onboard(user: dict) -> None:
     topics = list(user["grammar_progress"].get("completed_topics") or [])
     user["grammar_progress"]["completed_topics"] = [t for t in topics if t != key]
 
-    user["assessment_done"] = True
-    user["level"] = user.get("level") or "A0"
-    user["grammar_unlock_ceiling"] = user.get("grammar_unlock_ceiling") or "A0"
+    # Как новый пользователь
+    user["name"] = ""
+    user["pending_name"] = ""
+    user["assessment_done"] = False
+    user["assessment"] = {}
+    user["dev_unlock"] = False
     user["rules_accepted"] = True
-    user["step"] = "ready"
-    # чтобы лимиты не мешали прогону
-    if not user.get("reg_full_trial_granted"):
-        start_trial(user, days=3)
-        user["reg_full_trial_granted"] = True
-        user["in_promo_trial"] = True
-        user["promo_listening"] = True
+    user["step"] = "awaiting_onboard_cta"
+    user["level"] = "A0"
+    user["grammar_unlock_ceiling"] = "A0"
+    # чтобы подарок после теста снова выдался в имитации
+    user["reg_full_trial_granted"] = False
 
 
 def finish_imit_onboard(user: dict) -> None:
+    """Выключить имитацию и вернуть бэкап профиля."""
+    bak = user.pop("onboard_imit_backup", None) or {}
     ob = ensure_onboard(user)
     ob.update(_blank())
+
+    if bak:
+        if bak.get("name"):
+            user["name"] = bak["name"]
+        user["pending_name"] = bak.get("pending_name") or ""
+        user["assessment_done"] = bool(bak.get("assessment_done"))
+        if bak.get("level"):
+            user["level"] = bak["level"]
+        if bak.get("grammar_unlock_ceiling"):
+            user["grammar_unlock_ceiling"] = bak["grammar_unlock_ceiling"]
+        user["step"] = bak.get("step") or "ready"
+        user["dev_unlock"] = bool(bak.get("dev_unlock"))
+        user["reg_full_trial_granted"] = bool(bak.get("reg_full_trial_granted"))
 
 
 def complete_guided_path(user: dict) -> None:
-    """Путь пройден — обычный режим бота, флаг imit можно снять отдельно."""
+    """Путь пройден — обычный режим бота; imit-маркер до /imit_finish."""
     ob = ensure_onboard(user)
     was_imit = bool(ob.get("imit"))
     ob.update(_blank())
-    # imit остаётся маркером до /imit_finish, но active выключен
     if was_imit:
         ob["imit"] = True
         ob["stage"] = "done"

@@ -237,6 +237,10 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     user["step"] = "ready"
     user["mode"] = MODE_MENU
     user["last_section"] = "главное меню"
+    from services.onboard_guided import advance_imit_after_test, is_imit_active
+
+    if is_imit_active(user):
+        advance_imit_after_test(user)
     save_users(users, only=user_id)
 
     note_block = f"{note}" if note else ""

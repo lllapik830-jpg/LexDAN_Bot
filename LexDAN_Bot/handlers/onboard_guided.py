@@ -207,21 +207,25 @@ async def begin_to_be_slides(m: Message, uid: str) -> None:
 
 @router.message(Command("imit_start"))
 async def imit_start_cmd(m: Message):
+    """Полный онбординг с нуля (как новый пользователь)."""
+    from handlers.start import HELLO_NEW, _hello_cta_kb
+    from services.lesson_state import clear_lesson
+
     uid = str(m.from_user.id)
     users = load_users()
     user = get_user(users, uid)
     ensure_growth(user)
     start_imit_onboard(user)
     save_users(users, only=uid)
+    clear_lesson(uid)
     set_mode(uid, MODE_MENU)
     await m.answer(
-        "🧪 <b>Имитация онбординга включена</b>\n\n"
-        "Сценарий с Огня дня → to be → 8 заданий.\n"
-        "Зайди в <b>🔥 Огонь дня</b> и просмотри все 4 раздела по очереди.\n\n"
-        "Выход: /imit_finish",
-        reply_markup=main_menu(user, user_id=uid),
+        "🧪 <b>Имитация полного онбординга</b>\n"
+        "Привет → имя → тест → подарок → Огонь дня → to be → 8 заданий.\n"
+        "Выход в любой момент: /imit_finish",
         parse_mode="HTML",
     )
+    await m.answer(HELLO_NEW, reply_markup=_hello_cta_kb(), parse_mode="HTML")
 
 
 @router.message(Command("imit_finish"))
@@ -234,7 +238,7 @@ async def imit_finish_cmd(m: Message):
     save_users(users, only=uid)
     set_mode(uid, MODE_MENU)
     await m.answer(
-        "✅ Имитация выключена. Бот снова в обычном режиме.",
+        "✅ Имитация выключена. Профиль возвращён, обычный режим.",
         reply_markup=main_menu(user, user_id=uid),
     )
 

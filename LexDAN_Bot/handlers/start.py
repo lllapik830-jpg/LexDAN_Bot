@@ -209,6 +209,10 @@ async def _send_pre_test(m: Message, user_id: str, name: str) -> None:
     user["rules_accepted"] = True  # часть 1: без отдельного экрана правил
     user["mode"] = MODE_MENU
     user["step"] = "awaiting_onboard_go"
+    from services.onboard_guided import ensure_onboard, is_imit_active
+
+    if is_imit_active(user):
+        ensure_onboard(user)["stage"] = "pre_test"
     grant_referral_bonuses(user_id, users)
     save_users(users, only=user_id)
 
