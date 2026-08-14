@@ -281,14 +281,13 @@ def praise_ok(index: int | None = None) -> str:
 
 
 def clarify_rico(question: str, user_name: str = "друг") -> str:
-    """Ответ Рико строго по теме to be (текст + потом озвучка)."""
+    """Ответ Рико строго по теме to be — коротко, по-человечески, без голоса."""
     from services.gpt import chat_completion
     import logging
 
     fallback = (
-        "🦜 Давай коротко: <b>to be</b> сейчас — "
-        "I am / you are / he-she-it is / we-you-they are. "
-        "Спроси ещё раз чуть конкретнее — разберём на примере!"
+        "🦜 Коротко: сейчас — I am / you are / he-she-it is / we-you-they are. "
+        "Спроси ещё раз чуть конкретнее — разберём на примере."
     )
     try:
         text = chat_completion(
@@ -296,14 +295,14 @@ def clarify_rico(question: str, user_name: str = "друг") -> str:
                 {
                     "role": "system",
                     "content": (
-                        "Ты попугай Рико 🦜 — живой, дружелюбный репетитор. "
-                        "Отвечай ТОЛЬКО по теме Present Simple of to be "
+                        "Ты попугай Рико 🦜 — живой репетитор. "
+                        "Отвечай ТОЛЬКО по Present Simple of to be "
                         "(I am / you are / he-she-it is / we-you-they are, "
-                        "отрицания, вопросы). Не уходи в другие темы, "
-                        "не болтай о боте и жизни. "
-                        "По-русски, с короткими английскими примерами; "
-                        "после каждого EN-примера — перевод курсивом <i>…</i>. "
-                        "HTML для Telegram (<b>, <i>). Коротко и по-человечески."
+                        "отрицания, вопросы). Не уходи в другие темы. "
+                        "По-русски, 2–4 коротких предложения максимум. "
+                        "Один короткий EN-пример + перевод <i>…</i>. "
+                        "Без воды, без длинных списков, как человек в чате. "
+                        "HTML: только <b> и <i>."
                     ),
                 },
                 {
@@ -314,9 +313,9 @@ def clarify_rico(question: str, user_name: str = "друг") -> str:
                     ),
                 },
             ],
-            max_tokens=320,
-            temperature=0.5,
-            timeout=15,
+            max_tokens=120,
+            temperature=0.4,
+            timeout=12,
         )
         if not text.startswith("🦜"):
             text = f"🦜 {text}"

@@ -268,6 +268,9 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     save_users(users, only=user_id)
 
     note_block = f"{note}" if note else ""
+    from config import CHANNEL_URL, CHANNEL_USERNAME
+
+    channel = CHANNEL_URL or f"https://t.me/{CHANNEL_USERNAME}"
     msg = (
         f"🏁 <b>Тест позади!</b>\n\n"
         f"{note_block}"
@@ -275,13 +278,19 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         f"🎁 <b>Подарок за прохождение теста:</b>\n"
         f"<b>{REG_FULL_TRIAL_DAYS} дня</b> полного доступа бесплатно.\n"
         f"Уроки без лимита, все голоса и общение.\n\n"
+        f"📣 Можно подписаться на канал <b>@{CHANNEL_USERNAME}</b> и следить "
+        f"за обновлениями бота: {channel}\n\n"
         "🦜 <b>Рико:</b> «Ты уже кое-что знаешь — это круто! 👏\n"
         "Сейчас начнём с «🔥 Огня дня» — тут ежедневно появляются интересные "
         "и необычные слова, факты и голоса.»"
     )
     # Сначала убрать reply-клавиатуру (меню), потом inline CTA
     if imit:
-        await m.answer("🔥", reply_markup=ReplyKeyboardRemove())
+        rm = await m.answer(".", reply_markup=ReplyKeyboardRemove())
+        try:
+            await m.bot.delete_message(m.chat.id, rm.message_id)
+        except Exception:
+            pass
     await m.answer(
         msg,
         reply_markup=_post_test_fire_kb(),
@@ -312,31 +321,43 @@ async def start_level_test(m: Message):
     await start_level_test_flow(m)
 
 
-async def start_level_test_flow(m: Message, *, skip_intro: bool = False) -> None:
-    """Запуск вступительного теста уровня (из Уроков или кнопки онбординга)."""
+async def start_level_test_flow(
+    m: Message,
+    *,
+    skip_intro: bool = False,
+    user_id: str | None = None,
+) -> None:
+    """Запуск вступительного теста уровня (из Уроков или кнопки онбординга).
+
+    user_id обязателен при вызове из CallbackQuery: у c.message.from_user — бот!
+    """
+    uid = str(user_id or (m.from_user.id if m.from_user else "") or "")
+    if not uid:
+        return
     if not skip_intro:
         await m.answer(RICO_BEFORE_TEST, parse_mode="HTML")
     from services.tg_out import status
     from aiogram.types import ReplyKeyboardRemove
     from services.onboard_guided import is_imit_active
-
-    async with status(m, "Секунду, готовлю тебе тест… 🦜"):
-        user = start_assessment(str(m.from_user.id))
-    a = user["assessment"]
-    # На имитации сразу убираем меню, чтобы не мешало кнопкам теста
-    if is_imit_active(user):
-        await m.answer("🎯 Начинаем тест", reply_markup=ReplyKeyboardRemove())
-    # phase должен быть translate после start_assessment
-    if (user.get("assessment") or {}).get("phase") != "translate":
-        user = start_assessment(str(m.from_user.id))
-    a = user["assessment"]
-    a["phase"] = "translate"
     from services.database import load_users as _lu, save_users as _su, get_user as _gu
 
+    async with status(m, "Секунду, готовлю тебе тест… 🦜"):
+        user = start_assessment(uid)
+    # На имитации сразу убираем меню, чтобы не мешало кнопкам теста
+    if is_imit_active(user):
+        rm = await m.answer(".", reply_markup=ReplyKeyboardRemove())
+        try:
+            await m.bot.delete_message(m.chat.id, rm.message_id)
+        except Exception:
+            pass
+    a = user["assessment"]
+    a["phase"] = "translate"
     _users = _lu()
-    _u = _gu(_users, str(m.from_user.id))
+    _u = _gu(_users, uid)
+    ensure_user_fields(_u)
     _u["assessment"] = a
-    _su(_users, only=str(m.from_user.id))
+    _su(_users, only=uid)
+    user = _u
     await m.answer(
         "🎯 Тест уровня — задание 1/4: перевод\n\n"
         "Переведи текст на русский.\n"
@@ -413,7 +434,33 @@ async def skip_translate(m: Message):
         _save(users, only=str(m.from_user.id))
 
     if phase != "translate":
-        await m.answer("Сейчас нечего пропускать.", reply_markup=lessons_keyboard_for(user))
+        from services.onboard_guided import is_imit_active
+        from aiogram.types import ReplyKeyboardRemove
+
+        if is_imit_active(user):
+            # Тест мог записаться не на того uid — чиним и пропускаем, без меню уроков
+            if not (a.get("translate_source_en") or "").strip():
+                user = start_assessment(str(m.from_user.id))
+                a = user["assessment"]
+            a["phase"] = "translate"
+            from services.database import save_users as _save
+
+            users = load_users()
+            u = get_user(users, str(m.from_user.id))
+            u["assessment"] = a
+            _save(users, only=str(m.from_user.id))
+            est = a.get("translate_level") or "A1"
+            set_translate_estimate(str(m.from_user.id), est)
+            await m.answer(
+                "⏭️ Ок, пропускаем перевод без оценки.",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            await _start_vocab_flow(m, est)
+            return
+        await m.answer(
+            "Сейчас нечего пропускать.",
+            reply_markup=lessons_keyboard_for(user),
+        )
         return
 
     # Пропуск без оценки — берём текущий уровень текста как оценку

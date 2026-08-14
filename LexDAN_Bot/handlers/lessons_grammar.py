@@ -1614,8 +1614,18 @@ async def exercise_answer(m: Message):
             )
             return
 
-        # guided: сразу объясняем и идём дальше
+        # guided: 1-й раз — ещё шанс; 2-й — объясняем и дальше
         if is_guided_onboard(user):
+            wrong = int(ex.get("wrong_count") or 0) + 1
+            ex["wrong_count"] = wrong
+            update_active_exercise(uid, ex)
+            if wrong < 2:
+                await m.answer(
+                    "🦜 Не совсем. Попробуй ещё раз — у тебя есть второй шанс!",
+                    reply_markup=_exercise_kb(ex, user=user),
+                )
+                await m.answer("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
+                return
             explain = rico_explain_wrong_final(
                 level, title, ex.get("prompt") or "", answer
             )
@@ -1689,6 +1699,22 @@ async def exercise_answer(m: Message):
         return
 
     if is_guided_onboard(user):
+        wrong = int(ex.get("wrong_count") or 0) + 1
+        ex["wrong_count"] = wrong
+        update_active_exercise(uid, ex)
+        if wrong < 2:
+            tip = (result.get("feedback_ru") or "").strip()
+            tip = tip or "Не совсем так — подумай ещё раз."
+            # не светим правильный ответ с первого раза
+            if "Правильн" in tip or "ответ:" in tip.lower():
+                tip = "Не совсем так. Попробуй ещё раз!"
+            await m.answer(
+                f"❌ {tip}\n\n🦜 Второй шанс — напиши ещё раз!",
+                reply_markup=_exercise_kb(ex, user=user),
+                parse_mode="HTML",
+            )
+            await m.answer("👇 Подсказки:", reply_markup=exercise_help_inline_kb())
+            return
         model = (ex.get("answer") or "").strip()
         fb = (result.get("feedback_ru") or "").strip()
         explain = fb or f"Правильный ответ: <b>{model}</b>"

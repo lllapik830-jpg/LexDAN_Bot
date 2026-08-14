@@ -204,11 +204,14 @@ async def daily_fire_item(m: Message):
     else:
         text = format_fact(data, first_open=first_open)
 
-    # Все аудио в огне дня — только голос Рико
-    tts_parts = tts_parts_for(kind, data)
+    # Все аудио в огне дня — только голос Рико (на направляемом онбординге — без голоса)
+    from services.onboard_guided import is_guided_onboard
+
     await m.answer(text, reply_markup=daily_fire_kb(user), parse_mode="HTML")
-    for chunk in tts_parts:
-        await send_rico_voice(m, chunk, user=user, title="Огонь дня · Rico")
+    if not is_guided_onboard(user):
+        tts_parts = tts_parts_for(kind, data)
+        for chunk in tts_parts:
+            await send_rico_voice(m, chunk, user=user, title="Огонь дня · Rico")
 
     if first_open:
         users = users_for(uid)

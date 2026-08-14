@@ -48,6 +48,11 @@ HELLO_NEW = (
     "🎯 Давай проверим твой уровень? Это 3–4 минуты."
 )
 
+HELLO_RICO_VOICE_EN = (
+    "Hey! I'm LexDan, and this is my parrot Rico. "
+    "We'll turn your English from scary to easy. Let's go!"
+)
+
 ASK_NAME_RICO = (
     "🦜 <b>Рико:</b> «Отлично! Прежде чем начать, давай познакомимся поближе.\n"
     "Как тебя зовут?»"
@@ -222,15 +227,14 @@ async def _send_pre_test(m: Message, user_id: str, name: str) -> None:
     from aiogram.types import ReplyKeyboardRemove
 
     if is_imit_active(user):
-        await m.answer(
-            "Когда будешь готов — жми «Погнали!» 👇",
-            reply_markup=ReplyKeyboardRemove(),
-        )
+        # Убрать reply-меню без лишнего текста
+        rm = await m.answer(".", reply_markup=ReplyKeyboardRemove())
+        try:
+            await m.bot.delete_message(m.chat.id, rm.message_id)
+        except Exception:
+            pass
     else:
-        await m.answer(
-            "Когда будешь готов — жми «Погнали!» 👇",
-            reply_markup=main_menu(user, user_id=user_id),
-        )
+        await m.answer("👇", reply_markup=main_menu(user, user_id=user_id))
 
 
 # ─── legacy helpers (промо/правила — оставляем для тех, кто уже в середине старого флоу) ───
@@ -294,11 +298,25 @@ async def start_cmd(m: Message, command: CommandObject = None):
         user["step"] = "awaiting_onboard_cta"
         save_users(users, only=user_id)
         await m.answer(HELLO_NEW, reply_markup=_hello_cta_kb(), parse_mode="HTML")
+        from services.onboard_guided import is_imit_active
+        from services.elevenlabs import send_rico_voice
+
+        if is_imit_active(user):
+            await send_rico_voice(
+                m, HELLO_RICO_VOICE_EN, user=user, title="Rico · hello"
+            )
         return
 
     if user.get("step") == "awaiting_onboard_cta":
         save_users(users, only=user_id)
         await m.answer(HELLO_NEW, reply_markup=_hello_cta_kb(), parse_mode="HTML")
+        from services.onboard_guided import is_imit_active
+        from services.elevenlabs import send_rico_voice
+
+        if is_imit_active(user):
+            await send_rico_voice(
+                m, HELLO_RICO_VOICE_EN, user=user, title="Rico · hello"
+            )
         return
 
     if user.get("step") == "awaiting_onboard_go":
@@ -410,7 +428,7 @@ async def onboard_go_test(c: CallbackQuery):
     from services.database import MODE_LESSONS, set_mode
 
     set_mode(uid, MODE_LESSONS)
-    await start_level_test_flow(c.message, skip_intro=True)
+    await start_level_test_flow(c.message, skip_intro=True, user_id=uid)
 
 
 @router.callback_query(F.data == "onboard:daily_fire")
@@ -544,7 +562,7 @@ async def onboard_cta_nudge(m: Message):
 @router.message(StepFilter("awaiting_onboard_go"))
 async def onboard_go_nudge(m: Message):
     await m.answer(
-        "Когда будешь готов — жми <b>✅ Погнали!</b> под сообщением про тест 👇",
+        "Жми <b>✅ Погнали!</b> под сообщением про тест 👇",
         reply_markup=_pre_test_kb(),
         parse_mode="HTML",
     )

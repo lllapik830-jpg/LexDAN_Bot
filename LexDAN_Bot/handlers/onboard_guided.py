@@ -45,11 +45,9 @@ from services.onboard_guided import (
     finish_imit_onboard,
     is_guided_onboard,
     onboard_stage,
-    plain_for_tts,
     start_imit_onboard,
 )
 from services.lesson_state import open_topic
-from services.elevenlabs import send_rico_voice
 
 router = Router()
 
@@ -225,9 +223,14 @@ async def begin_to_be_slides(m: Message, uid: str) -> None:
 
 @router.message(Command("imit_start"))
 async def imit_start_cmd(m: Message):
-    """Полный онбординг с нуля (как новый пользователь)."""
-    from handlers.start import HELLO_NEW, _hello_cta_kb
+    """Полный онбординг с нуля (как новый пользователь). Только MANAGER."""
+    from config import MANAGER_ID
+    from handlers.start import HELLO_NEW, HELLO_RICO_VOICE_EN, _hello_cta_kb
     from services.lesson_state import clear_lesson
+    from services.elevenlabs import send_rico_voice
+
+    if not m.from_user or m.from_user.id != MANAGER_ID:
+        return
 
     uid = str(m.from_user.id)
     users = load_users()
@@ -245,10 +248,16 @@ async def imit_start_cmd(m: Message):
         parse_mode="HTML",
     )
     await m.answer(HELLO_NEW, reply_markup=_hello_cta_kb(), parse_mode="HTML")
+    # Ждём голос: create_task мог молча не отправиться
+    await send_rico_voice(m, HELLO_RICO_VOICE_EN, user=user, title="Rico · hello")
 
 
 @router.message(Command("imit_finish"))
 async def imit_finish_cmd(m: Message):
+    from config import MANAGER_ID
+
+    if not m.from_user or m.from_user.id != MANAGER_ID:
+        return
     uid = str(m.from_user.id)
     users = load_users()
     user = get_user(users, uid)
@@ -292,11 +301,16 @@ async def cb_slide_next(c: CallbackQuery):
         await c.answer("Сейчас это недоступно", show_alert=True)
         return
     ob = ensure_onboard(user)
+    # Передумал уточнять — убрать «спрашивай только про тему»
     if ob.get("awaiting_clarify") or ob.get("clarify_ids"):
-        await c.answer("Сначала закрой уточнение кнопкой «Понял»", show_alert=True)
-        return
+        for mid in list(ob.get("clarify_ids") or []):
+            try:
+                await c.bot.delete_message(c.message.chat.id, int(mid))
+            except Exception:
+                pass
+        ob["clarify_ids"] = []
+        ob["awaiting_clarify"] = False
     ob["slide"] = min(int(ob.get("slide") or 0) + 1, len(SLIDES) - 1)
-    # закрепить id текущего сообщения-слайда
     ob["slide_msg_id"] = c.message.message_id
     ob["slide_chat_id"] = c.message.chat.id
     save_users(users, only=uid)
@@ -315,8 +329,13 @@ async def cb_slide_prev(c: CallbackQuery):
         return
     ob = ensure_onboard(user)
     if ob.get("awaiting_clarify") or ob.get("clarify_ids"):
-        await c.answer("Сначала закрой уточнение кнопкой «Понял»", show_alert=True)
-        return
+        for mid in list(ob.get("clarify_ids") or []):
+            try:
+                await c.bot.delete_message(c.message.chat.id, int(mid))
+            except Exception:
+                pass
+        ob["clarify_ids"] = []
+        ob["awaiting_clarify"] = False
     ob["slide"] = max(int(ob.get("slide") or 0) - 1, 0)
     ob["slide_msg_id"] = c.message.message_id
     ob["slide_chat_id"] = c.message.chat.id
@@ -454,12 +473,6 @@ async def onboard_clarify_text(m: Message):
         answer = clarify_rico(m.text or "", user_name=name)
 
     ans = await m.answer(answer, parse_mode="HTML")
-    await send_rico_voice(
-        m,
-        plain_for_tts(answer),
-        user=user,
-        title="Rico · уточнение",
-    )
     got = await m.answer(
         "Если ясно — жми 👇",
         reply_markup=_got_it_kb(),
