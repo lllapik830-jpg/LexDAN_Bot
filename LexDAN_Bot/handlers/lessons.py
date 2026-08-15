@@ -222,9 +222,9 @@ def _write_prompt(topic: str, left: int) -> str:
 
 
 def _assess_no_menu(user: dict) -> bool:
-    from services.onboard_guided import is_imit_active
+    from services.onboard_guided import is_onboard_locked
 
-    return is_imit_active(user)
+    return is_onboard_locked(user)
 
 
 def _atk(user: dict, *, show_skip: bool = True):
@@ -256,6 +256,17 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     from handlers.keyboards import main_menu
     from aiogram.types import ReplyKeyboardRemove
 
+    from services.onboard_guided import (
+        advance_imit_after_test,
+        ensure_live_onboard,
+        is_onboard_locked,
+    )
+
+    users = load_users()
+    user = get_user(users, user_id)
+    ensure_live_onboard(user)
+    save_users(users, only=user_id)
+
     finish_assessment(user_id, final)
     users = load_users()
     user = get_user(users, user_id)
@@ -265,17 +276,12 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     user["step"] = "ready"
     user["mode"] = MODE_MENU
     user["last_section"] = "главное меню"
-    from services.onboard_guided import advance_imit_after_test, is_imit_active
-
-    imit = is_imit_active(user)
-    if imit:
+    locked = is_onboard_locked(user)
+    if locked:
         advance_imit_after_test(user)
     save_users(users, only=user_id)
 
     note_block = f"{note}" if note else ""
-    from config import CHANNEL_URL, CHANNEL_USERNAME
-
-    channel = CHANNEL_URL or f"https://t.me/{CHANNEL_USERNAME}"
     msg = (
         f"🏁 <b>Тест позади!</b>\n\n"
         f"{note_block}"
@@ -283,21 +289,19 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         f"🎁 <b>Подарок за прохождение теста:</b>\n"
         f"<b>{REG_FULL_TRIAL_DAYS} дня</b> полного доступа бесплатно.\n"
         f"Уроки без лимита, все голоса и общение.\n\n"
-        f"📣 Можно подписаться на канал <b>@{CHANNEL_USERNAME}</b> и следить "
-        f"за обновлениями бота: {channel}\n\n"
         "🦜 <b>Рико:</b> «Ты уже кое-что знаешь — это круто! 👏\n"
         "Сейчас начнём с «🔥 Огня дня» — тут ежедневно появляются интересные "
         "и необычные слова, факты и голоса.»"
     )
     # Сначала эмодзи огня (и сброс reply-клавиатуры), потом текст
-    if imit:
+    if locked:
         await m.answer("🔥", reply_markup=ReplyKeyboardRemove())
     await m.answer(
         msg,
         reply_markup=_post_test_fire_kb(),
         parse_mode="HTML",
     )
-    if not imit:
+    if not locked:
         await m.answer(
             "Главное меню всегда под рукой 👇",
             reply_markup=main_menu(user, user_id=user_id),
@@ -339,13 +343,13 @@ async def start_level_test_flow(
         await m.answer(RICO_BEFORE_TEST, parse_mode="HTML")
     from services.tg_out import status
     from aiogram.types import ReplyKeyboardRemove
-    from services.onboard_guided import is_imit_active
+    from services.onboard_guided import is_onboard_locked
     from services.database import load_users as _lu, save_users as _su, get_user as _gu
 
     async with status(m, "Секунду, готовлю тебе тест… 🦜"):
         user = start_assessment(uid)
-    # На имитации сразу убираем меню, чтобы не мешало кнопкам теста
-    if is_imit_active(user):
+    # На сценарии знакомства сразу убираем меню, чтобы не мешало кнопкам теста
+    if is_onboard_locked(user):
         rm = await m.answer(".", reply_markup=ReplyKeyboardRemove())
         try:
             await m.bot.delete_message(m.chat.id, rm.message_id)
@@ -442,10 +446,10 @@ async def skip_translate(m: Message):
         _save(users, only=str(m.from_user.id))
 
     if phase != "translate":
-        from services.onboard_guided import is_imit_active
+        from services.onboard_guided import is_onboard_locked
         from aiogram.types import ReplyKeyboardRemove
 
-        if is_imit_active(user):
+        if is_onboard_locked(user):
             # Тест мог записаться не на того uid — чиним и пропускаем, без меню уроков
             if not (a.get("translate_source_en") or "").strip():
                 user = start_assessment(str(m.from_user.id))

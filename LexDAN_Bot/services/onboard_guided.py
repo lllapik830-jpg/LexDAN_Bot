@@ -1,7 +1,8 @@
 """
-Направляемый онбординг (пока только имитация /imit_start).
+Направляемый онбординг для новых пользователей (и /imit_start).
 
 Стадии:
+  intro / pre_test — привет, имя, тест
   daily_fire  — тур по 4 разделам Огня дня
   grammar_cta — CTA «Начать» → тема to be
   slides      — интерактивные слайды + Уточнить
@@ -97,12 +98,20 @@ TASKS_OVERVIEW_HTML = (
 
 PATH_DONE_HTML = (
     "🦜 <b>Рико:</b> Отлично — вот ты и вошёл в русло и понимаешь, что к чему! 💚\n\n"
-    "У нас ещё много разделов с разными навыками — можешь исследовать их "
-    "по ходу обучения.\n\n"
-    "А пока отправляю тебя в <b>главное меню</b> — оттуда уже выбирай, "
-    "чем займёшься.\n"
-    "В профиле есть кнопка <b>🗺 Навигация</b>: она покажет, за что отвечает "
-    "каждый раздел."
+    "Уроки дальше будут так же: объяснение → задания. "
+    "А чтобы язык ожил, загляни в <b>🗣️ Общаться</b>: там можно болтать со мной "
+    "на любые темы — день, учёба, фильмы, что угодно. "
+    "Я поправлю и подхвачу разговор.\n\n"
+    "Завтра просто открой бота — я буду ждать. Так и появляется привычка."
+)
+
+PATH_NAV_HTML = (
+    "🗺 <b>Куда жать из меню</b>\n\n"
+    "🗣️ <b>Общаться</b> — живой чат с Рико на любые темы\n"
+    "📚 <b>Уроки</b> — грамматика, слова, слух, чтение\n"
+    "🔥 <b>Огонь дня</b> — ежедневная порция\n"
+    "📊 <b>Профиль</b> — подписка, стрик, карта разделов\n\n"
+    "Полная карта всегда в профиле: кнопка <b>🗺 Навигация</b>."
 )
 
 
@@ -155,8 +164,46 @@ def is_imit_active(user: dict) -> bool:
     return bool(ob.get("active") and ob.get("imit"))
 
 
+def is_onboard_locked(user: dict) -> bool:
+    """Сценарий знакомства идёт — меню закрыто (и живой путь, и имитация)."""
+    ob = ensure_onboard(user)
+    if not ob.get("active"):
+        return False
+    return onboard_stage(user) not in {"", "done"}
+
+
 def onboard_stage(user: dict) -> str:
     return str(ensure_onboard(user).get("stage") or "")
+
+
+def path_channel_html() -> str:
+    from config import CHANNEL_URL, CHANNEL_USERNAME
+
+    channel = CHANNEL_URL or f"https://t.me/{CHANNEL_USERNAME}"
+    return (
+        "📣 Если хочешь следить за обновлениями бота — можно подписаться "
+        f"на канал <b>@{CHANNEL_USERNAME}</b>: {channel}"
+    )
+
+
+def ensure_live_onboard(user: dict) -> None:
+    """Включить направляемый путь для нового пользователя (без сброса профиля)."""
+    ob = ensure_onboard(user)
+    if ob.get("active") or ob.get("stage") == "done":
+        return
+    if user.get("assessment_done"):
+        return
+    ob.update(
+        {
+            "active": True,
+            "imit": bool(ob.get("imit")),
+            "stage": ob.get("stage") or "intro",
+            "slide": 0,
+            "awaiting_clarify": False,
+            "df_intro_sent": False,
+            "df_done_sent": False,
+        }
+    )
 
 
 def advance_imit_after_test(user: dict) -> None:
@@ -164,7 +211,7 @@ def advance_imit_after_test(user: dict) -> None:
     from services.daily_fire import KINDS, ensure_daily_fire
 
     ob = ensure_onboard(user)
-    if not (ob.get("active") and ob.get("imit")):
+    if not ob.get("active"):
         return
     ob["stage"] = "daily_fire"
     ob["slide"] = 0
@@ -261,9 +308,9 @@ def complete_guided_path(user: dict) -> None:
     ob = ensure_onboard(user)
     was_imit = bool(ob.get("imit"))
     ob.update(_blank())
+    ob["stage"] = "done"
     if was_imit:
         ob["imit"] = True
-        ob["stage"] = "done"
 
 
 def plain_for_tts(html: str) -> str:

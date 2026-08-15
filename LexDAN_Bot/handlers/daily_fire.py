@@ -153,14 +153,15 @@ async def leave_daily_fire(m: Message):
     uid = _uid(m)
     users = users_for(uid)
     user = get_user(users, uid)
-    from services.onboard_guided import is_imit_active
+    from services.onboard_guided import is_imit_active, is_onboard_locked
     from aiogram.types import ReplyKeyboardRemove
 
-    if is_imit_active(user):
-        await m.answer(
-            "🧪 В сценарии выход в меню закрыт. Смотри Огонь дня или /imit_finish",
-            reply_markup=ReplyKeyboardRemove(),
-        )
+    if is_onboard_locked(user):
+        if is_imit_active(user):
+            tip = "🧪 В сценарии выход в меню закрыт. Смотри Огонь дня или /imit_finish"
+        else:
+            tip = "Сначала просмотри разделы Огня дня — меню откроется чуть позже."
+        await m.answer(tip, reply_markup=ReplyKeyboardRemove())
         # вернуть кнопки огня без «в меню»
         await m.answer(hub_intro(user), reply_markup=daily_fire_kb(user, guided=True), parse_mode="HTML")
         return

@@ -215,18 +215,18 @@ async def _send_pre_test(m: Message, user_id: str, name: str) -> None:
     user["rules_accepted"] = True  # часть 1: без отдельного экрана правил
     user["mode"] = MODE_MENU
     user["step"] = "awaiting_onboard_go"
-    from services.onboard_guided import ensure_onboard, is_imit_active
+    from services.onboard_guided import ensure_onboard, ensure_live_onboard, is_onboard_locked
 
-    if is_imit_active(user):
+    ensure_live_onboard(user)
+    if is_onboard_locked(user):
         ensure_onboard(user)["stage"] = "pre_test"
     grant_referral_bonuses(user_id, users)
     save_users(users, only=user_id)
 
     await m.answer(PRE_TEST_HTML, reply_markup=_pre_test_kb(), parse_mode="HTML")
-    from services.onboard_guided import is_imit_active
     from aiogram.types import ReplyKeyboardRemove
 
-    if is_imit_active(user):
+    if is_onboard_locked(user):
         # Убрать reply-меню без лишнего текста
         rm = await m.answer(".", reply_markup=ReplyKeyboardRemove())
         try:
@@ -295,28 +295,30 @@ async def start_cmd(m: Message, command: CommandObject = None):
 
     # Новый пользователь: привет + CTA (имя спросим после кнопки)
     if not user.get("name"):
+        from services.onboard_guided import ensure_live_onboard
+
+        ensure_live_onboard(user)
         user["step"] = "awaiting_onboard_cta"
         save_users(users, only=user_id)
         await m.answer(HELLO_NEW, reply_markup=_hello_cta_kb(), parse_mode="HTML")
-        from services.onboard_guided import is_imit_active
         from services.elevenlabs import send_rico_voice
 
-        if is_imit_active(user):
-            await send_rico_voice(
-                m, HELLO_RICO_VOICE_EN, user=user, title="Rico · hello"
-            )
+        await send_rico_voice(
+            m, HELLO_RICO_VOICE_EN, user=user, title="Rico · hello"
+        )
         return
 
     if user.get("step") == "awaiting_onboard_cta":
+        from services.onboard_guided import ensure_live_onboard
+
+        ensure_live_onboard(user)
         save_users(users, only=user_id)
         await m.answer(HELLO_NEW, reply_markup=_hello_cta_kb(), parse_mode="HTML")
-        from services.onboard_guided import is_imit_active
         from services.elevenlabs import send_rico_voice
 
-        if is_imit_active(user):
-            await send_rico_voice(
-                m, HELLO_RICO_VOICE_EN, user=user, title="Rico · hello"
-            )
+        await send_rico_voice(
+            m, HELLO_RICO_VOICE_EN, user=user, title="Rico · hello"
+        )
         return
 
     if user.get("step") == "awaiting_onboard_go":
@@ -417,6 +419,9 @@ async def onboard_go_test(c: CallbackQuery):
 
     user["step"] = "ready"
     user["rules_accepted"] = True
+    from services.onboard_guided import ensure_live_onboard
+
+    ensure_live_onboard(user)
     save_users(users, only=uid)
 
     try:

@@ -1,6 +1,6 @@
 """
-Имитация направляемого онбординга: /imit_start · /imit_finish.
-Слайды to be (одно сообщение), Уточнить → Понял (удаление), без меню.
+Направляемый онбординг: привет → тест → Огонь дня → to be.
+/imit_start · /imit_finish — прогон для админа.
 """
 
 import asyncio
@@ -37,11 +37,13 @@ from services.onboard_guided import (
     ONBOARD_TOPIC_LEVEL,
     ONBOARD_TOPIC_TITLE,
     PATH_DONE_HTML,
+    PATH_NAV_HTML,
     SLIDES,
     TASKS_OVERVIEW_HTML,
     clarify_rico,
     complete_guided_path,
     ensure_onboard,
+    path_channel_html,
     finish_imit_onboard,
     is_guided_onboard,
     onboard_stage,
@@ -181,7 +183,7 @@ async def begin_to_be_slides(m: Message, uid: str) -> None:
     user = get_user(users, uid)
     ensure_growth(user)
     if not is_guided_onboard(user):
-        await m.answer("Сейчас имитация выключена. Включи: /imit_start")
+        await m.answer("Сценарий знакомства сейчас не активен.")
         return
 
     set_mode(uid, MODE_LESSONS)
@@ -280,7 +282,7 @@ async def cb_start_be(c: CallbackQuery):
     users = load_users()
     user = get_user(users, uid)
     if not is_guided_onboard(user):
-        await c.message.answer("Имитация выключена. /imit_start")
+        await c.message.answer("Сценарий знакомства сейчас не активен.")
         return
     try:
         await c.message.edit_reply_markup(reply_markup=None)
@@ -492,8 +494,10 @@ async def finish_guided_after_topic(m: Message, uid: str) -> None:
     complete_guided_path(user)
     save_users(users, only=uid)
     set_mode(uid, MODE_MENU)
+    await m.answer(PATH_DONE_HTML, parse_mode="HTML")
+    await m.answer(path_channel_html(), parse_mode="HTML")
     await m.answer(
-        PATH_DONE_HTML,
+        PATH_NAV_HTML,
         reply_markup=main_menu(user, user_id=uid),
         parse_mode="HTML",
     )

@@ -33,21 +33,26 @@ router = Router()
 
 
 async def _block_if_imit(m: Message) -> bool:
-    """Во время полной имитации онбординга меню закрыто."""
-    from services.onboard_guided import is_imit_active
+    """Во время сценария знакомства меню закрыто."""
+    from services.onboard_guided import is_imit_active, is_onboard_locked
 
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
-    if not is_imit_active(user):
+    if not is_onboard_locked(user):
         return False
     from aiogram.types import ReplyKeyboardRemove
 
-    await m.answer(
-        "🧪 Сейчас идёт сценарий знакомства — меню откроется после него.\n"
-        "Выход из имитации: /imit_finish",
-        reply_markup=ReplyKeyboardRemove(),
-    )
+    if is_imit_active(user):
+        text = (
+            "🧪 Сейчас идёт сценарий знакомства — меню откроется после него.\n"
+            "Выход из имитации: /imit_finish"
+        )
+    else:
+        text = (
+            "Сейчас идёт знакомство с ботом — меню откроется после первого урока."
+        )
+    await m.answer(text, reply_markup=ReplyKeyboardRemove())
     return True
 
 
