@@ -338,6 +338,10 @@ def clear_lesson(user_id: str) -> None:
         sm["session"] = None
         rm = ensure_reading(u)
         rm["session"] = None
+        from services.street_talk import ensure_street
+
+        st = ensure_street(u)
+        st["session"] = None
 
     update_lesson(user_id, mut)
 

@@ -644,6 +644,9 @@ async def lessons_other(m: Message):
 
     # Внутри Grammar не сбрасываем клавиатуру на выбор уровня
     if not phase and (user.get("lesson") or {}).get("hub"):
+        hub = (user.get("lesson") or {}).get("hub") or ""
+        if str(hub).startswith("street"):
+            return
         from handlers.lessons_grammar import _kb_for_user, VOICE_ONLY_TEXT
 
         if m.voice:

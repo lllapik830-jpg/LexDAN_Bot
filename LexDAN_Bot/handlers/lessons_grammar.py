@@ -207,6 +207,7 @@ async def open_level_hub(m: Message, level: str):
     extra = "\n🎧 <b>Listening</b> доступен."
     if m.from_user and m.from_user.id == MANAGER_ID:
         extra += "\n📖 <b>Reading</b> — тестовый доступ."
+        extra += "\n💬 <b>Живая речь</b> — тестовый доступ (первый пак)."
     else:
         extra += "\n📖 Reading · 🗣 Speaking · ✍️ Writing — <i>скоро</i> 🚀"
     await m.answer(
@@ -227,6 +228,8 @@ async def voice_in_lessons_grammar(m: Message):
     ensure_lesson(user)
     hub = (user.get("lesson") or {}).get("hub")
     if not hub:
+        raise SkipHandler
+    if str(hub).startswith("street"):
         raise SkipHandler
     if hub == "grammar_rico_chat":
         await _rico_chat_from_voice(m, user)
@@ -1183,6 +1186,9 @@ async def back_to_sections(m: Message):
     if assessment_busy(user):
         return
     ensure_lesson(user)
+    hub = (user.get("lesson") or {}).get("hub") or ""
+    if str(hub).startswith("street"):
+        raise SkipHandler
     level = user["lesson"].get("level") or user.get("level") or "A1"
     set_level_hub(str(m.from_user.id), level)
     await m.answer(

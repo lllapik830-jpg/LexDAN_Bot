@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher
 from flask import Flask, jsonify, request
 
 from config import BOT_TOKEN, PUBLIC_BASE_URL
-from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews, a0_course, onboard_guided
+from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_street, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews, a0_course, onboard_guided
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +41,7 @@ dp.include_routers(
     payments.router,
     voice.router,
     lessons_vocabulary.router,
+    lessons_street.router,  # Живая речь (MANAGER) до grammar voice catch-all
     lessons_grammar.router,
     lessons_listening.router,  # Listening до заглушек секций
     lessons_reading.router,  # Reading (тест MANAGER) до заглушек

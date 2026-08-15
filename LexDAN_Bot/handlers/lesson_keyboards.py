@@ -25,12 +25,22 @@ BTN_RICO_HELP = "🦜 Помощь Рико"
 
 
 def level_sections_kb(user: dict | None = None, *, user_id: str | int | None = None) -> ReplyKeyboardMarkup:
-    """Grammar + Vocabulary + Listening + Reading."""
+    """Grammar + Vocabulary + Listening + Reading (+ Живая речь у менеджера)."""
+    uid = user_id
+    if uid is None and isinstance(user, dict):
+        uid = user.get("tg_id") or user.get("telegram_id") or user.get("id")
     rows = [
         [KeyboardButton(text="📘 Grammar"), KeyboardButton(text="📗 Vocabulary")],
         [KeyboardButton(text="🎧 Listening"), KeyboardButton(text="📖 Reading")],
-        [KeyboardButton(text="⬅️ К уровням"), KeyboardButton(text="🔙 Вернуться в меню")],
     ]
+    from services.street_talk import street_talk_allowed
+    from data.street_talk import BTN_STREET
+
+    if street_talk_allowed(uid):
+        rows.append([KeyboardButton(text=BTN_STREET)])
+    rows.append(
+        [KeyboardButton(text="⬅️ К уровням"), KeyboardButton(text="🔙 Вернуться в меню")]
+    )
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
