@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from data.street_talk import PACKS, get_pack, slide_count
+from data.street_talk import get_pack, packs_for_level, slide_count
 from services.database import get_user, save_users
 
 
@@ -107,6 +107,10 @@ def start_pack(user_id: str, pack_id: str) -> dict:
             "pack_id": pack_id,
             "slide_i": 0,
             "attempts": 0,
+            "card_msg_id": None,
+            "voice_msg_id": None,
+            "heard_msg_id": None,
+            "remind_msg_id": None,
         }
 
     return _save(user_id, mut)
@@ -255,5 +259,5 @@ def check_produce(task: dict, heard: str) -> bool:
     return False
 
 
-def packs_for_list() -> list[dict]:
-    return list(PACKS)
+def packs_for_list(level: str | None = None) -> list[dict]:
+    return packs_for_level(level)

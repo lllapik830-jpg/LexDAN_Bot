@@ -9,6 +9,7 @@ BTN_BACK_PACKS = "⬅️ К пакам"
 BTN_BACK_SECTIONS = "⬅️ К разделам"
 BTN_REPLAY = "🔊 Ещё раз"
 BTN_SKIP_SPEAK = "⏭ Пропустить произношение"
+BTN_REMIND = "🦜 Напомнить"
 
 SECTION_INTRO_HTML = (
     "🤙 <b>Живая речь</b> · A1\n\n"
@@ -67,8 +68,36 @@ def _item(
     }
 
 
-def _prod(must: list[str], prompt_html: str, *, min_words: int = 3) -> dict:
-    return {"must": must, "prompt_html": prompt_html, "min_words": min_words}
+def _prod(
+    must: list[str],
+    prompt_html: str,
+    *,
+    min_words: int = 3,
+    remind_html: str = "",
+) -> dict:
+    return {
+        "must": must,
+        "prompt_html": prompt_html,
+        "min_words": min_words,
+        "remind_html": remind_html,
+    }
+
+
+def format_remind_html(task: dict) -> str:
+    custom = (task.get("remind_html") or "").strip()
+    if custom:
+        if custom.startswith("🦜"):
+            return custom
+        return f"🦜 <b>Рико:</b> {custom}"
+    must = [str(x) for x in (task.get("must") or []) if x]
+    if len(must) >= 2:
+        return (
+            f"🦜 <b>Рико:</b> <b>{must[0]}</b> → <i>{must[1]}</i>. "
+            "Скажи это вслух, как другу."
+        )
+    if must:
+        return f"🦜 <b>Рико:</b> Держи форму: <b>{must[0]}</b>."
+    return "🦜 <b>Рико:</b> Скажи живую фразу по заданию — коротко и вслух."
 
 
 def format_item_html(pack_title: str, n: int, total: int, item: dict) -> str:
@@ -535,21 +564,74 @@ CASUAL_PACK = {
     ],
 }
 
-PACKS: list[dict] = [SWALLOW_1, SWALLOW_2, SWALLOW_3, CASUAL_PACK]
+for _p in (SWALLOW_1, SWALLOW_2, SWALLOW_3, CASUAL_PACK):
+    _p["level"] = "A1"
+
+A1_PACKS: list[dict] = [SWALLOW_1, SWALLOW_2, SWALLOW_3, CASUAL_PACK]
+
+
+def all_packs() -> list[dict]:
+    from data.street_talk_levels import EXTRA_PACKS
+
+    return [*A1_PACKS, *EXTRA_PACKS]
+
+
+def packs_for_level(level: str | None) -> list[dict]:
+    lv = str(level or "A1").upper()
+    if lv == "A0":
+        lv = "A1"
+    if lv in {"C1", "C2"}:
+        lv = "B2"
+    return [p for p in all_packs() if str(p.get("level") or "A1").upper() == lv]
+
+
+def section_intro_html(level: str | None) -> str:
+    lv = str(level or "A1").upper()
+    if lv == "A0":
+        lv = "A1"
+    if lv in {"C1", "C2"}:
+        lv = "B2"
+    by_lv = {
+        "A1": (
+            "🤙 <b>Живая речь</b> · A1\n\n"
+            "🦜 <b>Рико:</b> Учебник говорит по слогам. Люди — нет.\n\n"
+            "🌀 <b>«Глотание слов»</b> · 1–3 — wanna, don'tcha, c'mon\n"
+            "😎 <b>По-свойски</b> — yeah, nope, see ya\n\n"
+            "Слайд не копится в чате: старое голосовое уходит, карточка меняется. "
+            "Повтори пример в микрофон 🎤"
+        ),
+        "A2": (
+            "🤙 <b>Живая речь</b> · A2\n\n"
+            "🦜 Планы с друзьями, переписка и как носители упрощают <b>времена</b>: "
+            "сейчас / вчера / завтра. Без учебниковой таблицы — как в жизни."
+        ),
+        "B1": (
+            "🤙 <b>Живая речь</b> · B1\n\n"
+            "🦜 Сериалы, чаты — и времена, которые реально говорят: "
+            "past simple для историй, present perfect для already / yet / never."
+        ),
+        "B2": (
+            "🤙 <b>Живая речь</b> · B2\n\n"
+            "🦜 Интернет-сленг с рамкой «где нельзя», плюс времена native: "
+            "gonna vs I'll vs I'm meeting, I was gonna, I've been…"
+        ),
+    }
+    return by_lv.get(lv, by_lv["A1"])
 
 
 def get_pack(pack_id: str) -> dict | None:
-    for p in PACKS:
+    for p in all_packs():
         if p["id"] == pack_id:
             return p
     return None
 
 
-def pack_by_button_label(text: str) -> dict | None:
+def pack_by_button_label(text: str, *, level: str | None = None) -> dict | None:
     raw = (text or "").strip()
     if raw.endswith(" ✅"):
         raw = raw[: -len(" ✅")].rstrip()
-    for p in PACKS:
+    pool = packs_for_level(level) if level else all_packs()
+    for p in pool:
         if raw == p["title_ru"] or raw == f"{p['title_ru']} ✅":
             return p
     return None

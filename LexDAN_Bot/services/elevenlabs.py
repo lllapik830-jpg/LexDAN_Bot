@@ -268,7 +268,7 @@ async def send_voice_from_mp3(
         await message.answer(
             "⚠️ Текст готов, но голос сейчас не отправился. Попробуй ещё раз чуть позже."
         )
-        return False
+        return None
 
     ogg_bytes = await asyncio.to_thread(mp3_to_ogg_opus, mp3_bytes)
     path = None
@@ -277,18 +277,18 @@ async def send_voice_from_mp3(
             with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as f:
                 f.write(ogg_bytes)
                 path = f.name
-            await message.answer_voice(FSInputFile(path))
+            sent = await message.answer_voice(FSInputFile(path))
         else:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
                 f.write(mp3_bytes)
                 path = f.name
-            await message.answer_audio(FSInputFile(path), title=title)
+            sent = await message.answer_audio(FSInputFile(path), title=title)
         logging.info(f"Voice sent via {source or 'unknown'}")
-        return True
+        return sent
     except Exception as e:
         logging.error(f"Send voice error: {e}")
         await message.answer("⚠️ Не удалось отправить голосовое сообщение.")
-        return False
+        return None
     finally:
         if path and os.path.exists(path):
             os.unlink(path)
