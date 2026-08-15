@@ -554,22 +554,83 @@ def _ensure_diverse_reply(
     return result
 
 
+_RU_STRIP = re.compile(r"[^\wа-яё]+", re.IGNORECASE)
+
+# Близкие русские переводы, которые судья часто отвергает зря
+_VOCAB_NEAR: dict[str, list[str]] = {
+    "famous": ["известный", "знаменитый", "популярный", "прославленный", "узнаваемый"],
+    "popular": ["популярный", "известный", "модный", "востребованный"],
+    "big": ["большой", "крупный", "огромный"],
+    "small": ["маленький", "небольшой", "мелкий"],
+    "happy": ["счастливый", "радостный", "довольный"],
+    "smart": ["умный", "сообразительный", "разумный"],
+    "fast": ["быстрый", "скорый"],
+    "hard": ["трудный", "сложный", "тяжёлый"],
+    "easy": ["лёгкий", "простой", "несложный"],
+    "beautiful": ["красивый", "прекрасный", "симпатичный"],
+    "important": ["важный", "существенный", "значимый"],
+    "available": ["доступный", "имеющийся", "свободный"],
+}
+
+
+def _ru_key(text: str) -> str:
+    t = (text or "").strip().lower().replace("ё", "е")
+    return _RU_STRIP.sub("", t)
+
+
+def _ru_stem(text: str) -> str:
+    k = _ru_key(text)
+    if len(k) >= 7:
+        return k[:6]
+    if len(k) >= 5:
+        return k[:5]
+    return k
+
+
+def _ru_close(a: str, b: str) -> bool:
+    ka, kb = _ru_key(a), _ru_key(b)
+    if not ka or not kb:
+        return False
+    if ka == kb:
+        return True
+    if len(ka) >= 5 and len(kb) >= 5 and (ka.startswith(kb) or kb.startswith(ka)):
+        return True
+    if len(min(ka, kb, key=len)) >= 5 and (ka in kb or kb in ka):
+        return True
+    sa, sb = _ru_stem(a), _ru_stem(b)
+    return bool(sa and sa == sb)
+
+
+def vocab_locally_ok(en_word: str, acceptable_ru: list[str], user_ru: str) -> bool:
+    """Синонимы и формы слов без GPT (famous → популярный)."""
+    if not _ru_key(user_ru):
+        return False
+    en = (en_word or "").strip().lower()
+    hints = list(acceptable_ru or [])
+    hints.extend(_VOCAB_NEAR.get(en, []))
+    for tok in re.findall(r"[a-z']+", en):
+        hints.extend(_VOCAB_NEAR.get(tok, []))
+    return any(_ru_close(h, user_ru) for h in hints)
+
+
 def judge_translation(source_en: str, reference_ru: str, user_ru: str) -> dict:
-    fallback = {"score": 20, "cefr_estimate": "A1"}
+    fallback = {"score": 55, "cefr_estimate": "A2"}
     prompt = {
         "role": "system",
         "content": (
-            "Strict placement-test judge for English→Russian translation. "
-            "Score 0-100. Be STRICT: demand close meaning and decent Russian. "
-            "Typos ok if meaning is clear; invented meaning = low score. "
-            "Also estimate CEFR A0-C2. "
+            "Placement-test judge for English→Russian translation. "
+            "Score 0-100 by MAIN IDEA, not word-for-word. "
+            "If the student captured the gist (who/what/why, key facts), "
+            "score 70-95 even with synonyms, shorter phrasing, or missed minor details. "
+            "Typos OK. Low score only if empty, off-topic, or meaning is wrong. "
+            "Also estimate CEFR A0-C2 from the student's Russian. "
             'Return ONLY JSON: {"score":0-100,"cefr_estimate":"A2"}'
         ),
     }
     user = {
         "role": "user",
         "content": (
-            f"EN:\n{source_en}\n\nRU reference:\n{reference_ru}\n\n"
+            f"EN:\n{source_en}\n\nRU reference (not a closed key):\n{reference_ru}\n\n"
             f"Student:\n{user_ru}"
         ),
     }
@@ -577,19 +638,26 @@ def judge_translation(source_en: str, reference_ru: str, user_ru: str) -> dict:
 
 
 def judge_vocab(en_word: str, acceptable_ru: list[str], user_ru: str) -> dict:
+    if vocab_locally_ok(en_word, acceptable_ru, user_ru):
+        return {"correct": True}
     fallback = {"correct": False}
     prompt = {
         "role": "system",
         "content": (
-            "Strict vocab check. correct=true only if meaning clearly matches. "
-            "Close synonyms OK; vague/wrong = false. "
+            "Generous vocab check for a placement test. "
+            "correct=true if the student's Russian has the SAME core meaning. "
+            "The Acceptable list is HINTS, not a closed set. "
+            "Common synonyms and morphology count as true "
+            "(famous → известный / знаменитый / популярный; "
+            "hungry → голодный / голоден). "
+            "False only if empty, unrelated, or clearly another meaning. "
             'Return ONLY JSON: {"correct":bool}'
         ),
     }
     user = {
         "role": "user",
         "content": (
-            f"EN: {en_word}\nAcceptable RU: {', '.join(acceptable_ru)}\n"
+            f"EN: {en_word}\nAcceptable RU hints: {', '.join(acceptable_ru)}\n"
             f"Student: {user_ru}"
         ),
     }
@@ -597,14 +665,14 @@ def judge_vocab(en_word: str, acceptable_ru: list[str], user_ru: str) -> dict:
 
 
 def judge_listening(expected_en: str, user_text: str) -> dict:
-    fallback = {"correct": False, "score": 20}
+    fallback = {"correct": False, "score": 40}
     prompt = {
         "role": "system",
         "content": (
-            "Strict listening dictation check. "
-            "Small spelling mistakes OK if words are clear. "
-            "Missing key words / wrong meaning = incorrect. "
-            "score>=85 required for correct=true. "
+            "Listening check by MAIN MEANING, not dictation. "
+            "Synonyms, word order, small grammar/spelling mistakes OK. "
+            "correct=true if the gist matches (score>=60). "
+            "False only if empty or the meaning is different. "
             'Return ONLY JSON: {"correct":bool,"score":0-100}'
         ),
     }
@@ -612,7 +680,13 @@ def judge_listening(expected_en: str, user_text: str) -> dict:
         "role": "user",
         "content": f"Expected:\n{expected_en}\n\nStudent:\n{user_text}",
     }
-    return _ask_json([prompt, user], fallback, temperature=0.0)
+    data = _ask_json([prompt, user], fallback, temperature=0.0)
+    try:
+        if int(data.get("score") or 0) >= 60:
+            data["correct"] = True
+    except (TypeError, ValueError):
+        pass
+    return data
 
 
 def judge_writing(topic: str, user_text: str, current_level: str) -> dict:
@@ -620,8 +694,9 @@ def judge_writing(topic: str, user_text: str, current_level: str) -> dict:
     prompt = {
         "role": "system",
         "content": (
-            "Strict CEFR writing placement judge A0-C2. "
-            "Be conservative: if between two levels, choose the LOWER one. "
+            "CEFR writing placement A0-C2. Judge by overall meaning and control, "
+            "not tiny mistakes. If the text is on-topic and understandable, "
+            "do not drop more than one level below the prior estimate. "
             'Return ONLY JSON: {"cefr_estimate":"B1"}'
         ),
     }

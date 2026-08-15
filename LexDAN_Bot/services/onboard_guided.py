@@ -281,13 +281,13 @@ def praise_ok(index: int | None = None) -> str:
 
 
 def clarify_rico(question: str, user_name: str = "друг") -> str:
-    """Ответ Рико строго по теме to be — коротко, по-человечески, без голоса."""
+    """Ответ Рико на вопрос ученика — по делу, без голоса."""
     from services.gpt import chat_completion
     import logging
 
     fallback = (
-        "🦜 Коротко: сейчас — I am / you are / he-she-it is / we-you-they are. "
-        "Спроси ещё раз чуть конкретнее — разберём на примере."
+        "🦜 Скажи ещё раз, что именно хочешь сказать по-английски — "
+        "дам готовую фразу и коротко почему так."
     )
     try:
         text = chat_completion(
@@ -295,26 +295,28 @@ def clarify_rico(question: str, user_name: str = "друг") -> str:
                 {
                     "role": "system",
                     "content": (
-                        "Ты попугай Рико 🦜 — живой репетитор. "
-                        "Отвечай ТОЛЬКО по Present Simple of to be "
-                        "(I am / you are / he-she-it is / we-you-they are, "
-                        "отрицания, вопросы). Не уходи в другие темы. "
-                        "По-русски, 2–4 коротких предложения максимум. "
-                        "Один короткий EN-пример + перевод <i>…</i>. "
-                        "Без воды, без длинных списков, как человек в чате. "
-                        "HTML: только <b> и <i>."
+                        "Ты попугай Рико 🦜. Отвечай на ТО, что спросил ученик.\n"
+                        "«Как будет …» = переведи его фразу, не выдумывай вопрос/отрицание.\n"
+                        "Пример: «как будет он ест бургер» → "
+                        "<b>He eats a burger</b> — <i>Он ест бургер.</i> "
+                        "Если уместно, одним предложением: "
+                        "прямо сейчас — <b>He is eating a burger</b>.\n"
+                        "НЕЛЬЗЯ: Is he eating…? / He is not eating… / He is a student.\n"
+                        "Тема урока to be — используй am/is/are только если это нужно для ЕГО фразы.\n"
+                        "2–4 коротких предложения. HTML: только <b> и <i>."
                     ),
                 },
                 {
                     "role": "user",
                     "content": (
                         f"Ученика зовут {user_name}. Уровень A0. "
-                        f"Тема: {ONBOARD_TOPIC_TITLE}.\nВопрос: {question}"
+                        f"Тема урока: {ONBOARD_TOPIC_TITLE}.\n"
+                        f"Вопрос ученика: {question}"
                     ),
                 },
             ],
-            max_tokens=120,
-            temperature=0.4,
+            max_tokens=180,
+            temperature=0.2,
             timeout=12,
         )
         if not text.startswith("🦜"):

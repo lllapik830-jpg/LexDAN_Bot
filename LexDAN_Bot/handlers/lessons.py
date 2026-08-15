@@ -213,10 +213,10 @@ def _write_prompt(topic: str, left: int) -> str:
         "Напиши текст на английском — до 10 предложений.\n"
         f"🔄 Осталось замен текста: {left}"
     )
-    if left == 1:
+    if left <= 0:
         text += (
-            "\n\n⚠️ Внимание: осталась последняя замена текста. "
-            "В случае её пропуска задание будет закончено и оценено как невыполненное."
+            "\n\nЗамен больше нет — напиши текст или нажми "
+            "«⏭️ Пропустить задание»."
         )
     return text
 
@@ -236,7 +236,12 @@ def _adk(user: dict):
 
 
 def _awk(user: dict):
-    return assess_write_kb(no_menu=_assess_no_menu(user))
+    a = user.get("assessment") or {}
+    left = int(a.get("write_replacements_left", 3))
+    return assess_write_kb(
+        no_menu=_assess_no_menu(user),
+        show_skip=left <= 0,
+    )
 
 
 def _ask(user: dict):
@@ -284,13 +289,9 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
         "Сейчас начнём с «🔥 Огня дня» — тут ежедневно появляются интересные "
         "и необычные слова, факты и голоса.»"
     )
-    # Сначала убрать reply-клавиатуру (меню), потом inline CTA
+    # Сначала эмодзи огня (и сброс reply-клавиатуры), потом текст
     if imit:
-        rm = await m.answer(".", reply_markup=ReplyKeyboardRemove())
-        try:
-            await m.bot.delete_message(m.chat.id, rm.message_id)
-        except Exception:
-            pass
+        await m.answer("🔥", reply_markup=ReplyKeyboardRemove())
     await m.answer(
         msg,
         reply_markup=_post_test_fire_kb(),
@@ -425,6 +426,13 @@ async def skip_translate(m: Message):
     ensure_user_fields(user)
     a = user["assessment"]
     phase = a.get("phase")
+    if phase == "write":
+        current = a.get("write_level") or a.get("cefr") or "A2"
+        translate_est = a.get("translate_estimate") or current
+        final = average_level([translate_est, current])
+        await m.answer("⏭️ Ок, пропускаем письмо.")
+        await _finish_test(m, str(m.from_user.id), final)
+        return
     # Иногда phase теряется при гонке сохранений — если текст перевода есть, это translate
     if phase != "translate" and (a.get("translate_source_en") or "").strip():
         a["phase"] = "translate"
@@ -500,18 +508,6 @@ async def replace_write(m: Message):
 
     user, status = replace_write_topic(str(m.from_user.id))
     a = user["assessment"]
-
-    if status == "ended":
-        current = a.get("write_level") or a.get("cefr") or "A2"
-        translate_est = a.get("translate_estimate") or current
-        final = average_level([translate_est, current, "A0"])
-        await _finish_test(
-            m,
-            str(m.from_user.id),
-            final,
-            note="Задание 4 не выполнено (израсходованы все замены текста).\n\n",
-        )
-        return
 
     if status == "none":
         await m.answer("Замен больше нет.", reply_markup=_awk(user))
@@ -786,7 +782,7 @@ async def _handle_listen_answer(m: Message, user: dict, text: str):
     a = user["assessment"]
     result = judge_listening(a.get("listen_text") or "", text)
     score = int(result.get("score") or 0)
-    correct = _as_bool(result.get("correct")) and score >= 85
+    correct = _as_bool(result.get("correct")) or score >= 60
     await _advance_listen(m, user, success=correct)
 
 

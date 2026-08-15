@@ -90,8 +90,10 @@ def generate_vocab(level: str, used: list[str] | None = None) -> dict:
                     f"Level {level}: {hard_hint}. "
                     "Do NOT reuse words from the avoid list. "
                     "Avoid childish/easy words if level is B1+. "
+                    "Give 3-5 common Russian translations/synonyms "
+                    "(famous → известный, знаменитый, популярный). "
                     "Return ONLY JSON: "
-                    '{"en":"word","ru":["перевод1","перевод2"]}'
+                    '{"en":"word","ru":["перевод1","перевод2","перевод3"]}'
                 ),
             },
             {
@@ -194,20 +196,16 @@ def generate_write_topic(level: str, *, avoid: list[str] | None = None) -> str:
 
 
 def estimate_level_from_translation(text_level: str, score: int) -> str:
-    """Строгая оценка после перевода (внутри, пользователю не показываем)."""
+    """Оценка после перевода: суть важнее дословности."""
     from data.assessment_data import level_index, LEVELS
 
     i = level_index(text_level)
-    if score >= 90:
+    if score >= 70:
         est = i
-    elif score >= 75:
+    elif score >= 50:
         est = max(0, i - 1)
-    elif score >= 55:
+    elif score >= 30:
         est = max(0, i - 2)
-    elif score >= 35:
-        est = max(0, i - 3)
-    elif score >= 15:
-        est = max(0, i - 4)
     else:
-        est = 0
+        est = max(0, i - 3)
     return LEVELS[est]

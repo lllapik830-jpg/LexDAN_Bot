@@ -171,9 +171,15 @@ def assess_dont_know_kb(*, no_menu: bool = False) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
-def assess_write_kb(*, no_menu: bool = False) -> ReplyKeyboardMarkup:
-    """Письмо: замена темы."""
-    rows = [[KeyboardButton(text="🔄 Заменить текст")]]
+def assess_write_kb(
+    *, no_menu: bool = False, show_skip: bool = False
+) -> ReplyKeyboardMarkup:
+    """Письмо: замена темы; на последнем тексте — пропуск."""
+    rows: list[list[KeyboardButton]] = []
+    if show_skip:
+        rows.append([KeyboardButton(text="⏭️ Пропустить задание")])
+    else:
+        rows.append([KeyboardButton(text="🔄 Заменить текст")])
     if not no_menu:
         rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)

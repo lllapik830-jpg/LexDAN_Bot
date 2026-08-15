@@ -192,8 +192,7 @@ def replace_write_topic(user_id: str) -> tuple[dict | None, str]:
     """
     Заменить тему письма.
     Возвращает (user, status):
-      - "ok" — тема заменена
-      - "ended" — использована последняя замена, задание провалено
+      - "ok" — тема заменена (если left стал 0 — дальше только пропуск)
       - "none" — замен уже не было
     """
     users = users_for(user_id)
@@ -204,16 +203,6 @@ def replace_write_topic(user_id: str) -> tuple[dict | None, str]:
 
     if left <= 0:
         return user, "none"
-
-    # последняя замена → задание завершается как невыполненное
-    if left == 1:
-
-        def mut_end(u):
-            aa = u["assessment"]
-            aa["write_replacements_left"] = 0
-            aa["write_failed"] = True
-
-        return update_user(user_id, mut_end), "ended"
 
     left -= 1
     level = a.get("write_level") or "A2"

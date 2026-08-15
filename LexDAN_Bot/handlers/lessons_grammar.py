@@ -389,9 +389,6 @@ async def _finish_exercise_ok(
     from services.onboard_guided import is_guided_onboard, praise_ok
 
     guided = is_guided_onboard(user)
-    if guided:
-        skip_speak = True
-        speak_items = []
 
     if not skip_speak and not speak_items and ex:
         logging.info(
@@ -421,10 +418,14 @@ async def _finish_exercise_ok(
         if len(speak_items) > 1:
             hint = (
                 f"🗣 Сначала произнеси ответ:\n<b>{first}</b>\n\n"
-                f"Потом целиком предложение:\n<b>{speak_items[1]}</b>"
+                f"Потом целиком предложение:\n<b>{speak_items[1]}</b>\n\n"
+                "Можно «⏭ Пропустить произношение»."
             )
         else:
-            hint = f"🗣 Теперь произнеси в микрофон:\n<b>{first}</b>"
+            hint = (
+                f"🗣 Теперь произнеси в микрофон:\n<b>{first}</b>\n\n"
+                "Можно «⏭ Пропустить произношение»."
+            )
         await m.answer(
             hint,
             parse_mode="HTML",
@@ -472,6 +473,13 @@ async def _continue_after_speak(m: Message, user_id: str, speak: dict):
 
     if topic_just_done or next_num is None:
         clear_active_exercise(user_id)
+        from services.onboard_guided import is_guided_onboard
+
+        if is_guided_onboard(user):
+            from handlers.onboard_guided import finish_guided_after_topic
+
+            await finish_guided_after_topic(m, user_id)
+            return
         head = celebration.strip() if celebration else "✅ Отлично, идём дальше!"
         lines = [head, "", "📝 Прогресс:"] + (
             progress_lines
@@ -549,7 +557,13 @@ async def _handle_speak_practice_voice(m: Message, user: dict):
 @router.message(
     ModeFilter(MODE_LESSONS),
     LessonHubFilter("exercise_speak"),
-    F.text == "⏭ Пропустить произношение",
+    F.text.in_(
+        {
+            "⏭ Пропустить произношение",
+            "⏭️ Пропустить произношение",
+            "Пропустить произношение",
+        }
+    ),
 )
 async def skip_speak_practice(m: Message):
     users = load_users()
@@ -1637,7 +1651,7 @@ async def exercise_answer(m: Message):
                 num,
                 explain + "\n\nИдём дальше 👇",
                 ex=ex,
-                skip_speak=True,
+                skip_speak=False,
             )
             return
 
@@ -1728,7 +1742,7 @@ async def exercise_answer(m: Message):
             num,
             f"❌ {explain}\n\nИдём дальше 👇",
             ex=ex,
-            skip_speak=True,
+            skip_speak=False,
         )
         return
 
