@@ -1,148 +1,541 @@
-"""Пак «Живая речь»: сжатая речь носителей (reductions)."""
+"""Живая речь: слайды + голос. Пока A1, только MANAGER_ID."""
 
 from __future__ import annotations
 
-BTN_STREET = "💬 Живая речь"
-BTN_TASKS = "📝 Задания"
+BTN_STREET = "🤙 Живая речь"
+BTN_NEXT = "➡️ Далее"
+BTN_PREV = "⬅️ Назад"
 BTN_BACK_PACKS = "⬅️ К пакам"
 BTN_BACK_SECTIONS = "⬅️ К разделам"
 BTN_REPLAY = "🔊 Ещё раз"
 BTN_SKIP_SPEAK = "⏭ Пропустить произношение"
 
 SECTION_INTRO_HTML = (
-    "💬 <b>Живая речь</b>\n\n"
-    "🦜 <b>Рико:</b> Учебник говорит <i>want to</i>. "
-    "Человек в сериале говорит <b>wanna</b>. "
-    "Это не ошибка — так склеивается живая речь.\n\n"
-    "Здесь учимся <b>слышать</b> сжатые формы и понимать, "
-    "что за ними стоит. Писать <i>donchu</i> как «правильное слово» не будем.\n\n"
-    "Пока один пак — чтобы поймать тон. Выбери его ниже."
+    "🤙 <b>Живая речь</b> · A1\n\n"
+    "🦜 <b>Рико:</b> Учебник говорит по слогам. Люди — нет. "
+    "Они склеивают слова и кивают короткими ответами.\n\n"
+    "Здесь четыре кнопки:\n"
+    "🌀 <b>«Глотание слов»</b> · 1–3 — как звучит wanna, don'tcha, c'mon\n"
+    "😎 <b>По-свойски</b> — короткие живые ответы: yeah, nope, see ya\n\n"
+    "На каждом слайде я озвучу пример, ты повторишь. "
+    "Потом скажешь <b>свою</b> фразу в микрофон. Писать почти не будем 🎤"
 )
 
-SWALLOW_PACK: dict = {
-    "id": "swallow",
-    "title_ru": "Как они глотают слова",
-    "card_html": (
+_WARN_CHAT = (
+    "на собеседовании, в письме HR и в официальном разговоре так не говорят — "
+    "это слишком расслабленно."
+)
+_WARN_HEAR = (
+    "так <b>слышится</b>. В чате иногда пишут так же. "
+    "В нормальном тексте — правая колонка. На собеседовании — только полная форма."
+)
+_WARN_REPLY = (
+    "с друзьями и в чате — да. На собеседовании лучше yes / no / thank you / goodbye."
+)
+
+
+def _item(
+    form: str,
+    full: str,
+    where: str,
+    example: str,
+    *,
+    warn: str = _WARN_CHAT,
+    voice_en: str | None = None,
+    accept: list[str] | None = None,
+    extra: str = "",
+) -> dict:
+    full_ex = example
+    if form.lower() in example.lower() and full.lower() not in example.lower():
+        # грубая замена для accept: I wanna → I want to
+        idx = example.lower().find(form.lower())
+        if idx >= 0:
+            full_ex = example[:idx] + full + example[idx + len(form) :]
+    acc = list(accept or [])
+    for x in (example, full_ex, form, full):
+        if x and x not in acc:
+            acc.append(x)
+    return {
+        "form": form,
+        "full": full,
+        "where": where,
+        "example": example,
+        "warn": warn,
+        "voice_en": (voice_en or example).strip(),
+        "accept": acc,
+        "extra": extra,
+    }
+
+
+def _prod(must: list[str], prompt_html: str, *, min_words: int = 3) -> dict:
+    return {"must": must, "prompt_html": prompt_html, "min_words": min_words}
+
+
+def format_item_html(pack_title: str, n: int, total: int, item: dict) -> str:
+    extra = (item.get("extra") or "").strip()
+    extra_block = f"\n\n{extra}" if extra else ""
+    return (
+        f"🤙 <b>{n}/{total}</b> · {pack_title}\n\n"
+        f"<b>{item['form']}</b>  →  <i>{item['full']}</i>\n\n"
+        f"📍 <b>Где:</b> {item['where']}\n"
+        f"💬 <b>Пример:</b> <i>{item['example']}</i>\n"
+        f"⚠️ <b>Важно:</b> {item['warn']}"
+        f"{extra_block}\n\n"
+        "🦜 Послушай пример и <b>повтори в микрофон</b>.\n"
+        "<i>Расшифровка может написать полную форму — это нормально.</i>"
+    )
+
+
+def format_produce_html(pack_title: str, n: int, total: int, task: dict) -> str:
+    return (
+        f"🎤 <b>Своя фраза {n}/{total}</b> · {pack_title}\n\n"
+        f"{task['prompt_html']}\n\n"
+        "🦜 Скажи это <b>голосом</b>, как другу. Не читай с листа идеально — "
+        "главное, чтобы конструкция прозвучала."
+    )
+
+
+SWALLOW_1 = {
+    "id": "swallow_1",
+    "title_ru": "«Глотание слов» · 1",
+    "intro_html": (
         "🦜 <b>Рико:</b> Носители не произносят каждое слово, как диктор в учебнике. "
-        "Они склеивают. Ниже — шесть штук, которые слышишь постоянно.\n\n"
-        "У каждой: сжатая форма → полная → где живёт → рамка.\n\n"
-        "<b>wanna</b> → want to\n"
-        "Где: речь и чат. <i>I wanna go home.</i>\n"
-        "Рамка: с другом — да. В письме HR пиши <i>want to</i>.\n\n"
-        "<b>gonna</b> → going to\n"
-        "Где: речь и чат. <i>I'm gonna be late.</i>\n"
-        "Рамка: планы с друзьями, не эссе.\n\n"
-        "<b>gotta</b> → have (got) to\n"
-        "Где: речь. <i>I gotta run.</i> — «мне пора / надо бежать».\n"
-        "Рамка: срочность, не формальная обязанность в договоре.\n\n"
-        "<b>dunno</b> → don't know\n"
-        "Где: речь и чат. <i>Dunno, maybe later.</i>\n"
-        "Рамка: пожимание плечами, не доклад.\n\n"
-        "<b>kinda</b> → kind of\n"
-        "Где: речь. <i>I'm kinda busy.</i> — смягчает: «ну такое, типа занят».\n\n"
-        "<b>don'tcha</b> → don't you\n"
-        "Так <b>слышится</b>. Иногда пишут don'tcha. "
-        "<b>donchu</b> — это как звучит, не словарное слово. "
-        "В нормальном тексте: <i>don't you</i>.\n\n"
-        "Прочитал — жми <b>Задания</b>. Сначала слух, потом письмо, потом голос."
+        "Они склеивают 🧃\n\n"
+        "Это <b>часть 1 из 3</b> — десять склеек, которые слышишь постоянно: "
+        "wanna, gonna, gotta, hafta…\n\n"
+        "На слайде: сжатая форма → как писать правильно → где живёт → пример.\n"
+        "Я озвучу пример, ты повторишь. В конце — свои фразы в микрофон 🎤\n\n"
+        "Жми <b>Далее</b> — поехали."
     ),
-    "tasks": [
-        {
-            "id": "t1",
-            "kind": "listen_mcq",
-            "voice_en": "I wanna go home.",
-            "prompt_html": (
-                "1/6 🎧 Послушай Рико.\n"
-                "Какое <b>полное</b> выражение спряталось в сжатом слове?"
-            ),
-            "options": ["want to", "going to", "have to"],
-            "answer": "want to",
-            "ok_html": (
-                "✅ <b>wanna</b> = want to.\n"
-                "<i>I wanna go home</i> → I want to go home."
-            ),
-        },
-        {
-            "id": "t2",
-            "kind": "write",
-            "prompt_html": (
-                "2/6 ✍️ В чате написали:\n"
-                "<i>I'm gonna be late.</i>\n\n"
-                "Напиши <b>полную форму</b> слова gonna — как в учебнике, два слова."
-            ),
-            "answer": "going to",
-            "accept": ["going to", "i am going to", "i'm going to", "im going to"],
-            "ok_html": (
-                "✅ <b>gonna</b> = going to.\n"
-                "В чате так пишут часто. В школе и на работе — going to."
-            ),
-        },
-        {
-            "id": "t3",
-            "kind": "mcq",
-            "prompt_html": (
-                "3/6 🗣 Как это скорее скажет друг, не учебник?\n\n"
-                "<i>I am going to call you later.</i>"
-            ),
-            "options": [
-                "I'm gonna call you later.",
-                "I'm gotta call you later.",
-                "I'm dunno call you later.",
-            ],
-            "answer": "I'm gonna call you later.",
-            "ok_html": (
-                "✅ going to в живой речи часто сжимается в <b>gonna</b>.\n"
-                "gotta сюда не лезет — это «надо», не «собираюсь»."
-            ),
-        },
-        {
-            "id": "t4",
-            "kind": "listen_mcq",
-            "voice_en": "Don'tcha like pizza?",
-            "prompt_html": (
-                "4/6 🎧 Послушай вопрос.\n"
-                "Какая <b>полная</b> форма спряталась в начале?"
-            ),
-            "options": ["don't you", "don't know", "kind of"],
-            "answer": "don't you",
-            "ok_html": (
-                "✅ Прозвучало как <b>don'tcha</b> / donchu.\n"
-                "Это <i>don't you</i>. Так слышится — писать donchu как слово не надо."
-            ),
-        },
-        {
-            "id": "t5",
-            "kind": "listen_mcq",
-            "voice_en": "Hey, you wanna grab food? Dunno. I'm kinda busy.",
-            "prompt_html": "5/6 🎧 Короткий диалог. О чём речь?",
-            "options": [
-                "Зовут поесть, второй не уверен — занят",
-                "Они опаздывают на работу",
-                "Кто-то не знает дорогу",
-            ],
-            "answer": "Зовут поесть, второй не уверен — занят",
-            "ok_html": (
-                "✅ wanna = приглашение, dunno = не уверен, kinda busy = типа занят.\n"
-                "Смысл держится, даже если слова склеены."
-            ),
-        },
-        {
-            "id": "t6",
-            "kind": "speak",
-            "phrase": "I wanna go",
-            "accept": ["I wanna go", "I want to go", "I wanna go.", "I want to go."],
-            "prompt_html": (
-                "6/6 🎤 Скажи в микрофон, как другу:\n"
-                "<b>I wanna go</b>\n\n"
-                "Расшифровка может написать want to — это нормально. "
-                "Главное произнести сжато, не по слогам."
-            ),
-            "ok_html": "✅ Есть. Wanna — это want to, только живее.",
-        },
+    "done_html": (
+        "🏁 <b>«Глотание слов» · 1</b> — есть!\n\n"
+        "🦜 Теперь wanna и gonna не шум: ты их слышишь и можешь сказать. "
+        "Дальше — часть 2, про вопросы."
+    ),
+    "items": [
+        _item(
+            "wanna",
+            "want to",
+            "повседневная речь и переписка с друзьями.",
+            "I wanna go home.",
+        ),
+        _item(
+            "gonna",
+            "going to",
+            "планы с друзьями, речь и чат.",
+            "I'm gonna call you later.",
+        ),
+        _item(
+            "gotta",
+            "have got to / have to",
+            "живая речь, когда «надо / пора».",
+            "I gotta run.",
+            accept=["I gotta run", "I have to run", "I have got to run", "I've got to run"],
+        ),
+        _item(
+            "hafta",
+            "have to",
+            "речь: have to склеивается в hafta.",
+            "I hafta go now.",
+            accept=["I hafta go now", "I have to go now", "I have to go"],
+        ),
+        _item(
+            "hasta",
+            "has to",
+            "речь, про he/she/it: has to → hasta.",
+            "She hasta work today.",
+            accept=["She hasta work today", "She has to work today"],
+        ),
+        _item(
+            "dunno",
+            "don't know",
+            "речь и чат — пожимание плечами.",
+            "I dunno. Maybe later.",
+            accept=["I dunno", "I don't know", "I dunno maybe later", "I don't know maybe later"],
+        ),
+        _item(
+            "kinda",
+            "kind of",
+            "речь: смягчает, «типа / вроде».",
+            "I'm kinda tired.",
+            accept=["I'm kinda tired", "I am kinda tired", "I'm kind of tired", "I am kind of tired"],
+        ),
+        _item(
+            "sorta",
+            "sort of",
+            "речь, почти как kinda.",
+            "It's sorta weird.",
+            accept=["It's sorta weird", "It is sorta weird", "It's sort of weird", "It is sort of weird"],
+        ),
+        _item(
+            "lemme",
+            "let me",
+            "речь и чат, когда просишь секунду.",
+            "Lemme see.",
+            accept=["Lemme see", "Let me see"],
+        ),
+        _item(
+            "gimme",
+            "give me",
+            "речь и чат — «дай / подожди».",
+            "Gimme a second.",
+            accept=["Gimme a second", "Give me a second"],
+        ),
+    ],
+    "produce": [
+        _prod(
+            ["wanna", "want to"],
+            "Скажи, <b>куда ты wanna go</b> — одно короткое предложение.\n"
+            "Например думай: домой / в кафе / гулять.",
+        ),
+        _prod(
+            ["gonna", "going to"],
+            "Скажи, что ты <b>gonna</b> делать вечером.",
+        ),
+        _prod(
+            ["dunno", "don't know", "do not know"],
+            "Тебя спросили «что будем делать?». Ответь через <b>dunno</b>.",
+        ),
+        _prod(
+            ["gimme", "give me", "lemme", "let me"],
+            "Попроси паузу: <b>gimme a second</b> или <b>lemme see</b>.",
+        ),
+        _prod(
+            ["kinda", "kind of", "sorta", "sort of"],
+            "Скажи, что ты <b>kinda</b> или <b>sorta</b> устал / занят.",
+        ),
     ],
 }
 
-PACKS: list[dict] = [SWALLOW_PACK]
+SWALLOW_2 = {
+    "id": "swallow_2",
+    "title_ru": "«Глотание слов» · 2",
+    "intro_html": (
+        "🦜 <b>Рико:</b> Часть 2 — вопросы. "
+        "Don't you в речи часто звучит как <b>don'tcha</b>. "
+        "Did you — как <b>didja</b>. Это не новые слова, это склейка 👂\n\n"
+        "Писать donchu как словарное слово не надо. "
+        "Слышать — надо. Повторяй за мной, потом свои вопросы голосом."
+    ),
+    "done_html": (
+        "🏁 <b>«Глотание слов» · 2</b> закрыта.\n\n"
+        "🦜 Don'tcha и whatcha больше не пугают. "
+        "Часть 3 — woulda, outta, c'mon."
+    ),
+    "items": [
+        _item(
+            "don'tcha",
+            "don't you",
+            "живая речь, вопросы к собеседнику.",
+            "Don'tcha like pizza?",
+            warn=_WARN_HEAR,
+            extra="💡 <i>donchu</i> — только как звучит, не как слово в словаре.",
+            accept=["Don'tcha like pizza", "Don't you like pizza", "Dontcha like pizza"],
+        ),
+        _item(
+            "won'tcha",
+            "won't you",
+            "речь: мягкое «а не хочешь…?».",
+            "Won'tcha come with us?",
+            warn=_WARN_HEAR,
+            accept=["Won'tcha come with us", "Won't you come with us", "Will you not come with us"],
+        ),
+        _item(
+            "didja",
+            "did you",
+            "речь, вопрос про прошлое.",
+            "Didja see that?",
+            warn=_WARN_HEAR,
+            accept=["Didja see that", "Did you see that", "Did ya see that"],
+        ),
+        _item(
+            "d'ya",
+            "do you",
+            "речь, быстрый вопрос.",
+            "D'ya want coffee?",
+            warn=_WARN_HEAR,
+            voice_en="Dya want coffee?",
+            accept=["D'ya want coffee", "Do you want coffee", "Do ya want coffee", "Dya want coffee"],
+        ),
+        _item(
+            "wouldja",
+            "would you",
+            "речь: вежливая просьба, но разговорная.",
+            "Wouldja help me?",
+            warn=_WARN_HEAR,
+            accept=["Wouldja help me", "Would you help me", "Would ya help me"],
+        ),
+        _item(
+            "couldja",
+            "could you",
+            "речь: «можешь…?».",
+            "Couldja wait a minute?",
+            warn=_WARN_HEAR,
+            accept=["Couldja wait a minute", "Could you wait a minute", "Could ya wait a minute"],
+        ),
+        _item(
+            "whatcha",
+            "what are you / what do you",
+            "речь и чат: Whatcha doing?",
+            "Whatcha doing?",
+            warn=_WARN_HEAR,
+            accept=[
+                "Whatcha doing",
+                "What are you doing",
+                "What do you doing",
+                "What you doing",
+                "Watcha doing",
+            ],
+        ),
+        _item(
+            "gotcha",
+            "got you",
+            "речь и чат: «понял / поймал».",
+            "Gotcha. I get it.",
+            accept=["Gotcha", "Got you", "Gotcha I get it", "I get it"],
+        ),
+        _item(
+            "betcha",
+            "bet you",
+            "речь: «спорим / почти уверен».",
+            "Betcha he's late.",
+            warn=_WARN_HEAR,
+            accept=["Betcha he's late", "Bet you he's late", "I betcha he's late", "I bet he's late"],
+        ),
+        _item(
+            "aren'tcha",
+            "aren't you",
+            "речь, вопрос-уточнение.",
+            "Aren'tcha coming?",
+            warn=_WARN_HEAR,
+            accept=["Aren'tcha coming", "Aren't you coming", "Are you not coming"],
+        ),
+    ],
+    "produce": [
+        _prod(
+            ["don'tcha", "don't you", "dontcha", "do not you"],
+            "Задай вопрос с <b>don'tcha</b> — например про еду или фильм.",
+        ),
+        _prod(
+            ["whatcha", "what are you", "what you"],
+            "Спроси друга: <b>whatcha doing</b>?",
+        ),
+        _prod(
+            ["wouldja", "would you", "couldja", "could you"],
+            "Попроси о помощи через <b>wouldja</b> или <b>couldja</b>.",
+        ),
+        _prod(
+            ["gotcha", "got you"],
+            "Ответь, что понял: коротко скажи <b>gotcha</b> и добавь пару слов.",
+            min_words=2,
+        ),
+        _prod(
+            ["didja", "did you"],
+            "Спроси про прошлое: <b>didja see…</b> / <b>didja finish…</b>",
+        ),
+    ],
+}
+
+SWALLOW_3 = {
+    "id": "swallow_3",
+    "title_ru": "«Глотание слов» · 3",
+    "intro_html": (
+        "🦜 <b>Рико:</b> Часть 3 — would have сжимается в <b>woulda</b>, "
+        "out of — в <b>outta</b>, come on — в <b>c'mon</b>.\n\n"
+        "Это уже «как в сериале». Послушай, повтори, потом свои фразы 🎬"
+    ),
+    "done_html": (
+        "🏁 Три части «Глотания слов» позади — ты зверь 🔥\n\n"
+        "🦜 Остался пробник <b>По-свойски</b>: yeah, nope, see ya. Коротко и по делу."
+    ),
+    "items": [
+        _item(
+            "woulda",
+            "would have",
+            "речь про то, что могло бы быть.",
+            "I woulda called you.",
+            accept=["I woulda called you", "I would have called you", "I would've called you"],
+        ),
+        _item(
+            "coulda",
+            "could have",
+            "речь: «мог бы».",
+            "I coulda won.",
+            accept=["I coulda won", "I could have won", "I could've won"],
+        ),
+        _item(
+            "shoulda",
+            "should have",
+            "речь: «надо было».",
+            "I shoulda left earlier.",
+            accept=["I shoulda left earlier", "I should have left earlier", "I should've left earlier"],
+        ),
+        _item(
+            "outta",
+            "out of",
+            "речь и чат: out of → outta.",
+            "I'm outta time.",
+            accept=["I'm outta time", "I am outta time", "I'm out of time", "I am out of time"],
+        ),
+        _item(
+            "lotta",
+            "a lot of",
+            "речь: a lot of → lotta.",
+            "That's a lotta work.",
+            accept=["That's a lotta work", "That is a lotta work", "That's a lot of work", "That is a lot of work"],
+        ),
+        _item(
+            "'cause",
+            "because",
+            "речь и чат. Иногда пишут cuz.",
+            "I'm staying in 'cause I'm tired.",
+            voice_en="I'm staying in cause I'm tired.",
+            accept=[
+                "I'm staying in 'cause I'm tired",
+                "I'm staying in because I'm tired",
+                "I'm staying in cause I'm tired",
+                "I am staying in because I'm tired",
+            ],
+        ),
+        _item(
+            "'em",
+            "them",
+            "речь: them часто сжимается в 'em.",
+            "Tell 'em I'll be late.",
+            voice_en="Tell em I'll be late.",
+            extra="💡 В тексте пиши <i>them</i>. В речи можно 'em.",
+            accept=["Tell 'em I'll be late", "Tell them I'll be late", "Tell em I'll be late"],
+        ),
+        _item(
+            "tryna",
+            "trying to",
+            "речь и чат.",
+            "I'm tryna sleep.",
+            accept=["I'm tryna sleep", "I am tryna sleep", "I'm trying to sleep", "I am trying to sleep"],
+        ),
+        _item(
+            "useta",
+            "used to",
+            "речь про привычку в прошлом.",
+            "I useta live there.",
+            voice_en="I used ta live there.",
+            accept=["I useta live there", "I used to live there", "I used ta live there"],
+        ),
+        _item(
+            "c'mon",
+            "come on",
+            "речь и чат: подгон / «ну же».",
+            "C'mon, let's go.",
+            voice_en="Cmon, let's go.",
+            accept=["C'mon let's go", "Come on let's go", "Cmon let's go", "Come on"],
+        ),
+    ],
+    "produce": [
+        _prod(
+            ["shoulda", "should have", "should've"],
+            "Скажи, что ты <b>shoulda</b> сделал раньше.",
+        ),
+        _prod(
+            ["outta", "out of"],
+            "Скажи, что ты <b>outta</b> time / money / energy.",
+        ),
+        _prod(
+            ["cause", "because", "cuz"],
+            "Объясни почему — через <b>'cause</b>.",
+        ),
+        _prod(
+            ["tryna", "trying to"],
+            "Скажи, что ты <b>tryna</b> сделать прямо сейчас.",
+        ),
+        _prod(
+            ["c'mon", "come on", "cmon"],
+            "Подгони друга: <b>c'mon</b> + куда идём / что делаем.",
+        ),
+    ],
+}
+
+CASUAL_PACK = {
+    "id": "casual_a1",
+    "title_ru": "По-свойски",
+    "intro_html": (
+        "😎 <b>По-свойски</b> · пробник A1\n\n"
+        "🦜 <b>Рико:</b> Это не склейка, а короткие живые ответы. "
+        "В учебнике — yes. В жизни — <b>yeah</b>. "
+        "В учебнике — goodbye. В чате — <b>see ya</b>.\n\n"
+        "Шесть штук, голос, повтор — и три своих реплики. Короткий заход ✌️"
+    ),
+    "done_html": (
+        "🏁 Пробник <b>По-свойски</b> пройден.\n\n"
+        "🦜 Yeah / nope / see ya — уже можно кидать в чат с другом. "
+        "Официально по-прежнему yes, no, goodbye."
+    ),
+    "items": [
+        _item(
+            "yeah",
+            "yes",
+            "согласие с другом, чат, голос.",
+            "Yeah, I'm coming.",
+            warn=_WARN_REPLY,
+            accept=["Yeah I'm coming", "Yes I'm coming", "Yeah I am coming"],
+        ),
+        _item(
+            "nope",
+            "no",
+            "лёгкий отказ, не злой.",
+            "Nope, not today.",
+            warn=_WARN_REPLY,
+            accept=["Nope not today", "No not today", "Nope"],
+        ),
+        _item(
+            "ok",
+            "all right / okay",
+            "везде, даже на работе ок. Okay — чуть спокойнее.",
+            "Ok, let's do it.",
+            warn="это нейтрально. Okay тоже ок. На очень формальном письме лучше all right / certainly.",
+            accept=["Ok let's do it", "Okay let's do it", "OK let's do it"],
+        ),
+        _item(
+            "thanks",
+            "thank you",
+            "речь и чат. Thank you — вежливее и длиннее.",
+            "Thanks, that's kind.",
+            warn="с друзьями thanks. Чужому человеку / на работе часто thank you.",
+            accept=["Thanks that's kind", "Thank you that's kind", "Thanks"],
+        ),
+        _item(
+            "see ya",
+            "see you",
+            "прощание с другом, в конце чата.",
+            "See ya tomorrow.",
+            warn=_WARN_REPLY,
+            accept=["See ya tomorrow", "See you tomorrow", "See ya"],
+        ),
+        _item(
+            "sure",
+            "yes / of course",
+            "лёгкое «конечно / ок, сделаю».",
+            "Sure, I can help.",
+            warn="с друзьями и коллегами норм. В очень сухом письме — of course / certainly.",
+            accept=["Sure I can help", "Sure", "Of course I can help"],
+        ),
+    ],
+    "produce": [
+        _prod(
+            ["yeah", "yes"],
+            "Согласись по-свойски: <b>yeah</b> + что ты делаешь / куда идёшь.",
+        ),
+        _prod(
+            ["nope", "no"],
+            "Откажись мягко: <b>nope</b> + почему / когда не можешь.",
+        ),
+        _prod(
+            ["see ya", "see you"],
+            "Попрощайся: <b>see ya</b> + когда (tomorrow / later / on Friday).",
+        ),
+    ],
+}
+
+PACKS: list[dict] = [SWALLOW_1, SWALLOW_2, SWALLOW_3, CASUAL_PACK]
 
 
 def get_pack(pack_id: str) -> dict | None:
@@ -156,14 +549,16 @@ def pack_by_button_label(text: str) -> dict | None:
     raw = (text or "").strip()
     if raw.endswith(" ✅"):
         raw = raw[: -len(" ✅")].rstrip()
-    for i, p in enumerate(PACKS, start=1):
-        label = f"{i}. {p['title_ru']}"
-        if raw == label or raw == p["title_ru"]:
+    for p in PACKS:
+        if raw == p["title_ru"] or raw == f"{p['title_ru']} ✅":
             return p
     return None
 
 
 def pack_button_label(pack: dict, *, done: bool) -> str:
-    idx = next((i for i, p in enumerate(PACKS, start=1) if p["id"] == pack["id"]), 1)
     mark = " ✅" if done else ""
-    return f"{idx}. {pack['title_ru']}{mark}"
+    return f"{pack['title_ru']}{mark}"
+
+
+def slide_count(pack: dict) -> int:
+    return 1 + len(pack.get("items") or []) + len(pack.get("produce") or [])

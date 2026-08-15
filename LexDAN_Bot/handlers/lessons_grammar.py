@@ -207,7 +207,7 @@ async def open_level_hub(m: Message, level: str):
     extra = "\n🎧 <b>Listening</b> доступен."
     if m.from_user and m.from_user.id == MANAGER_ID:
         extra += "\n📖 <b>Reading</b> — тестовый доступ."
-        extra += "\n💬 <b>Живая речь</b> — тестовый доступ (первый пак)."
+        extra += "\n🤙 <b>Живая речь</b> — тестовый доступ."
     else:
         extra += "\n📖 Reading · 🗣 Speaking · ✍️ Writing — <i>скоро</i> 🚀"
     await m.answer(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from data.street_talk import PACKS, get_pack
+from data.street_talk import PACKS, get_pack, slide_count
 from services.database import get_user, save_users
 
 
@@ -48,13 +48,6 @@ def get_session(user: dict) -> dict | None:
     sm = ensure_street(user)
     s = sm.get("session")
     return s if isinstance(s, dict) else None
-
-
-def set_session(user_id: str, session: dict | None) -> dict:
-    def mut(u):
-        ensure_street(u)["session"] = session
-
-    return _save(user_id, mut)
 
 
 def update_session(user_id: str, **fields) -> dict:
@@ -103,43 +96,18 @@ def set_street_list(user_id: str, level: str) -> dict:
     return _save(user_id, mut)
 
 
-def set_street_hub(user_id: str, hub: str) -> dict:
-    def mut(u):
-        from services.lesson_state import ensure_lesson
-
-        ensure_lesson(u)
-        u["lesson"]["hub"] = hub
-
-    return _save(user_id, mut)
-
-
-def start_pack_card(user_id: str, pack_id: str) -> dict:
+def start_pack(user_id: str, pack_id: str) -> dict:
     def mut(u):
         from services.lesson_state import ensure_lesson
 
         ensure_lesson(u)
         ensure_street(u)
-        u["lesson"]["hub"] = "street_card"
+        u["lesson"]["hub"] = "street_slide"
         u["street_talk"]["session"] = {
             "pack_id": pack_id,
-            "task_i": 0,
+            "slide_i": 0,
             "attempts": 0,
         }
-
-    return _save(user_id, mut)
-
-
-def start_tasks(user_id: str) -> dict:
-    def mut(u):
-        from services.lesson_state import ensure_lesson
-
-        ensure_lesson(u)
-        sm = ensure_street(u)
-        s = dict(sm.get("session") or {})
-        s["task_i"] = 0
-        s["attempts"] = 0
-        sm["session"] = s
-        u["lesson"]["hub"] = "street_task"
 
     return _save(user_id, mut)
 
@@ -158,22 +126,56 @@ def reset_attempts(user_id: str) -> dict:
     return update_session(user_id, attempts=0)
 
 
-def advance_task(user_id: str) -> dict | None:
-    """Следующее задание или None, если пак закончен."""
+def current_pack(user: dict) -> dict | None:
+    s = get_session(user) or {}
+    return get_pack(str(s.get("pack_id") or ""))
+
+
+def decode_slide(pack: dict | None, slide_i: int) -> dict:
+    if not pack:
+        return {"kind": "done"}
+    items = pack.get("items") or []
+    produce = pack.get("produce") or []
+    i = int(slide_i or 0)
+    if i <= 0:
+        return {"kind": "intro"}
+    if i <= len(items):
+        return {
+            "kind": "item",
+            "item": items[i - 1],
+            "n": i,
+            "total": len(items),
+        }
+    p = i - 1 - len(items)
+    if p < len(produce):
+        return {
+            "kind": "produce",
+            "task": produce[p],
+            "n": p + 1,
+            "total": len(produce),
+        }
+    return {"kind": "done"}
+
+
+def current_slide(user: dict) -> dict:
+    pack = current_pack(user)
+    s = get_session(user) or {}
+    return decode_slide(pack, int(s.get("slide_i") or 0))
+
+
+def go_next(user_id: str) -> dict | None:
+    """Следующий слайд или None, если пак закончен."""
 
     def mut(u):
-        sm = ensure_street(u)
-        s = dict(sm.get("session") or {})
-        nxt = int(s.get("task_i") or 0) + 1
-        s["task_i"] = nxt
+        s = dict(ensure_street(u).get("session") or {})
+        s["slide_i"] = int(s.get("slide_i") or 0) + 1
         s["attempts"] = 0
-        sm["session"] = s
+        u["street_talk"]["session"] = s
 
     u = _save(user_id, mut)
     s = get_session(u) or {}
     pack = get_pack(str(s.get("pack_id") or ""))
-    tasks = (pack or {}).get("tasks") or []
-    if int(s.get("task_i") or 0) >= len(tasks):
+    if not pack or int(s.get("slide_i") or 0) >= slide_count(pack):
         pack_id = str(s.get("pack_id") or "")
         if pack_id:
             mark_pack_done(user_id, pack_id)
@@ -181,21 +183,22 @@ def advance_task(user_id: str) -> dict | None:
     return s
 
 
-def current_task(user: dict) -> dict | None:
-    s = get_session(user) or {}
-    pack = get_pack(str(s.get("pack_id") or ""))
-    if not pack:
-        return None
-    tasks = pack.get("tasks") or []
-    i = int(s.get("task_i") or 0)
-    if i < 0 or i >= len(tasks):
-        return None
-    return tasks[i]
+def go_prev(user_id: str) -> str:
+    """intro_back — уйти к списку; ok — остаться в слайдах."""
+    from services.database import users_for
 
-
-def current_pack(user: dict) -> dict | None:
-    s = get_session(user) or {}
-    return get_pack(str(s.get("pack_id") or ""))
+    users = users_for(user_id)
+    user = get_user(users, user_id)
+    ensure_street(user)
+    s = dict((user.get("street_talk") or {}).get("session") or {})
+    i = int(s.get("slide_i") or 0)
+    if i <= 0:
+        return "intro_back"
+    s["slide_i"] = i - 1
+    s["attempts"] = 0
+    user["street_talk"]["session"] = s
+    save_users(users, only=str(user_id))
+    return "ok"
 
 
 def _norm(text: str) -> str:
@@ -207,34 +210,48 @@ def _norm(text: str) -> str:
     return t
 
 
-def check_write(task: dict, user_text: str) -> bool:
-    u = _norm(user_text)
-    if not u:
+def check_item_speak(item: dict, heard: str) -> bool:
+    if not (heard or "").strip():
         return False
-    cands = {_norm(task.get("answer") or "")}
-    for a in task.get("accept") or []:
-        cands.add(_norm(a))
-    cands.discard("")
-    return u in cands
-
-
-def check_mcq(task: dict, user_text: str) -> bool:
-    got = (user_text or "").strip()
-    ans = (task.get("answer") or "").strip()
-    if got == ans:
-        return True
-    return _norm(got) == _norm(ans)
-
-
-def check_speak(task: dict, heard: str) -> bool:
-    if check_write(task, heard):
+    if check_write_like(item.get("accept") or [], heard):
         return True
     from services.rico_tutor import answers_equivalent
 
-    phrase = (task.get("phrase") or task.get("answer") or "").strip()
-    accept = list(task.get("accept") or [])
-    if phrase:
-        return answers_equivalent(phrase, heard, accept)
+    example = (item.get("example") or item.get("voice_en") or "").strip()
+    accept = list(item.get("accept") or [])
+    if example and answers_equivalent(example, heard, accept):
+        return True
+    # мягко: в расшифровке есть сжатая или полная форма
+    u = _norm(heard)
+    for token in (item.get("form"), item.get("full")):
+        n = _norm(token or "")
+        if n and n in u:
+            return True
+    return False
+
+
+def check_write_like(accept: list[str], heard: str) -> bool:
+    u = _norm(heard)
+    if not u:
+        return False
+    for a in accept:
+        n = _norm(a)
+        if n and (u == n or n in u or u in n):
+            return True
+    return False
+
+
+def check_produce(task: dict, heard: str) -> bool:
+    u = _norm(heard)
+    if not u:
+        return False
+    words = u.split()
+    if len(words) < int(task.get("min_words") or 3):
+        return False
+    for m in task.get("must") or []:
+        n = _norm(m)
+        if n and n in u:
+            return True
     return False
 
 
