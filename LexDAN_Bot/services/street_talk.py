@@ -107,6 +107,7 @@ def start_pack(user_id: str, pack_id: str) -> dict:
             "pack_id": pack_id,
             "slide_i": 0,
             "attempts": 0,
+            "played": False,
             "card_msg_id": None,
             "voice_msg_id": None,
             "heard_msg_id": None,

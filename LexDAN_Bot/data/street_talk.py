@@ -662,7 +662,7 @@ def pack_button_label(pack: dict, *, done: bool) -> str:
 
 def listen_steps(pack: dict) -> list:
     if pack.get("kind") == "dialogue":
-        return list(pack.get("lines") or [])
+        return []
     return list(pack.get("items") or [])
 
 

@@ -8,11 +8,28 @@ from data.street_talk import _prod
 VOICE_MALE = "dHd5gvgSOzSfduK4CvEg"
 VOICE_FEMALE = "nDJIICjR9zfJExIFeSCN"
 MALE_NAMES = {"mark", "jack", "oliver", "noah"}
+VOICE_META = {
+    "male": {"voice_id": VOICE_MALE, "accent": "American", "flag": "🇺🇸"},
+    "female": {"voice_id": VOICE_FEMALE, "accent": "British", "flag": "🇬🇧"},
+}
+
+
+def speaker_meta(who: str) -> dict:
+    key = (who or "").strip().lower()
+    return VOICE_META["male" if key in MALE_NAMES else "female"]
 
 
 def voice_id_for_who(who: str) -> str:
-    key = (who or "").strip().lower()
-    return VOICE_MALE if key in MALE_NAMES else VOICE_FEMALE
+    return speaker_meta(who)["voice_id"]
+
+
+def speaker_label(who: str, n: int | None = None) -> str:
+    meta = speaker_meta(who)
+    name = (who or "").strip() or "…"
+    bit = f"{name} · {meta['accent']} {meta['flag']}".strip()
+    if n:
+        return f"{bit} {n}"
+    return bit
 
 
 def _line(who: str, text: str) -> dict:
@@ -44,13 +61,8 @@ def _dlg(
         "level": level,
         "kind": "dialogue",
         "title_ru": f"🎧 Диалог {n} · {title}",
-        "intro_html": (
-            f"🎧 <b>Диалог {n}: «{title}»</b> · {level}\n\n"
-            f"👤 {who_a} и {who_b}\n"
-            f"🧃 В речи: <i>{slang}</i>\n\n"
-            "Слушай реплики по одной — повторять не надо. "
-            "В конце пять вопросов: отвечай <b>голосом</b> по-английски."
-        ),
+        "slang": slang,
+        "intro_html": f"🧃 {slang}",
         "done_html": (
             f"🏁 Диалог «{title}» закрыт.\n\n"
             "🦜 Сценка осела. Можно следующий 🎧"

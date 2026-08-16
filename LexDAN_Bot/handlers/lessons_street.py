@@ -18,14 +18,13 @@ from data.street_talk import (
     BTN_SKIP_SPEAK,
     BTN_STREET,
     format_item_html,
-    format_line_html,
     format_produce_html,
     format_remind_html,
     pack_button_label,
     pack_by_button_label,
     section_intro_html,
 )
-from data.street_talk_dialogues import voice_id_for_who
+from data.street_talk_dialogues import speaker_label, voice_id_for_who
 from handlers.filters import ModeFilter
 from handlers.lesson_filters import LessonHubFilter
 from handlers.lesson_keyboards import level_sections_kb
@@ -251,8 +250,64 @@ async def _goto_packs(m: Message) -> None:
     )
 
 
+async def _play_dialogue(m: Message, user: dict, pack: dict) -> None:
+    from services.elevenlabs import send_voice_reply
+
+    uid = str(m.from_user.id)
+    s = get_session(user) or {}
+    if s.get("played"):
+        await m.answer(
+            "Диалог уже в чате выше. Жми <b>Далее</b> — вопросы голосом.",
+            reply_markup=_intro_kb(),
+            parse_mode="HTML",
+        )
+        return
+
+    slang = (pack.get("slang") or pack.get("intro_html") or "").strip()
+    if slang.startswith("🧃"):
+        words_html = slang
+    else:
+        words_html = f"🧃 {slang}" if slang else "🧃"
+    await m.answer(words_html, reply_markup=_intro_kb(), parse_mode="HTML")
+
+    for i, line in enumerate(pack.get("lines") or [], start=1):
+        who = line.get("who") or ""
+        text = (line.get("text") or "").strip()
+        label = speaker_label(who, i)
+        await m.answer(f"<b>{label}:</b>", parse_mode="HTML")
+        if not text:
+            continue
+        ok = await send_voice_reply(
+            m,
+            text,
+            title=label,
+            voice_id=_cast_voice_id(voice_id_for_who(who)),
+            allow_gtts_fallback=False,
+        )
+        if not ok:
+            await m.answer(
+                f"<i>(голос {who} временно недоступен — текст ниже)</i>\n"
+                f"<code>{text}</code>",
+                parse_mode="HTML",
+            )
+
+    await m.answer(
+        "Когда прослушаешь — жми <b>Далее</b>. Дальше пять вопросов голосом.",
+        reply_markup=_intro_kb(),
+        parse_mode="HTML",
+    )
+    update_session(
+        uid,
+        played=True,
+        card_msg_id=None,
+        voice_msg_id=None,
+        heard_msg_id=None,
+        remind_msg_id=None,
+    )
+
+
 async def _present_slide(m: Message, user: dict) -> None:
-    from services.elevenlabs import send_rico_voice, send_voice_reply
+    from services.elevenlabs import send_rico_voice
 
     uid = str(m.from_user.id)
     pack = current_pack(user) or {}
@@ -263,23 +318,21 @@ async def _present_slide(m: Message, user: dict) -> None:
         await _finish_pack(m, user, pack)
         return
 
+    if kind == "intro" and pack.get("kind") == "dialogue":
+        await _play_dialogue(m, user, pack)
+        return
+
     await _wipe_slide_msgs(m, uid)
 
     html = ""
     kb = _kb_for_slide(slide)
     voice_en = ""
-    cast_vid = ""
     if kind == "intro":
         html = pack.get("intro_html") or "Поехали."
     elif kind == "item":
         item = slide["item"]
         html = format_item_html(title, slide["n"], slide["total"], item)
         voice_en = (item.get("voice_en") or item.get("example") or "").strip()
-    elif kind == "line":
-        line = slide["line"]
-        html = format_line_html(title, slide["n"], slide["total"], line)
-        voice_en = (line.get("text") or "").strip()
-        cast_vid = _cast_voice_id(voice_id_for_who(line.get("who") or ""))
     elif kind == "produce":
         html = format_produce_html(title, slide["n"], slide["total"], slide["task"])
     else:
@@ -289,15 +342,7 @@ async def _present_slide(m: Message, user: dict) -> None:
     card = await m.answer(html, reply_markup=kb, parse_mode="HTML")
     voice_id = None
     if voice_en:
-        if cast_vid:
-            sent = await send_voice_reply(
-                m,
-                voice_en,
-                title=slide.get("line", {}).get("who") or "Диалог",
-                voice_id=cast_vid,
-            )
-        else:
-            sent = await send_rico_voice(m, voice_en, user=user, title="Живая речь")
+        sent = await send_rico_voice(m, voice_en, user=user, title="Живая речь")
         if sent is not False and sent is not None and getattr(sent, "message_id", None):
             voice_id = sent.message_id
         elif not sent:
@@ -471,7 +516,15 @@ async def street_voice_answer(m: Message):
     slide = current_slide(user)
     kind = slide.get("kind")
     if kind == "intro":
-        await m.answer("Сначала жми Далее — там будет что слушать.", reply_markup=_intro_kb())
+        pack = current_pack(user) or {}
+        if pack.get("kind") == "dialogue":
+            await m.answer(
+                "Слушай диалог в чате, потом жми <b>Далее</b> — вопросы голосом.",
+                reply_markup=_intro_kb(),
+                parse_mode="HTML",
+            )
+        else:
+            await m.answer("Сначала жми Далее — там будет что слушать.", reply_markup=_intro_kb())
         return
     if kind == "line":
         await m.answer("Тут только слушать 🎧 Жми Далее.", reply_markup=_line_kb())
