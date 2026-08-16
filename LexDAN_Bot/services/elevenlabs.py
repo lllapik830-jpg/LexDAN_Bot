@@ -340,7 +340,7 @@ async def send_rico_voice(
 ) -> bool:
     """
     Озвучка голосом Рико (уроки, огонь дня, реплики Рико).
-    Не использовать для чата и персонажей Listening.
+    Не использовать для чата и персонажей Listening / диалогов Живой речи.
     timeout=10: Rico-фразы чуть длиннее чата; без sticky после timeout → быстрее gTTS.
     """
     from services.voices import resolve_rico_voice_id

@@ -15,11 +15,11 @@ SECTION_INTRO_HTML = (
     "🤙 <b>Живая речь</b> · A1\n\n"
     "🦜 <b>Рико:</b> Учебник говорит по слогам. Люди — нет. "
     "Они склеивают слова и кивают короткими ответами.\n\n"
-    "Здесь четыре кнопки:\n"
+    "Здесь паки и <b>пять диалогов</b> 🎧\n"
     "🌀 <b>«Глотание слов»</b> · 1–3 — как звучит wanna, don'tcha, c'mon\n"
     "😎 <b>По-свойски</b> — короткие живые ответы: yeah, nope, see ya\n\n"
-    "На каждом слайде я озвучу пример, ты повторишь. "
-    "Потом скажешь <b>свою</b> фразу в микрофон. Писать почти не будем 🎤"
+    "На слайдах я озвучу пример, ты повторишь. "
+    "В диалогах — слушай, потом отвечай на вопросы голосом 🎤"
 )
 
 _WARN_CHAT = (
@@ -74,12 +74,14 @@ def _prod(
     *,
     min_words: int = 3,
     remind_html: str = "",
+    as_question: bool = False,
 ) -> dict:
     return {
         "must": must,
         "prompt_html": prompt_html,
         "min_words": min_words,
         "remind_html": remind_html,
+        "as_question": as_question,
     }
 
 
@@ -116,11 +118,29 @@ def format_item_html(pack_title: str, n: int, total: int, item: dict) -> str:
 
 
 def format_produce_html(pack_title: str, n: int, total: int, task: dict) -> str:
+    if task.get("as_question"):
+        return (
+            f"❓ <b>Вопрос {n}/{total}</b> · {pack_title}\n\n"
+            f"{task['prompt_html']}\n\n"
+            "🦜 Ответь <b>голосом</b> по-английски. Можно своими словами.\n"
+            "Напомнить — если забыл, о чём речь."
+        )
     return (
         f"🎤 <b>Своя фраза {n}/{total}</b> · {pack_title}\n\n"
         f"{task['prompt_html']}\n\n"
         "🦜 Скажи это <b>голосом</b>, как другу. Не читай с листа идеально — "
         "главное, чтобы конструкция прозвучала."
+    )
+
+
+def format_line_html(pack_title: str, n: int, total: int, line: dict) -> str:
+    who = line.get("who") or "…"
+    text = line.get("text") or ""
+    return (
+        f"🎧 <b>Реплика {n}/{total}</b> · {pack_title}\n\n"
+        f"👤 <b>{who}:</b>\n"
+        f"<i>{text}</i>\n\n"
+        "Слушай. Потом <b>Далее</b> — следующая реплика, в конце вопросы."
     )
 
 
@@ -572,8 +592,9 @@ A1_PACKS: list[dict] = [SWALLOW_1, SWALLOW_2, SWALLOW_3, CASUAL_PACK]
 
 def all_packs() -> list[dict]:
     from data.street_talk_levels import EXTRA_PACKS
+    from data.street_talk_dialogues import DIALOGUE_PACKS
 
-    return [*A1_PACKS, *EXTRA_PACKS]
+    return [*A1_PACKS, *EXTRA_PACKS, *DIALOGUE_PACKS]
 
 
 def packs_for_level(level: str | None) -> list[dict]:
@@ -596,24 +617,21 @@ def section_intro_html(level: str | None) -> str:
             "🤙 <b>Живая речь</b> · A1\n\n"
             "🦜 <b>Рико:</b> Учебник говорит по слогам. Люди — нет.\n\n"
             "🌀 <b>«Глотание слов»</b> · 1–3 — wanna, don'tcha, c'mon\n"
-            "😎 <b>По-свойски</b> — yeah, nope, see ya\n\n"
-            "Слайд не копится в чате: старое голосовое уходит, карточка меняется. "
-            "Повтори пример в микрофон 🎤"
+            "😎 <b>По-свойски</b> — yeah, nope, see ya\n"
+            "🎧 <b>Диалоги</b> — пять сценок, потом вопросы голосом\n\n"
+            "Слайд не копится в чате: старое голосовое уходит, карточка меняется."
         ),
         "A2": (
             "🤙 <b>Живая речь</b> · A2\n\n"
-            "🦜 Планы с друзьями, переписка и как носители упрощают <b>времена</b>: "
-            "сейчас / вчера / завтра. Без учебниковой таблицы — как в жизни."
+            "🦜 Планы, переписка, времена как говорят — и <b>пять диалогов</b> 🎧"
         ),
         "B1": (
             "🤙 <b>Живая речь</b> · B1\n\n"
-            "🦜 Сериалы, чаты — и времена, которые реально говорят: "
-            "past simple для историй, present perfect для already / yet / never."
+            "🦜 Сериалы, чаты, already/yesterday — и <b>пять диалогов</b> 🎧"
         ),
         "B2": (
             "🤙 <b>Живая речь</b> · B2\n\n"
-            "🦜 Интернет-сленг с рамкой «где нельзя», плюс времена native: "
-            "gonna vs I'll vs I'm meeting, I was gonna, I've been…"
+            "🦜 Интернет, регистр, времена native — и <b>пять диалогов</b> 🎧"
         ),
     }
     return by_lv.get(lv, by_lv["A1"])
@@ -642,5 +660,11 @@ def pack_button_label(pack: dict, *, done: bool) -> str:
     return f"{pack['title_ru']}{mark}"
 
 
+def listen_steps(pack: dict) -> list:
+    if pack.get("kind") == "dialogue":
+        return list(pack.get("lines") or [])
+    return list(pack.get("items") or [])
+
+
 def slide_count(pack: dict) -> int:
-    return 1 + len(pack.get("items") or []) + len(pack.get("produce") or [])
+    return 1 + len(listen_steps(pack)) + len(pack.get("produce") or [])

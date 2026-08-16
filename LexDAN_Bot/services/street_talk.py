@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from data.street_talk import get_pack, packs_for_level, slide_count
+from data.street_talk import get_pack, listen_steps, packs_for_level, slide_count
 from services.database import get_user, save_users
 
 
@@ -138,19 +138,27 @@ def current_pack(user: dict) -> dict | None:
 def decode_slide(pack: dict | None, slide_i: int) -> dict:
     if not pack:
         return {"kind": "done"}
-    items = pack.get("items") or []
+    steps = listen_steps(pack)
     produce = pack.get("produce") or []
     i = int(slide_i or 0)
     if i <= 0:
         return {"kind": "intro"}
-    if i <= len(items):
+    if i <= len(steps):
+        step = steps[i - 1]
+        if pack.get("kind") == "dialogue":
+            return {
+                "kind": "line",
+                "line": step,
+                "n": i,
+                "total": len(steps),
+            }
         return {
             "kind": "item",
-            "item": items[i - 1],
+            "item": step,
             "n": i,
-            "total": len(items),
+            "total": len(steps),
         }
-    p = i - 1 - len(items)
+    p = i - 1 - len(steps)
     if p < len(produce):
         return {
             "kind": "produce",
@@ -250,11 +258,18 @@ def check_produce(task: dict, heard: str) -> bool:
     if not u:
         return False
     words = u.split()
-    if len(words) < int(task.get("min_words") or 3):
+    need = int(task.get("min_words") or 3)
+    if task.get("as_question"):
+        need = min(need, 1)
+    if len(words) < need:
         return False
     for m in task.get("must") or []:
         n = _norm(m)
         if n and n in u:
+            return True
+    if task.get("as_question"):
+        ans = _norm(re.sub(r"<[^>]+>", " ", task.get("remind_html") or ""))
+        if ans and (ans in u or u in ans):
             return True
     return False
 

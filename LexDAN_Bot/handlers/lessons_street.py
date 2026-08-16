@@ -18,12 +18,14 @@ from data.street_talk import (
     BTN_SKIP_SPEAK,
     BTN_STREET,
     format_item_html,
+    format_line_html,
     format_produce_html,
     format_remind_html,
     pack_button_label,
     pack_by_button_label,
     section_intro_html,
 )
+from data.street_talk_dialogues import voice_id_for_who
 from handlers.filters import ModeFilter
 from handlers.lesson_filters import LessonHubFilter
 from handlers.lesson_keyboards import level_sections_kb
@@ -93,15 +95,25 @@ def _lesson_level(user: dict) -> str:
 
 def _packs_kb(user: dict) -> ReplyKeyboardMarkup:
     level = _lesson_level(user)
-    rows = []
-    row: list[KeyboardButton] = []
+    theory: list[KeyboardButton] = []
+    dialogs: list[KeyboardButton] = []
     for p in packs_for_list(level):
-        row.append(KeyboardButton(text=pack_button_label(p, done=is_pack_done(user, p["id"]))))
+        btn = KeyboardButton(text=pack_button_label(p, done=is_pack_done(user, p["id"])))
+        if p.get("kind") == "dialogue":
+            dialogs.append(btn)
+        else:
+            theory.append(btn)
+    rows: list[list[KeyboardButton]] = []
+    row: list[KeyboardButton] = []
+    for b in theory:
+        row.append(b)
         if len(row) == 2:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
+    for b in dialogs:
+        rows.append([b])
     rows.append([KeyboardButton(text=BTN_BACK_SECTIONS)])
     rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
@@ -130,6 +142,17 @@ def _item_kb() -> ReplyKeyboardMarkup:
     )
 
 
+def _line_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_PREV), KeyboardButton(text=BTN_NEXT)],
+            [KeyboardButton(text=BTN_BACK_PACKS)],
+            [KeyboardButton(text="🔙 Вернуться в меню")],
+        ],
+        resize_keyboard=True,
+    )
+
+
 def _produce_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -149,7 +172,23 @@ def _kb_for_slide(slide: dict) -> ReplyKeyboardMarkup:
         return _intro_kb()
     if kind == "produce":
         return _produce_kb()
+    if kind == "line":
+        return _line_kb()
     return _item_kb()
+
+
+def _cast_voice_id(voice_id: str) -> str:
+    """Голос персонажа диалога — никогда не Рико."""
+    try:
+        from services.voices import RICO_VOICE_ALT_ID, RICO_VOICE_ID
+
+        banned = {RICO_VOICE_ID, RICO_VOICE_ALT_ID, "fBD19tfE58bkETeiwUoC", "XsmrVB66q3D4TaXVaWNF"}
+    except Exception:
+        banned = {"fBD19tfE58bkETeiwUoC", "XsmrVB66q3D4TaXVaWNF"}
+    vid = (voice_id or "").strip()
+    if not vid or vid in banned:
+        return "dHd5gvgSOzSfduK4CvEg"
+    return vid
 
 
 async def _del(m: Message, mid) -> None:
@@ -213,7 +252,7 @@ async def _goto_packs(m: Message) -> None:
 
 
 async def _present_slide(m: Message, user: dict) -> None:
-    from services.elevenlabs import send_rico_voice
+    from services.elevenlabs import send_rico_voice, send_voice_reply
 
     uid = str(m.from_user.id)
     pack = current_pack(user) or {}
@@ -229,12 +268,18 @@ async def _present_slide(m: Message, user: dict) -> None:
     html = ""
     kb = _kb_for_slide(slide)
     voice_en = ""
+    cast_vid = ""
     if kind == "intro":
         html = pack.get("intro_html") or "Поехали."
     elif kind == "item":
         item = slide["item"]
         html = format_item_html(title, slide["n"], slide["total"], item)
         voice_en = (item.get("voice_en") or item.get("example") or "").strip()
+    elif kind == "line":
+        line = slide["line"]
+        html = format_line_html(title, slide["n"], slide["total"], line)
+        voice_en = (line.get("text") or "").strip()
+        cast_vid = _cast_voice_id(voice_id_for_who(line.get("who") or ""))
     elif kind == "produce":
         html = format_produce_html(title, slide["n"], slide["total"], slide["task"])
     else:
@@ -244,7 +289,15 @@ async def _present_slide(m: Message, user: dict) -> None:
     card = await m.answer(html, reply_markup=kb, parse_mode="HTML")
     voice_id = None
     if voice_en:
-        sent = await send_rico_voice(m, voice_en, user=user, title="Живая речь")
+        if cast_vid:
+            sent = await send_voice_reply(
+                m,
+                voice_en,
+                title=slide.get("line", {}).get("who") or "Диалог",
+                voice_id=cast_vid,
+            )
+        else:
+            sent = await send_rico_voice(m, voice_en, user=user, title="Живая речь")
         if sent is not False and sent is not None and getattr(sent, "message_id", None):
             voice_id = sent.message_id
         elif not sent:
@@ -392,7 +445,7 @@ async def street_remind(m: Message):
     user = get_user(users, uid)
     slide = current_slide(user)
     if slide.get("kind") != "produce":
-        await m.answer("Напоминалка — на заданиях со своей фразой.", reply_markup=_kb_for_slide(slide))
+        await m.answer("Напоминалка — на вопросах и своей фразе.", reply_markup=_kb_for_slide(slide))
         return
     s = get_session(user) or {}
     await _del(m, s.get("remind_msg_id"))
@@ -418,7 +471,10 @@ async def street_voice_answer(m: Message):
     slide = current_slide(user)
     kind = slide.get("kind")
     if kind == "intro":
-        await m.answer("Сначала жми Далее — там будет что повторять.", reply_markup=_intro_kb())
+        await m.answer("Сначала жми Далее — там будет что слушать.", reply_markup=_intro_kb())
+        return
+    if kind == "line":
+        await m.answer("Тут только слушать 🎧 Жми Далее.", reply_markup=_line_kb())
         return
     if kind not in {"item", "produce"}:
         raise SkipHandler
@@ -471,7 +527,12 @@ async def street_voice_answer(m: Message):
         update_session(uid, heard_msg_id=flash.message_id if flash else None)
         await _advance(m, flash=flash)
         return
-    tip = "Попробуй ещё раз повторить пример." if kind == "item" else "Скажи ещё раз — и вставь конструкцию в фразу."
+    if kind == "item":
+        tip = "Попробуй ещё раз повторить пример."
+    elif (slide.get("task") or {}).get("as_question"):
+        tip = "Скажи ещё раз по-английски — можно своими словами."
+    else:
+        tip = "Скажи ещё раз — и вставь конструкцию в фразу."
     await m.answer(
         f"Услышал: <i>{shown}</i>\n{tip}",
         parse_mode="HTML",
@@ -489,6 +550,9 @@ async def street_slide_text(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     slide = current_slide(user)
+    if slide.get("kind") == "line":
+        await m.answer("Тут только слушать 🎧 Жми Далее.", reply_markup=_line_kb())
+        return
     await m.answer(
         "Тут голос, не набор 🎤\nПришли голосовое — или Далее / Пропустить.",
         reply_markup=_kb_for_slide(slide),
