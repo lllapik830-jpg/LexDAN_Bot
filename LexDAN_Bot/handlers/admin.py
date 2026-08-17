@@ -58,6 +58,8 @@ HELP = (
     "/broadcast_fix — рассылка: фикс-апдейт + картинка\n"
     "/broadcast_features — Listening / сейфы 30·70 / отмена списаний\n"
     "/broadcast_sept — акция к 1 сентября (549/279)\n"
+    "/post_street [force] — пост в канал про Живую речь\n"
+    "/broadcast_street [force] — рассылка всем: Живая речь открыта\n"
     "/revoke <code>id</code>\n"
     "/unlock_levels — открыть себе все уровни A0–C2\n"
     "/event — статус ивента + баллы по Grammar/Vocab/Listening\n"
@@ -843,6 +845,54 @@ async def admin_broadcast_features(m: Message):
         return
     await m.answer("📣 Рассылаю новости (Listening / сейфы / подписка)…")
     result = await broadcast_features_update(m.bot)
+    if not result.get("ok"):
+        await m.answer(f"❌ Не вышло: {result.get('error')}")
+        return
+    await m.answer(
+        f"✅ Готово.\n"
+        f"Отправлено: <b>{result.get('sent', 0)}</b>\n"
+        f"Ошибок: <b>{result.get('fail', 0)}</b>\n"
+        f"Помечено blocked: <b>{result.get('blocked', 0)}</b>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("post_street"))
+async def admin_post_street(m: Message, command: CommandObject):
+    if not _is_admin(m):
+        return
+    from services.broadcast import post_street_talk_to_channel_once
+
+    force = (command.args or "").strip().lower() in {"force", "1", "redo"}
+    await m.answer("📣 Постим Живую речь в канал…")
+    result = await post_street_talk_to_channel_once(m.bot, force=force)
+    if result.get("already"):
+        await m.answer(
+            "ℹ️ Уже постили. Повторить: <code>/post_street force</code>",
+            parse_mode="HTML",
+        )
+        return
+    if not result.get("ok"):
+        await m.answer(f"❌ Не вышло: {result.get('error')}")
+        return
+    await m.answer(f"✅ Пост ушёл в {result.get('channel') or 'канал'}.")
+
+
+@router.message(Command("broadcast_street"))
+async def admin_broadcast_street(m: Message, command: CommandObject):
+    if not _is_admin(m):
+        return
+    from services.broadcast import broadcast_street_talk_once
+
+    force = (command.args or "").strip().lower() in {"force", "1", "redo"}
+    await m.answer("📣 Рассылаю всем: Живая речь открыта…")
+    result = await broadcast_street_talk_once(m.bot, force=force)
+    if result.get("already"):
+        await m.answer(
+            "ℹ️ Уже рассылали. Повторить: <code>/broadcast_street force</code>",
+            parse_mode="HTML",
+        )
+        return
     if not result.get("ok"):
         await m.answer(f"❌ Не вышло: {result.get('error')}")
         return

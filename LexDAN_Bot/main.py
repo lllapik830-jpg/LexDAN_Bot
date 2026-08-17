@@ -41,7 +41,7 @@ dp.include_routers(
     payments.router,
     voice.router,
     lessons_vocabulary.router,
-    lessons_street.router,  # Живая речь (MANAGER) до grammar voice catch-all
+    lessons_street.router,  # Живая речь до grammar voice catch-all
     lessons_grammar.router,
     lessons_listening.router,  # Listening до заглушек секций
     lessons_reading.router,  # Reading (тест MANAGER) до заглушек
@@ -159,6 +159,8 @@ async def main():
         asyncio.create_task(_event_announce_once())
         asyncio.create_task(_batch_3d_grant_once())
         asyncio.create_task(_sept_promo_broadcast_once())
+        asyncio.create_task(_street_talk_channel_post_once())
+        asyncio.create_task(_street_talk_dm_broadcast_once())
         await dp.start_polling(bot, handle_as_tasks=True)
     finally:
         release_bot_lock()
@@ -219,6 +221,44 @@ async def _sept_promo_broadcast_once():
             logging.warning("Sept promo broadcast: %s", result)
     except Exception as e:
         logging.error(f"Sept promo broadcast error: {e}")
+
+
+async def _street_talk_channel_post_once():
+    """После деплоя один раз пост в канал про Живую речь."""
+    from services.broadcast import post_street_talk_to_channel_once
+
+    await asyncio.sleep(40)
+    try:
+        result = await post_street_talk_to_channel_once(bot, force=False)
+        if result.get("already"):
+            logging.info("Street talk channel post already sent")
+        elif result.get("ok"):
+            logging.info("Street talk channel post ok: %s", result)
+        else:
+            logging.warning("Street talk channel post: %s", result)
+    except Exception as e:
+        logging.error(f"Street talk channel post error: {e}")
+
+
+async def _street_talk_dm_broadcast_once():
+    """После деплоя один раз разослать всем: Живая речь открыта."""
+    from services.broadcast import broadcast_street_talk_once
+
+    await asyncio.sleep(45)
+    try:
+        result = await broadcast_street_talk_once(bot, force=False)
+        if result.get("already"):
+            logging.info("Street talk DM broadcast already sent")
+        elif result.get("ok"):
+            logging.info(
+                "Street talk DM sent=%s fail=%s",
+                result.get("sent"),
+                result.get("fail"),
+            )
+        else:
+            logging.warning("Street talk DM broadcast: %s", result)
+    except Exception as e:
+        logging.error(f"Street talk DM broadcast error: {e}")
 
 
 async def _daily_review_loop():

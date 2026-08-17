@@ -1,4 +1,4 @@
-"""Живая речь — слайды без засорения чата. Только MANAGER_ID."""
+"""Живая речь — слайды + диалоги как в Listening."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from data.street_talk import (
     BTN_BACK_PACKS,
     BTN_BACK_SECTIONS,
     BTN_NEXT,
-    BTN_PREV,
     BTN_REMIND,
     BTN_SKIP_SPEAK,
     BTN_STREET,
@@ -23,8 +22,9 @@ from data.street_talk import (
     pack_button_label,
     pack_by_button_label,
     section_intro_html,
+    street_talk_open,
 )
-from data.street_talk_dialogues import speaker_label, voice_id_for_who
+from data.street_talk_dialogues import format_dialogue_intro_html, speaker_label, voice_id_for_who
 from handlers.filters import ModeFilter
 from handlers.lesson_filters import LessonHubFilter
 from handlers.lesson_keyboards import level_sections_kb
@@ -32,21 +32,21 @@ from services.database import MODE_LESSONS, get_user, load_users
 from services.lesson_state import assessment_busy, ensure_lesson, set_level_hub
 from services.street_talk import (
     bump_attempt,
+    can_start_street_pack,
     check_item_speak,
     check_produce,
     clear_session,
+    consume_street_slot,
     current_pack,
     current_slide,
     ensure_street,
     get_session,
     go_next,
-    go_prev,
     is_pack_done,
     packs_for_list,
     reset_attempts,
     set_street_list,
     start_pack,
-    street_talk_allowed,
     update_session,
 )
 from services.tg_out import try_delete, try_delete_user_tap
@@ -64,7 +64,6 @@ _NAV = {
     BTN_STREET,
     "💬 Живая речь",
     BTN_NEXT,
-    BTN_PREV,
     BTN_BACK_PACKS,
     BTN_BACK_SECTIONS,
     BTN_REMIND,
@@ -129,11 +128,9 @@ def _intro_kb() -> ReplyKeyboardMarkup:
     )
 
 
-def _item_kb() -> ReplyKeyboardMarkup:
+def _exit_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BTN_SKIP_SPEAK)],
-            [KeyboardButton(text=BTN_PREV), KeyboardButton(text=BTN_NEXT)],
             [KeyboardButton(text=BTN_BACK_PACKS)],
             [KeyboardButton(text="🔙 Вернуться в меню")],
         ],
@@ -141,10 +138,10 @@ def _item_kb() -> ReplyKeyboardMarkup:
     )
 
 
-def _line_kb() -> ReplyKeyboardMarkup:
+def _item_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BTN_PREV), KeyboardButton(text=BTN_NEXT)],
+            [KeyboardButton(text=BTN_SKIP_SPEAK)],
             [KeyboardButton(text=BTN_BACK_PACKS)],
             [KeyboardButton(text="🔙 Вернуться в меню")],
         ],
@@ -157,7 +154,6 @@ def _produce_kb() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text=BTN_REMIND)],
             [KeyboardButton(text=BTN_SKIP_SPEAK)],
-            [KeyboardButton(text=BTN_PREV), KeyboardButton(text=BTN_NEXT)],
             [KeyboardButton(text=BTN_BACK_PACKS)],
             [KeyboardButton(text="🔙 Вернуться в меню")],
         ],
@@ -171,8 +167,6 @@ def _kb_for_slide(slide: dict) -> ReplyKeyboardMarkup:
         return _intro_kb()
     if kind == "produce":
         return _produce_kb()
-    if kind == "line":
-        return _line_kb()
     return _item_kb()
 
 
@@ -256,19 +250,14 @@ async def _play_dialogue(m: Message, user: dict, pack: dict) -> None:
     uid = str(m.from_user.id)
     s = get_session(user) or {}
     if s.get("played"):
-        await m.answer(
-            "Диалог уже в чате выше. Жми <b>Далее</b> — вопросы голосом.",
-            reply_markup=_intro_kb(),
-            parse_mode="HTML",
-        )
+        await _advance(m)
         return
 
-    slang = (pack.get("slang") or pack.get("intro_html") or "").strip()
-    if slang.startswith("🧃"):
-        words_html = slang
-    else:
-        words_html = f"🧃 {slang}" if slang else "🧃"
-    await m.answer(words_html, reply_markup=_intro_kb(), parse_mode="HTML")
+    await m.answer(
+        format_dialogue_intro_html(pack),
+        reply_markup=_exit_kb(),
+        parse_mode="HTML",
+    )
 
     for i, line in enumerate(pack.get("lines") or [], start=1):
         who = line.get("who") or ""
@@ -291,11 +280,6 @@ async def _play_dialogue(m: Message, user: dict, pack: dict) -> None:
                 parse_mode="HTML",
             )
 
-    await m.answer(
-        "Когда прослушаешь — жми <b>Далее</b>. Дальше пять вопросов голосом.",
-        reply_markup=_intro_kb(),
-        parse_mode="HTML",
-    )
     update_session(
         uid,
         played=True,
@@ -304,6 +288,7 @@ async def _play_dialogue(m: Message, user: dict, pack: dict) -> None:
         heard_msg_id=None,
         remind_msg_id=None,
     )
+    await _advance(m)
 
 
 async def _present_slide(m: Message, user: dict) -> None:
@@ -389,7 +374,7 @@ async def _advance(m: Message, *, flash: Message | None = None) -> None:
 
 async def open_street_for_level(m: Message, user: dict, level: str) -> None:
     uid = str(m.from_user.id)
-    if not street_talk_allowed(uid):
+    if not street_talk_open(level):
         return
     ensure_street(user)
     set_street_list(uid, level)
@@ -404,8 +389,6 @@ async def open_street_for_level(m: Message, user: dict, level: str) -> None:
 
 @router.message(ModeFilter(MODE_LESSONS), F.text.in_({BTN_STREET, "💬 Живая речь"}))
 async def open_street_section(m: Message):
-    if not street_talk_allowed(m.from_user.id):
-        return
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     if assessment_busy(user):
@@ -414,13 +397,13 @@ async def open_street_section(m: Message):
     if (user.get("lesson") or {}).get("hub") != "level_hub":
         return
     level = _lesson_level(user)
+    if not street_talk_open(level):
+        return
     await open_street_for_level(m, user, level)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("street_list"), F.text == BTN_BACK_SECTIONS)
 async def street_back_sections(m: Message):
-    if not street_talk_allowed(m.from_user.id):
-        return
     await _goto_sections(m)
 
 
@@ -429,15 +412,18 @@ async def street_pick_pack(m: Message):
     text = (m.text or "").strip()
     if text in _NAV:
         return
-    if not street_talk_allowed(m.from_user.id):
-        return
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     pack = pack_by_button_label(text, level=_lesson_level(user))
     if not pack:
         await m.answer("Выбери пак кнопкой ниже 🤙", reply_markup=_packs_kb(user))
         return
+    ok, limit_msg = can_start_street_pack(user, pack["id"])
+    if not ok:
+        await m.answer(limit_msg, reply_markup=_packs_kb(user), parse_mode="HTML")
+        return
     await try_delete_user_tap(m)
+    consume_street_slot(str(m.from_user.id), pack["id"])
     start_pack(str(m.from_user.id), pack["id"])
     users = load_users()
     user = get_user(users, str(m.from_user.id))
@@ -446,45 +432,28 @@ async def street_pick_pack(m: Message):
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter(*_SLIDE_HUBS), F.text == BTN_BACK_PACKS)
 async def street_back_packs(m: Message):
-    if not street_talk_allowed(m.from_user.id):
-        return
     await _goto_packs(m)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter(*_SLIDE_HUBS), F.text == BTN_BACK_SECTIONS)
 async def street_slide_back_sections(m: Message):
-    if not street_talk_allowed(m.from_user.id):
-        return
     await _goto_sections(m)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter(*_SLIDE_HUBS), F.text == BTN_NEXT)
 async def street_next(m: Message):
-    if not street_talk_allowed(m.from_user.id):
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    pack = current_pack(user) or {}
+    slide = current_slide(user)
+    if pack.get("kind") == "dialogue" or slide.get("kind") != "intro":
         return
     await try_delete_user_tap(m)
     await _advance(m)
 
 
-@router.message(ModeFilter(MODE_LESSONS), LessonHubFilter(*_SLIDE_HUBS), F.text == BTN_PREV)
-async def street_prev(m: Message):
-    if not street_talk_allowed(m.from_user.id):
-        return
-    uid = str(m.from_user.id)
-    await try_delete_user_tap(m)
-    where = go_prev(uid)
-    if where == "intro_back":
-        await _goto_packs(m)
-        return
-    users = load_users()
-    user = get_user(users, uid)
-    await _present_slide(m, user)
-
-
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter(*_SLIDE_HUBS), F.text == BTN_REMIND)
 async def street_remind(m: Message):
-    if not street_talk_allowed(m.from_user.id):
-        return
     uid = str(m.from_user.id)
     users = load_users()
     user = get_user(users, uid)
@@ -501,33 +470,18 @@ async def street_remind(m: Message):
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter(*_SLIDE_HUBS), F.text.in_(_SKIP_SPEAK))
 async def street_skip_speak(m: Message):
-    if not street_talk_allowed(m.from_user.id):
-        return
     await try_delete_user_tap(m)
     await _advance(m)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter(*_SLIDE_HUBS), F.voice)
 async def street_voice_answer(m: Message):
-    if not street_talk_allowed(m.from_user.id):
-        raise SkipHandler
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     slide = current_slide(user)
     kind = slide.get("kind")
     if kind == "intro":
-        pack = current_pack(user) or {}
-        if pack.get("kind") == "dialogue":
-            await m.answer(
-                "Слушай диалог в чате, потом жми <b>Далее</b> — вопросы голосом.",
-                reply_markup=_intro_kb(),
-                parse_mode="HTML",
-            )
-        else:
-            await m.answer("Сначала жми Далее — там будет что слушать.", reply_markup=_intro_kb())
-        return
-    if kind == "line":
-        await m.answer("Тут только слушать 🎧 Жми Далее.", reply_markup=_line_kb())
+        await m.answer("Сначала жми Далее — там будет что повторять.", reply_markup=_intro_kb())
         return
     if kind not in {"item", "produce"}:
         raise SkipHandler
@@ -598,15 +552,10 @@ async def street_slide_text(m: Message):
     text = (m.text or "").strip()
     if text in _NAV:
         return
-    if not street_talk_allowed(m.from_user.id):
-        return
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     slide = current_slide(user)
-    if slide.get("kind") == "line":
-        await m.answer("Тут только слушать 🎧 Жми Далее.", reply_markup=_line_kb())
-        return
     await m.answer(
-        "Тут голос, не набор 🎤\nПришли голосовое — или Далее / Пропустить.",
+        "Тут голос, не набор 🎤\nПришли голосовое — или Пропустить.",
         reply_markup=_kb_for_slide(slide),
     )

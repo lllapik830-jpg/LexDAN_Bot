@@ -310,6 +310,7 @@ def report_limits() -> str:
         FREE_GRAMMAR_PER_DAY,
         FREE_LISTENING_PER_DAY,
         FREE_READING_PER_DAY,
+        FREE_STREET_PER_DAY,
         grammar_daily_cap as growth_grammar_cap,
         grammar_total_used_today,
     )
@@ -325,6 +326,7 @@ def report_limits() -> str:
         f"Vocab <b>{FREE_VOCAB_ITEMS_PER_DAY}</b> · "
         f"Listening <b>{FREE_LISTENING_PER_DAY}</b> · "
         f"Reading <b>{FREE_READING_PER_DAY}</b> · "
+        f"Живая речь <b>{FREE_STREET_PER_DAY}</b> · "
         f"Чат <b>{FREE_CHAT_PER_DAY}</b>.\n",
     ]
 

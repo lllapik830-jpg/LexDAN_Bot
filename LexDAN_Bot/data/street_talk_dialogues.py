@@ -62,6 +62,8 @@ def _dlg(
         "kind": "dialogue",
         "title_ru": f"🎧 Диалог {n} · {title}",
         "slang": slang,
+        "who_a": who_a,
+        "who_b": who_b,
         "intro_html": f"🧃 {slang}",
         "done_html": (
             f"🏁 Диалог «{title}» закрыт.\n\n"
@@ -70,6 +72,49 @@ def _dlg(
         "lines": lines,
         "produce": questions,
     }
+
+
+def dialogue_cast(pack: dict) -> list[dict]:
+    rus = [pack.get("who_a") or "", pack.get("who_b") or ""]
+    seen: list[str] = []
+    for line in pack.get("lines") or []:
+        who = (line.get("who") or "").strip()
+        if who and who not in seen:
+            seen.append(who)
+    out = []
+    for i, en in enumerate(seen):
+        meta = speaker_meta(en)
+        ru = rus[i] if i < len(rus) and rus[i] else en
+        out.append(
+            {
+                "name_en": en,
+                "name_ru": ru,
+                "accent": meta["accent"],
+                "flag": meta["flag"],
+                "voice_id": meta["voice_id"],
+            }
+        )
+    return out
+
+
+def format_dialogue_intro_html(pack: dict) -> str:
+    title = pack.get("title_ru") or "Диалог"
+    slang = (pack.get("slang") or "").strip()
+    bits = []
+    for c in dialogue_cast(pack):
+        bits.append(
+            f"• <b>{c['name_ru']}</b> ({c['name_en']}) · {c['accent']} {c['flag']}"
+        )
+    cast_block = "\n".join(bits) if bits else "• двое собеседников"
+    words = slang if slang else "—"
+    return (
+        f"🦜 <b>Рико:</b> {title}\n\n"
+        f"👥 <b>Собеседники:</b>\n"
+        f"{cast_block}\n\n"
+        f"🧃 <b>В речи услышишь:</b>\n"
+        f"<i>{words}</i>\n\n"
+        "Слушай реплики подряд. Потом вопросы голосом — отвечай, как услышал. Поехали 🤙"
+    )
 
 
 # --- A1 ---

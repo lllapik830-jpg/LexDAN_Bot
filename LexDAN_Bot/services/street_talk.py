@@ -1,36 +1,104 @@
-"""Состояние раздела «Живая речь» (пока только MANAGER_ID)."""
+"""Состояние раздела «Живая речь»."""
 
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 
-from data.street_talk import get_pack, listen_steps, packs_for_level, slide_count
+from data.street_talk import get_pack, listen_steps, packs_for_level, slide_count, street_talk_open
 from services.database import get_user, save_users
 
+MSK = timezone(timedelta(hours=3))
 
-def street_talk_allowed(user_id: str | int | None) -> bool:
-    if user_id is None:
-        return False
-    from config import MANAGER_ID
 
-    try:
-        return int(str(user_id).strip()) == int(MANAGER_ID)
-    except (TypeError, ValueError):
-        return False
+def street_talk_allowed(user_id: str | int | None = None, *, level: str | None = None) -> bool:
+    """Раздел открыт всем пользователям на уровнях с контентом. user_id — совместимость."""
+    if level is not None:
+        return street_talk_open(level)
+    return True
 
 
 def ensure_street(user: dict) -> dict:
     if "street_talk" not in user or not isinstance(user.get("street_talk"), dict):
-        user["street_talk"] = {"progress": {}, "session": None}
+        user["street_talk"] = {
+            "progress": {},
+            "session": None,
+            "daily_date": "",
+            "daily_used": 0,
+            "daily_pack_id": "",
+        }
     sm = user["street_talk"]
     if not isinstance(sm.get("progress"), dict):
         sm["progress"] = {}
+    sm.setdefault("daily_date", "")
+    sm.setdefault("daily_used", 0)
+    sm.setdefault("daily_pack_id", "")
     return sm
 
 
 def is_pack_done(user: dict, pack_id: str) -> bool:
     sm = ensure_street(user)
     return bool(sm["progress"].get(str(pack_id)))
+
+
+def _today() -> str:
+    return datetime.now(MSK).date().isoformat()
+
+
+def street_daily_cap(user: dict) -> int | None:
+    """None = безлимит (полный доступ 799 / триал). Иначе 1 пак в день (free и 399)."""
+    from services.growth import FREE_STREET_PER_DAY
+    from services.rewards import user_plan
+
+    if user_plan(user) == "full":
+        return None
+    return FREE_STREET_PER_DAY
+
+
+def street_used_today(user: dict) -> int:
+    sm = ensure_street(user)
+    if sm.get("daily_date") != _today():
+        return 0
+    return int(sm.get("daily_used") or 0)
+
+
+def can_start_street_pack(user: dict, pack_id: str) -> tuple[bool, str]:
+    from services.growth import FREE_STREET_PER_DAY
+
+    cap = street_daily_cap(user)
+    if cap is None:
+        return True, ""
+    sm = ensure_street(user)
+    today = _today()
+    if sm.get("daily_date") == today and str(sm.get("daily_pack_id") or "") == str(pack_id):
+        return True, ""
+    used = street_used_today(user)
+    if used >= cap:
+        return (
+            False,
+            f"🤙 На бесплатном и тарифе «Общение» — "
+            f"<b>{FREE_STREET_PER_DAY} пак Живой речи в день</b> "
+            "(теория или диалог — одна кнопка).\n"
+            "Лимит на сегодня уже использован. Завтра снова можно, "
+            "или открой полный доступ (799₽) без дневного лимита.",
+        )
+    return True, ""
+
+
+def consume_street_slot(user_id: str, pack_id: str) -> dict:
+    def mut(u):
+        sm = ensure_street(u)
+        today = _today()
+        if sm.get("daily_date") != today:
+            sm["daily_date"] = today
+            sm["daily_used"] = 0
+            sm["daily_pack_id"] = ""
+        if str(sm.get("daily_pack_id") or "") == str(pack_id):
+            return
+        sm["daily_used"] = int(sm.get("daily_used") or 0) + 1
+        sm["daily_pack_id"] = str(pack_id)
+
+    return _save(user_id, mut)
 
 
 def _save(user_id: str, mutator) -> dict:

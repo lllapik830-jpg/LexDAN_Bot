@@ -1,4 +1,4 @@
-"""Живая речь: слайды + голос. Пока A1, только MANAGER_ID."""
+"""Живая речь: слайды + голос. A1–C2 (C1/C2 — паки B2)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ BTN_BACK_SECTIONS = "⬅️ К разделам"
 BTN_REPLAY = "🔊 Ещё раз"
 BTN_SKIP_SPEAK = "⏭ Пропустить произношение"
 BTN_REMIND = "🦜 Напомнить"
+STREET_LEVELS = {"A1", "A2", "B1", "B2"}
+STREET_OPEN_LEVELS = {"A1", "A2", "B1", "B2", "C1", "C2"}
 
 SECTION_INTRO_HTML = (
     "🤙 <b>Живая речь</b> · A1\n\n"
@@ -597,21 +599,27 @@ def all_packs() -> list[dict]:
     return [*A1_PACKS, *EXTRA_PACKS, *DIALOGUE_PACKS]
 
 
-def packs_for_level(level: str | None) -> list[dict]:
+def street_content_level(level: str | None) -> str:
+    """C1/C2 берут живой регистр B2 — отдельных паков нет, сленг тот же."""
     lv = str(level or "A1").upper()
-    if lv == "A0":
-        lv = "A1"
     if lv in {"C1", "C2"}:
-        lv = "B2"
+        return "B2"
+    return lv
+
+
+def packs_for_level(level: str | None) -> list[dict]:
+    lv = street_content_level(level)
+    if lv not in STREET_LEVELS:
+        return []
     return [p for p in all_packs() if str(p.get("level") or "A1").upper() == lv]
+
+
+def street_talk_open(level: str | None) -> bool:
+    return str(level or "").upper() in STREET_OPEN_LEVELS
 
 
 def section_intro_html(level: str | None) -> str:
     lv = str(level or "A1").upper()
-    if lv == "A0":
-        lv = "A1"
-    if lv in {"C1", "C2"}:
-        lv = "B2"
     by_lv = {
         "A1": (
             "🤙 <b>Живая речь</b> · A1\n\n"
@@ -619,19 +627,40 @@ def section_intro_html(level: str | None) -> str:
             "🌀 <b>«Глотание слов»</b> · 1–3 — wanna, don'tcha, c'mon\n"
             "😎 <b>По-свойски</b> — yeah, nope, see ya\n"
             "🎧 <b>Диалоги</b> — пять сценок, потом вопросы голосом\n\n"
-            "Слайд не копится в чате: старое голосовое уходит, карточка меняется."
+            "На бесплатном и тарифе «Общение» — <b>1 пак в день</b> "
+            "(теория или диалог). На полном доступе (799) — безлимит."
         ),
         "A2": (
             "🤙 <b>Живая речь</b> · A2\n\n"
-            "🦜 Планы, переписка, времена как говорят — и <b>пять диалогов</b> 🎧"
+            "🦜 Планы, переписка, времена как говорят — и <b>пять диалогов</b> 🎧\n\n"
+            "На бесплатном и «Общении» — <b>1 пак в день</b>. "
+            "На полном доступе (799) — безлимит."
         ),
         "B1": (
             "🤙 <b>Живая речь</b> · B1\n\n"
-            "🦜 Сериалы, чаты, already/yesterday — и <b>пять диалогов</b> 🎧"
+            "🦜 Сериалы, чаты, already/yesterday — и <b>пять диалогов</b> 🎧\n\n"
+            "На бесплатном и «Общении» — <b>1 пак в день</b>. "
+            "На полном доступе (799) — безлимит."
         ),
         "B2": (
             "🤙 <b>Живая речь</b> · B2\n\n"
-            "🦜 Интернет, регистр, времена native — и <b>пять диалогов</b> 🎧"
+            "🦜 Интернет, регистр, времена native — и <b>пять диалогов</b> 🎧\n\n"
+            "На бесплатном и «Общении» — <b>1 пак в день</b>. "
+            "На полном доступе (799) — безлимит."
+        ),
+        "C1": (
+            "🤙 <b>Живая речь</b> · C1\n\n"
+            "🦜 Учебник на C1 всё ещё слишком гладкий. Здесь — склейки, сленг "
+            "и диалоги как у носителей (материал B2, регистр живой).\n\n"
+            "На бесплатном и «Общении» — <b>1 пак в день</b>. "
+            "На полном доступе (799) — безлимит."
+        ),
+        "C2": (
+            "🤙 <b>Живая речь</b> · C2\n\n"
+            "🦜 Чтобы звучать не как эссе, а как человек: сленг, регистр, "
+            "диалоги носителей.\n\n"
+            "На бесплатном и «Общении» — <b>1 пак в день</b>. "
+            "На полном доступе (799) — безлимит."
         ),
     }
     return by_lv.get(lv, by_lv["A1"])

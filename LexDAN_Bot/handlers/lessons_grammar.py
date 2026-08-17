@@ -205,15 +205,21 @@ async def open_level_hub(m: Message, level: str):
     from config import MANAGER_ID
 
     extra = "\n🎧 <b>Listening</b> доступен."
+    available = "Сейчас доступны <b>Grammar</b>, <b>Vocabulary</b> и <b>Listening</b>."
+    from data.street_talk import street_talk_open
+
+    if street_talk_open(level):
+        extra += "\n🤙 <b>Живая речь</b> — как говорят живьём, не как в учебнике."
+        available = (
+            "Сейчас доступны <b>Grammar</b>, <b>Vocabulary</b>, <b>Listening</b> "
+            "и <b>Живая речь</b>."
+        )
     if m.from_user and m.from_user.id == MANAGER_ID:
         extra += "\n📖 <b>Reading</b> — тестовый доступ."
-        extra += "\n🤙 <b>Живая речь</b> — тестовый доступ."
     else:
         extra += "\n📖 Reading · 🗣 Speaking · ✍️ Writing — <i>скоро</i> 🚀"
     await m.answer(
-        get_level_welcome(level)
-        + "\n\nСейчас доступны <b>Grammar</b>, <b>Vocabulary</b> и <b>Listening</b>."
-        + extra,
+        get_level_welcome(level) + "\n\n" + available + extra,
         reply_markup=level_sections_kb(user_id=m.from_user.id),
         parse_mode="HTML",
     )

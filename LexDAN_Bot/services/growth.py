@@ -24,6 +24,8 @@ FREE_VOCAB_ITEMS_PER_DAY = 1
 FREE_LISTENING_PER_DAY = 1
 # Reading: 1 тема в день (см. reading_state.reading_daily_cap)
 FREE_READING_PER_DAY = 1
+# Живая речь: 1 пак/диалог в день (см. street_talk.street_daily_cap)
+FREE_STREET_PER_DAY = 1
 
 # Совместимость со старым кодом «баллов»
 POINT_GRAMMAR_EXERCISE = 1
@@ -581,6 +583,7 @@ def _brain_rest_msg(
         f"• Grammar (включая доп. задания) — <b>{FREE_GRAMMAR_PER_DAY}</b>\n"
         f"• Vocabulary — <b>{FREE_VOCAB_ITEMS_PER_DAY}</b> слово/фраза\n"
         f"• Listening — <b>{FREE_LISTENING_PER_DAY}</b> аудирование\n"
+        f"• Живая речь — <b>{FREE_STREET_PER_DAY}</b> пак\n"
         f"• Общение — <b>{FREE_CHAT_PER_DAY}</b> сообщ.\n\n"
         "Завтра лимиты обновятся 💚\n"
         f"С подпиской за <b>{price}₽/мес</b> — безлимит."
@@ -909,6 +912,7 @@ def subscription_blurb(user: dict) -> str:
         f"• Vocabulary — <b>{FREE_VOCAB_ITEMS_PER_DAY}</b> слово/фраза\n"
         f"• Listening — <b>{FREE_LISTENING_PER_DAY}</b> аудирование\n"
         f"• Reading — <b>{FREE_READING_PER_DAY}</b> тема\n"
+        f"• Живая речь — <b>{FREE_STREET_PER_DAY}</b> пак\n"
         f"• Общение — <b>{FREE_CHAT_PER_DAY}</b> сообщ.\n"
         "• тест уровня\n\n"
         f"{promo_price_lines_html()}"
