@@ -80,6 +80,14 @@ from services.growth import ensure_growth
 log = logging.getLogger(__name__)
 router = Router()
 
+
+@router.message(ModeFilter(MODE_COURSES))
+async def _legacy_courses_to_path(m: Message):
+    """Старый placement больше не показываем — новый ежедневный курс."""
+    from handlers.path_course import open_path
+
+    await open_path(m)
+
 _GRAMMAR_MCQ = {"mcq", "gap_choice"}
 _GRAMMAR_TEXT = {"word_form", "rewrite", "order"}
 
@@ -441,22 +449,10 @@ async def _finish_and_show(m: Message, user: dict, users: dict, uid: str) -> Non
 
 @router.message(F.text == BTN_COURSES)
 async def open_courses(m: Message):
-    if await _deny_if_closed(m):
-        return
-    uid = str(m.from_user.id)
-    users = users_for(uid)
-    user = get_user(users, uid)
-    ensure_growth(user)
-    ensure_course(user)
-    set_mode(uid, MODE_COURSES)
-    save_users(users, only=uid)
-    await m.answer(INTRO_HTML, parse_mode="HTML", reply_markup=_courses_home_kb(user))
-    p = placement(user)
-    if p.get("phase") == "analyzing" and not p.get("finished"):
-        await m.answer(
-            "Анализ ещё не завершён — нажми «Продолжить тест», чтобы получить результат.",
-            reply_markup=_courses_home_kb(user),
-        )
+    """Старый placement не открываем — тот же вход, что у нового пути."""
+    from handlers.path_course import open_path
+
+    await open_path(m)
 
 
 @router.message(ModeFilter(MODE_COURSES), F.text == BTN_COURSE_ABOUT)
