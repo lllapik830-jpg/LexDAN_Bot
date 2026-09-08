@@ -46,13 +46,28 @@ async def chat_own_topic(m: Message):
     )
 
 
+def _selected_chat_voice_key(user: dict) -> str:
+    """Какой голос сейчас считается выбранным (для галочки в кнопках)."""
+    from services.rewards import user_plan
+
+    if user_plan(user) == "free":
+        return ""
+    key = (user.get("chat_voice_key") or "").strip()
+    if key and voice_by_key(key):
+        return key
+    avail = available_chat_voices(user)
+    return (avail[0]["key"] if avail else "") or ""
+
+
 def _voices_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
-    """У каждого голоса: прослушать + выбрать. В превью — только доступные к выбору."""
+    """У каждого голоса: прослушать + выбрать. В превью — только доступные; ✅ только у выбранного."""
     from services.ui_preview import ui_preview_only
 
     rows = []
     if user is not None and ui_preview_only(user=user):
+        selected = _selected_chat_voice_key(user)
         for v in available_chat_voices(user):
+            mark = "✅" if v["key"] == selected else "▫️"
             rows.append(
                 [
                     InlineKeyboardButton(
@@ -60,7 +75,7 @@ def _voices_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
                         callback_data=f"vlisten:{v['key']}",
                     ),
                     InlineKeyboardButton(
-                        text="✅",
+                        text=mark,
                         callback_data=f"vset:{v['key']}",
                     ),
                 ]
@@ -141,6 +156,8 @@ async def chat_voice_listen(c: CallbackQuery):
 
 @router.callback_query(F.data.startswith("vset:"))
 async def chat_voice_pick(c: CallbackQuery):
+    from services.ui_preview import ui_preview_only
+
     key = (c.data or "").split(":", 1)[-1].strip()
     users = load_users()
     user = get_user(users, str(c.from_user.id))
@@ -153,6 +170,17 @@ async def chat_voice_pick(c: CallbackQuery):
         from handlers.lesson_keyboards import tariffs_inline_kb
 
         await c.message.answer("Тарифы:", reply_markup=tariffs_inline_kb(user))
+        return
+    if ui_preview_only(user=user):
+        kb = _voices_inline_kb(user)
+        try:
+            await c.message.edit_reply_markup(reply_markup=kb)
+        except Exception:
+            await c.message.answer(
+                f"Фраза для прослушивания:\n<i>«{VOICE_PREVIEW_PHRASE}»</i>",
+                reply_markup=kb,
+                parse_mode="HTML",
+            )
 
 
 @router.callback_query(F.data.startswith("voice:"))
