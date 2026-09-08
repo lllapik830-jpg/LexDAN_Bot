@@ -7,7 +7,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from handlers.filters import ModeFilter
-from handlers.keyboards import chat_menu
+from handlers.keyboards import BTN_OWN_TOPIC, chat_menu
 from services.database import (
     load_users,
     get_user,
@@ -26,6 +26,23 @@ from services.voices import (
 )
 
 router = Router()
+
+
+@router.message(ModeFilter(MODE_CHAT), F.text == BTN_OWN_TOPIC)
+async def chat_own_topic(m: Message):
+    """Сбросить предложенную тему — юзер начинает со своей."""
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    user["chat_own_topic"] = True
+    user["chat_topic_offered"] = False
+    user["chat_topic_dived"] = False
+    user["chat_active_topic"] = None
+    save_users(users, only=str(m.from_user.id))
+    await m.answer(
+        "Окей, тогда начинай! 🚀✨\n"
+        "🦜 Пиши о чём хочешь — я с тобой 💚",
+        reply_markup=chat_menu(),
+    )
 
 
 def _voices_inline_kb() -> InlineKeyboardMarkup:
@@ -165,6 +182,7 @@ def _esc_html(text: str) -> str:
             or "Вернуться в меню" in t
             or t == "🚀 Начать сегодня"
             or t == BTN_CHAT_VOICE
+            or t == BTN_OWN_TOPIC
         )
     ),
 )

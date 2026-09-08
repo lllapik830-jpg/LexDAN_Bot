@@ -89,6 +89,11 @@ def library_prompt_block(user: dict, *, engaged: bool = False) -> str:
     engaged=True — только активная тема (обычный ход диалога, меньше токенов).
     engaged=False — активная + короткая выборка библиотеки (старт / смена темы).
     """
+    if user.get("chat_own_topic"):
+        return (
+            "\n\nThe student chose their OWN topic. "
+            "Follow whatever they write — do not push a library topic."
+        )
     active = ensure_active_topic(user)
     if engaged:
         return (

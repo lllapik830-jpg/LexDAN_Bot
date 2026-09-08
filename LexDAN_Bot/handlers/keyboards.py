@@ -8,6 +8,7 @@ from data.assessment_data import LEVELS, is_level_accessible_for_user
 
 BTN_ALL_LEVELS_TASKS = "📋 Задания по всем уровням"
 BTN_START_TODAY = "🚀 Начать сегодня"
+BTN_OWN_TOPIC = "💡 Своя тема"
 
 
 def is_dev_unlocked(user: dict | None) -> bool:
@@ -47,6 +48,7 @@ def chat_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🌍 Перевести"), KeyboardButton(text=BTN_CHAT_VOICE)],
+            [KeyboardButton(text=BTN_OWN_TOPIC)],
             [KeyboardButton(text="🔙 Вернуться в меню")],
         ],
         resize_keyboard=True,

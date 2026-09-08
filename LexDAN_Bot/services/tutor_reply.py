@@ -57,17 +57,21 @@ async def reply_as_tutor(
             },
         ]
 
-    ensure_active_topic(user)
+    own_topic = bool(user.get("chat_own_topic"))
+    if not own_topic:
+        ensure_active_topic(user)
 
     # Меняем тему ТОЛЬКО если пользователь явно просит
     if wants_topic_change(user_text):
+        user["chat_own_topic"] = False
         old_id = (user.get("chat_active_topic") or {}).get("id")
         user["chat_active_topic"] = pick_topic(user, avoid_ids={old_id} if old_id else set())
         user["chat_topic_offered"] = False
         user["chat_topic_dived"] = False
+        own_topic = False
 
-    active = ensure_active_topic(user)
-    mode = resolve_chat_reply_mode(user_text, user, hist, recent)
+    active = None if own_topic else ensure_active_topic(user)
+    mode = "gpt" if own_topic else resolve_chat_reply_mode(user_text, user, hist, recent)
 
     if mode == "suggest":
         reply_en = build_suggest_topic_reply(name, active, user_text)
@@ -110,8 +114,11 @@ async def reply_as_tutor(
 
     reply_en = (result.get("reply_en") or "").strip()
     if not reply_en:
-        active = ensure_active_topic(user)
-        reply_en = f"Sure! Let's talk about {active.get('title_en')}. {active.get('seed')}"
+        if own_topic:
+            reply_en = "Sure! Tell me more — I'm listening."
+        else:
+            active = ensure_active_topic(user)
+            reply_en = f"Sure! Let's talk about {active.get('title_en')}. {active.get('seed')}"
     result["reply_en"] = reply_en
     text_out, reply_en = format_tutor_message(result, heard_text=heard_text)
 
