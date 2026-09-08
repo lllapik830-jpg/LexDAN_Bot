@@ -135,6 +135,15 @@ def set_cached(user: dict, kind: str, payload: dict) -> None:
 def hub_intro(user: dict) -> str:
     ensure_daily_fire(user)
     n = opened_count(user)
+    from services.ui_preview import ui_preview_only
+
+    if ui_preview_only(user=user):
+        return (
+            "✨ Маленький ритуал на сегодня: четыре искры от Рико — "
+            "не банальщина из учебника, а штуки, от которых язык оживает 🔥\n\n"
+            f"📊 Открыто сегодня: <b>{n}</b>/4 · обновление в <b>00:00 МСК</b> 🕛"
+        )
+
     lines = [
         "🔥 <b>Огонь дня</b>\n",
         "Маленький ритуал на сегодня: четыре искры от Рико — "
