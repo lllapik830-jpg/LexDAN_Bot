@@ -53,6 +53,17 @@ async def purge(bot, user_id: str, *, chat_id: int | None = None) -> None:
         await try_delete(bot, cid, mid)
 
 
+async def section_banner(m: Message, emoji: str) -> Message | None:
+    """Первое сообщение при входе в раздел — только эмодзи (после purge/replace)."""
+    emoji = (emoji or "").strip()
+    if not emoji:
+        return None
+    sent = await m.answer(emoji)
+    if sent:
+        track(_uid(m), m.chat.id, sent.message_id)
+    return sent
+
+
 async def say(
     m: Message,
     text: str,
@@ -60,16 +71,20 @@ async def say(
     ephemeral: bool = True,
     replace: bool = False,
     delete_tap: bool = False,
+    section_emoji: str | None = None,
     **kwargs: Any,
 ) -> Message:
     """
     Отправить сообщение без цитирования пользовательского.
     replace=True — сначала удалить предыдущие ephemeral этого юзера.
+    section_emoji — отдельным сообщением перед текстом (🏠 / 📚 / …).
     """
     if delete_tap:
         await try_delete_user_tap(m)
     if replace:
         await purge(m.bot, _uid(m), chat_id=m.chat.id)
+    if section_emoji:
+        await section_banner(m, section_emoji)
     sent = await m.answer(text, **kwargs)
     if ephemeral and sent:
         track(_uid(m), m.chat.id, sent.message_id)

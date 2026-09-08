@@ -127,7 +127,7 @@ async def open_chat(m: Message):
             f"🦜 <i>{_esc(opener_en)}</i>\n\n"
             "💡 Либо можешь сам начать с того, что интересно!"
         )
-    await say(m, intro, replace=True, delete_tap=True, reply_markup=chat_menu(), parse_mode="HTML")
+    await say(m, intro, replace=True, delete_tap=True, section_emoji="🗣️", reply_markup=chat_menu(), parse_mode="HTML")
     # Голос в фоне — иначе апдейт висит 10–23с на ElevenLabs и тормозит всё (A2 и т.д.)
     import asyncio
 
@@ -167,10 +167,11 @@ async def open_lessons(m: Message):
     save_users(users, only=user_id)
     phase = user["assessment"].get("phase")
 
-    from services.tg_out import purge, try_delete_user_tap
+    from services.tg_out import purge, section_banner, try_delete_user_tap
 
     await try_delete_user_tap(m)
     await purge(m.bot, user_id, chat_id=m.chat.id)
+    await section_banner(m, "📚")
 
     if phase == "translate":
         a = user["assessment"]
@@ -254,6 +255,7 @@ async def open_profile(m: Message):
         f"{growth}",
         replace=True,
         delete_tap=True,
+        section_emoji="📊",
         reply_markup=profile_menu(user, user_id=m.from_user.id),
         parse_mode="HTML",
         disable_web_page_preview=True,
@@ -286,7 +288,7 @@ async def open_support(m: Message):
             "🆘 Поддержка скоро будет с личным контактом.\n"
             "Пока добавь в Render переменную <code>SUPPORT_USERNAME</code>."
         )
-    await say(m, tip, replace=True, delete_tap=True, reply_markup=main_menu(user, user_id=str(m.from_user.id)), parse_mode="HTML")
+    await say(m, tip, replace=True, delete_tap=True, section_emoji="🆘", reply_markup=main_menu(user, user_id=str(m.from_user.id)), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_MENU), StepFilter("ready"), F.text)

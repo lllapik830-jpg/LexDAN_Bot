@@ -35,6 +35,9 @@ async def ntf_menu(c: CallbackQuery):
     set_mode(uid, MODE_MENU)
     save_users(users, only=uid)
     await c.answer()
+    from services.tg_out import section_banner
+
+    await section_banner(c.message, "🏠")
     await c.message.answer(
         "🏠 Главное меню. Выбери кнопку ниже.",
         reply_markup=main_menu(user, user_id=uid),
@@ -56,6 +59,9 @@ async def ntf_fire(c: CallbackQuery):
     note_lesson_activity(user)
     save_users(users, only=uid)
     await c.answer()
+    from services.tg_out import section_banner
+
+    await section_banner(c.message, "🔥")
     await c.message.answer(
         hub_intro(user),
         parse_mode="HTML",
@@ -90,6 +96,9 @@ async def ntf_profile(c: CallbackQuery):
     set_mode(uid, MODE_PROFILE)
     save_users(users, only=uid)
     await c.answer()
+    from services.tg_out import section_banner
+
+    await section_banner(c.message, "📊")
     await c.message.answer(
         "📊 Профиль",
         reply_markup=profile_menu(user, user_id=uid),

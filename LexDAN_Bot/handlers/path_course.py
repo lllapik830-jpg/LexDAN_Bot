@@ -140,6 +140,9 @@ async def _open_hub(m: Message) -> None:
     if first:
         user["path"]["welcomed"] = True
     save_users(users, only=uid)
+    from services.tg_out import section_banner
+
+    await section_banner(m, "🎓")
     if first:
         await m.answer(WELCOME_HTML, parse_mode="HTML")
     if show_skip:

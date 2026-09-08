@@ -50,5 +50,6 @@ async def back_to_main(m: Message):
         "🏠 Главное меню. Выбери кнопку ниже.",
         replace=True,
         delete_tap=True,
+        section_emoji="🏠",
         reply_markup=main_menu(user),
     )

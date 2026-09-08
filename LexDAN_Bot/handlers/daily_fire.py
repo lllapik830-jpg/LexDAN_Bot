@@ -129,6 +129,9 @@ async def open_daily_fire(m: Message):
     note_lesson_activity(user)
     ensure_daily_fire(user)
     save_users(users, only=uid)
+    from services.tg_out import section_banner
+
+    await section_banner(m, "🔥")
     await m.answer(hub_intro(user), reply_markup=daily_fire_kb(user), parse_mode="HTML")
     # тур-сообщение убрано по сценарию — только хаб с кнопками
     from services.onboard_guided import ensure_onboard, is_guided_onboard, onboard_stage
@@ -166,6 +169,9 @@ async def leave_daily_fire(m: Message):
         await m.answer(hub_intro(user), reply_markup=daily_fire_kb(user, guided=True), parse_mode="HTML")
         return
     set_mode(uid, MODE_MENU)
+    from services.tg_out import section_banner
+
+    await section_banner(m, "🏠")
     await m.answer("Главное меню:", reply_markup=main_menu(user))
 
 

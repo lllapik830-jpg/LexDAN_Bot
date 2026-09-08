@@ -112,6 +112,9 @@ async def open_secret_hub(m: Message):
     _enter_secret_mode(users, user, uid)
     active = get_active(user)
     if active:
+        from services.tg_out import section_banner
+
+        await section_banner(m, "🔐")
         await _resume_active(m, user)
         return
 
@@ -126,6 +129,9 @@ async def open_secret_hub(m: Message):
             f"<i>{meta['blurb']}</i>\n"
             f"⏱ {meta['mins']}\n"
         )
+    from services.tg_out import section_banner
+
+    await section_banner(m, "🔐")
     await m.answer("\n".join(lines), reply_markup=_hub_kb(user), parse_mode="HTML")
 
 
