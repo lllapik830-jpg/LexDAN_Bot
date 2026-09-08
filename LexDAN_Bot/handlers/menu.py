@@ -60,21 +60,34 @@ async def _block_if_imit(m: Message) -> bool:
 async def open_chat(m: Message):
     if await _block_if_imit(m):
         return
-    set_mode(str(m.from_user.id), MODE_CHAT)
-    users = users_for(str(m.from_user.id))
-    user = get_user(users, str(m.from_user.id))
+
+    from services.chat_guard import (
+        replace_voice_task,
+        should_notify_open_spam,
+        try_open_chat,
+    )
+
+    uid = str(m.from_user.id)
+    if not try_open_chat(uid):
+        if should_notify_open_spam(uid):
+            await m.answer("⏳ Чат уже открыт — напиши сообщение 🙂🦜")
+        return
+
+    set_mode(uid, MODE_CHAT)
+    users = users_for(uid)
+    user = get_user(users, uid)
     ensure_growth(user)
     note_lesson_activity(user)
 
     from handlers.trial_notify import flush_trial_ended
 
-    await flush_trial_ended(m, user, users, str(m.from_user.id))
+    await flush_trial_ended(m, user, users, uid)
 
     from services.moderation import ensure_moderation, is_banned, ban_remaining_text
 
     ensure_moderation(user)
     if is_banned(user):
-        save_users(users, only=str(m.from_user.id))
+        save_users(users, only=uid)
         await m.answer(ban_remaining_text(user), parse_mode="HTML")
         return
 
@@ -95,8 +108,8 @@ async def open_chat(m: Message):
     user["chat_own_topic"] = False
     user["chat_recent_replies"] = [opener_en]
     user["last_bot_reply"] = opener_en
-    save_users(users, only=str(m.from_user.id))
-    set_last_bot_reply(str(m.from_user.id), opener_en)
+    save_users(users, only=uid)
+    set_last_bot_reply(uid, opener_en)
 
     intro = (
         "🔥 <b>Погнали общаться!</b> 🙂✨\n\n"
@@ -119,10 +132,11 @@ async def open_chat(m: Message):
     import asyncio
 
     voice_id = resolve_chat_voice_id(user)
-    asyncio.create_task(
+    voice_task = asyncio.create_task(
         send_voice_reply(m, opener_en, title="LexDAN topic", voice_id=voice_id),
-        name=f"open-chat-voice-{m.from_user.id}",
+        name=f"open-chat-voice-{uid}",
     )
+    replace_voice_task(uid, voice_task)
 
 
 def _esc(text: str) -> str:

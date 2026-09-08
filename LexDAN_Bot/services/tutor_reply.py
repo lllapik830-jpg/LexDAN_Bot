@@ -31,7 +31,46 @@ async def reply_as_tutor(
     users: dict | None = None,
     user: dict | None = None,
 ) -> None:
+    from services.chat_guard import (
+        end_chat_reply,
+        replace_voice_task,
+        should_notify_busy,
+        try_begin_chat_reply,
+    )
+
     user_id = str(message.from_user.id)
+    if not try_begin_chat_reply(user_id):
+        if should_notify_busy(user_id):
+            await message.answer("⏳ Секунду — я ещё отвечаю на прошлое сообщение 🦜")
+        return
+
+    try:
+        await _reply_as_tutor_body(
+            message,
+            user_text,
+            heard_text,
+            users=users,
+            user=user,
+            user_id=user_id,
+            replace_voice_task=replace_voice_task,
+            end_chat_reply=end_chat_reply,
+        )
+    except Exception:
+        end_chat_reply(user_id)
+        raise
+
+
+async def _reply_as_tutor_body(
+    message: Message,
+    user_text: str,
+    heard_text: str | None,
+    *,
+    users: dict | None,
+    user: dict | None,
+    user_id: str,
+    replace_voice_task,
+    end_chat_reply,
+) -> None:
     if users is None or user is None:
         users = load_users()
         user = get_user(users, user_id)
@@ -140,15 +179,26 @@ async def reply_as_tutor(
     set_last_bot_reply(user_id, reply_en)
 
     await message.answer(text_out, parse_mode="HTML")
-    asyncio.create_task(
-        _finish_voice(message, synth_task),
+
+    async def _finish_and_release() -> None:
+        try:
+            await _finish_voice(message, synth_task)
+        finally:
+            end_chat_reply(user_id)
+
+    voice_task = asyncio.create_task(
+        _finish_and_release(),
         name=f"chat-voice-{user_id}",
     )
+    replace_voice_task(user_id, voice_task)
 
 
 async def _finish_voice(message: Message, synth_task: asyncio.Task) -> None:
     try:
         mp3_bytes, source = await synth_task
         await send_voice_from_mp3(message, mp3_bytes, source=source)
+    except asyncio.CancelledError:
+        synth_task.cancel()
+        raise
     except Exception as e:
         logging.error(f"Background voice reply failed: {e}")

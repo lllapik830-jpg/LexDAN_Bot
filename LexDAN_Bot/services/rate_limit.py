@@ -3,7 +3,7 @@
 
 При превышении — кулдаун 2 минуты + предупреждение.
 3 срабатывания за час → временный бан.
-Админ (MANAGER_ID) не ограничивается.
+Работает для всех, включая MANAGER_ID (иначе админ может случайно заспамить TTS).
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-MAX_PER_MINUTE = 20
+MAX_PER_MINUTE = 12
 WINDOW_SEC = 60.0
 COOLDOWN_SEC = 120.0  # 2 минуты
 STRIKES_FOR_BAN = 3
@@ -89,12 +89,9 @@ def check_and_touch(user_id: str, user: dict) -> dict[str, Any]:
       notify: str | None  — HTML сообщение пользователю (если нужно)
       persist: bool — нужно сохранить user в БД
     """
-    from config import MANAGER_ID
     from services.moderation import is_banned
 
     uid = str(user_id)
-    if uid == str(MANAGER_ID):
-        return {"allow": True, "notify": None, "persist": False}
 
     ensure_rate_fields(user)
     now = _now()
@@ -154,6 +151,18 @@ def check_and_touch(user_id: str, user: dict) -> dict[str, Any]:
     persist = True
 
     if len(strikes) >= STRIKES_FOR_BAN:
+        from config import MANAGER_ID
+
+        # Админу — только кулдаун, без автобана (иначе сам себя забанит при тестах)
+        if uid == str(MANAGER_ID):
+            log.info("Rate limit strike (manager, no ban) uid=%s", uid)
+            warn = (
+                WARN_HTML
+                + f"\n\n⚠️ Срабатывание <b>{len(strikes)}/{STRIKES_FOR_BAN}</b> за час"
+                + " · тебе как админу бан не ставлю, только пауза."
+            )
+            return {"allow": False, "notify": warn, "persist": True}
+
         user["banned_until"] = now + FLOOD_BAN_SEC
         user["ban_reason"] = "flood"
         user["rate_cooldown_until"] = 0.0
