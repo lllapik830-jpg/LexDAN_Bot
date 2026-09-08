@@ -198,6 +198,11 @@ def set_chat_voice(user: dict, key: str) -> tuple[bool, str]:
 
 
 def voices_help_text(user: dict) -> str:
+    from services.ui_preview import ui_preview_only
+
+    if ui_preview_only(user=user):
+        return _voices_help_text_preview(user)
+
     plan = user_plan(user)
     cur = current_voice_label(user)
     plan_title = {
@@ -238,6 +243,44 @@ def voices_help_text(user: dict) -> str:
         )
 
     lines.append("\nКнопки ниже: 🎧 прослушать · ✅ выбрать")
+    return "\n".join(lines)
+
+
+def _voices_help_text_preview(user: dict) -> str:
+    """Короткий текст хаба голосов (превью для менеджера)."""
+    plan = user_plan(user)
+    cur = current_voice_label(user)
+    for suffix in (" (бесплатный)", " (по умолчанию)"):
+        if cur.endswith(suffix):
+            cur = cur[: -len(suffix)]
+    plan_title = {
+        "free": "бесплатный",
+        "chat": "399₽ · Общение",
+        "full": "799₽ · полный доступ",
+    }.get(plan, plan)
+
+    full_n = len(CHAT_VOICES)
+    chat_n = len(voices_for_min_plan("chat"))
+    avail = available_chat_voices(user)
+
+    lines = [
+        f"Сейчас выбран: <b>{cur}</b>\n",
+        f"Твой тариф: <b>{plan_title}</b>\n",
+        "🎧 Прослушать можно бесплатно (не тратит лимит чата).\n"
+        "✅ Выбрать для ответов — только голоса твоего тарифа.\n",
+        "━━━━━━━━━━━━━━\n",
+        "🆓 Бесплатно: <b>Adam · American 🇺🇸</b>\n"
+        f"💬 399₽: <b>+{chat_n}</b> голоса · "
+        f"🚀 полный: <b>{full_n}</b> голосов на выбор\n",
+        "━━━━━━━━━━━━━━",
+    ]
+    if avail:
+        lines.append("\nНиже — голоса, доступные тебе: 🎧 прослушать · ✅ выбрать")
+    else:
+        lines.append(
+            "\nНа бесплатном для ответов — <b>Adam</b>. "
+            "Чтобы выбирать другие голоса — нужен тариф 👇"
+        )
     return "\n".join(lines)
 
 

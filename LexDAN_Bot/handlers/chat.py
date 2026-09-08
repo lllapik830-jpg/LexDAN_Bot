@@ -20,6 +20,7 @@ from services.voices import (
     BTN_CHAT_VOICE,
     CHAT_VOICES,
     VOICE_PREVIEW_PHRASE,
+    available_chat_voices,
     set_chat_voice,
     voice_by_key,
     voices_help_text,
@@ -45,9 +46,27 @@ async def chat_own_topic(m: Message):
     )
 
 
-def _voices_inline_kb() -> InlineKeyboardMarkup:
-    """У каждого голоса: прослушать (всем) + выбрать (по тарифу)."""
+def _voices_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
+    """У каждого голоса: прослушать + выбрать. В превью — только доступные к выбору."""
+    from services.ui_preview import ui_preview_only
+
     rows = []
+    if user is not None and ui_preview_only(user=user):
+        for v in available_chat_voices(user):
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"🎧 {v['label']}",
+                        callback_data=f"vlisten:{v['key']}",
+                    ),
+                    InlineKeyboardButton(
+                        text="✅",
+                        callback_data=f"vset:{v['key']}",
+                    ),
+                ]
+            )
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+
     # Группируем: сначала 399, потом 799
     for min_plan, tag in (("chat", "399"), ("full", "799")):
         for v in CHAT_VOICES:
@@ -70,16 +89,32 @@ def _voices_inline_kb() -> InlineKeyboardMarkup:
 
 @router.message(ModeFilter(MODE_CHAT), F.text == BTN_CHAT_VOICE)
 async def chat_voice_picker(m: Message):
+    from services.ui_preview import ui_preview_only
+    from services.tg_out import section_banner
+
     users = load_users()
     user = get_user(users, str(m.from_user.id))
+    preview = ui_preview_only(user=user)
+
+    if preview:
+        await section_banner(m, "🎙")
+
     await m.answer(
         voices_help_text(user),
         reply_markup=chat_menu(),
         parse_mode="HTML",
     )
+
+    avail = available_chat_voices(user) if preview else True
+    if preview and not avail:
+        from handlers.lesson_keyboards import tariffs_inline_kb
+
+        await m.answer("Тарифы:", reply_markup=tariffs_inline_kb(user))
+        return
+
     await m.answer(
         f"Фраза для прослушивания:\n<i>«{VOICE_PREVIEW_PHRASE}»</i>",
-        reply_markup=_voices_inline_kb(),
+        reply_markup=_voices_inline_kb(user if preview else None),
         parse_mode="HTML",
     )
 
