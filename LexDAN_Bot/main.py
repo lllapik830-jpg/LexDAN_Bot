@@ -135,6 +135,17 @@ async def main():
         db = "Postgres" if os.getenv("DATABASE_URL") else "users.json (file)"
         print(f"🤖 LexDAN is running! Storage: {db}")
         logging.info(f"User storage backend: {db}")
+        try:
+            from services.promo import PROMO_BUILD_ID, PROMO_CODES
+
+            n_life = sum(
+                1
+                for m in PROMO_CODES.values()
+                if m.get("kind") == "lifetime_full_price" and m.get("active") is not False
+            )
+            logging.info("Promo build %s · lifetime codes=%s", PROMO_BUILD_ID, n_life)
+        except Exception as e:
+            logging.warning("Promo module load check failed: %s", e)
         if PUBLIC_BASE_URL:
             logging.info(f"YooKassa webhook URL: {PUBLIC_BASE_URL}/yookassa/webhook")
         else:

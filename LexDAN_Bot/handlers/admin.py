@@ -59,6 +59,7 @@ HELP = (
     "/broadcast_features — Listening / сейфы 30·70 / отмена списаний\n"
     "/post_street [force] — пост в канал про Живую речь\n"
     "/broadcast_street [force] — рассылка всем: Живая речь открыта\n"
+    "/promo_check [code] — статус lifetime-промокодов\n"
     "/revoke <code>id</code>\n"
     "/unlock_levels — открыть себе все уровни A0–C2\n"
     "/event — статус ивента + баллы по Grammar/Vocab/Listening\n"
@@ -214,6 +215,38 @@ async def admin_help(m: Message):
     text = report_admin_home()
     for part in chunk_html(text):
         await m.answer(part, parse_mode="HTML")
+
+
+@router.message(Command("promo_check"))
+async def admin_promo_check(m: Message, command: CommandObject):
+    """Проверка, что на ПРОДЕ уже новый promo.py (и опционально конкретный код)."""
+    if not _is_admin(m):
+        return
+    from services.promo import PROMO_BUILD_ID, PROMO_CODES, normalize_promo
+
+    lifetime = [
+        k
+        for k, meta in PROMO_CODES.items()
+        if meta.get("kind") == "lifetime_full_price" and meta.get("active") is not False
+    ]
+    lines = [
+        f"🏷 Promo build: <code>{PROMO_BUILD_ID}</code>",
+        f"Активных lifetime-кодов: <b>{len(lifetime)}</b>",
+    ]
+    arg = (command.args or "").strip()
+    if arg:
+        key = normalize_promo(arg)
+        meta = PROMO_CODES.get(key)
+        if not meta:
+            lines.append(f"Код <code>{key}</code> — <b>не найден</b> в PROMO_CODES.")
+        else:
+            lines.append(
+                f"Код <code>{key}</code> — ok · kind=<code>{meta.get('kind')}</code> · "
+                f"active=<code>{meta.get('active')}</code>"
+            )
+    else:
+        lines.append("Коды: " + ", ".join(f"<code>{c}</code>" for c in lifetime))
+    await m.answer("\n".join(lines), parse_mode="HTML")
 
 
 @router.message(Command("users"))

@@ -110,6 +110,13 @@ PROMO_CODES: dict[str, dict] = {
 BTN_SKIP_PROMO = "⏭ Пропустить"
 BTN_ENTER_PROMO = "🎟 Промокод"
 
+# Метка билда — видно в логах Render после деплоя
+PROMO_BUILD_ID = "lifetime399-v1"
+_LIFETIME_COUNT = sum(
+    1 for m in PROMO_CODES.values() if m.get("kind") == "lifetime_full_price" and m.get("active")
+)
+log.info("Promo build %s · lifetime codes active=%s", PROMO_BUILD_ID, _LIFETIME_COUNT)
+
 TRIAL_ENDED_HTML = (
     "🦜 <b>Рико на связи</b>\n\n"
     "Пробный период закончился — но ты ничего не потерял(а)! 💚\n\n"
@@ -127,8 +134,45 @@ _REDEEMS_META_KEY = "promo_redeems"
 _redeems_lock = threading.Lock()
 
 
+# Визуальные двойники (кириллица → латиница), часто при копировании
+_HOMOGLYPHS = str.maketrans(
+    {
+        "А": "A",
+        "В": "B",
+        "Е": "E",
+        "К": "K",
+        "М": "M",
+        "Н": "H",
+        "О": "O",
+        "Р": "P",
+        "С": "C",
+        "Т": "T",
+        "Х": "X",
+        "У": "Y",
+        "а": "A",
+        "в": "B",
+        "е": "E",
+        "к": "K",
+        "м": "M",
+        "н": "H",
+        "о": "O",
+        "р": "P",
+        "с": "C",
+        "т": "T",
+        "х": "X",
+        "у": "Y",
+    }
+)
+
+
 def normalize_promo(code: str) -> str:
-    return (code or "").strip().upper().replace(" ", "")
+    raw = (code or "").strip()
+    # zero-width / BOM / неразрывный пробел
+    for ch in ("\ufeff", "\u200b", "\u200c", "\u200d", "\xa0"):
+        raw = raw.replace(ch, "")
+    raw = raw.replace(" ", "").replace("-", "").replace("_", "")
+    raw = raw.translate(_HOMOGLYPHS).upper()
+    return raw
 
 
 def has_lifetime_full_price(user: dict | None) -> bool:
