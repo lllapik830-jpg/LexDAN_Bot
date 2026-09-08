@@ -708,7 +708,7 @@ async def promo_after_registration(m: Message):
     if not await guard_user_text(m, user, text):
         return
 
-    ok, msg = apply_promo(user, text)
+    ok, msg = apply_promo(user, text, user_id=user_id)
     save_users(users, only=user_id)
     if not ok:
         await m.answer(msg, parse_mode="HTML")

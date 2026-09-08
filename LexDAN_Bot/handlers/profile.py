@@ -192,7 +192,7 @@ async def profile_promo_enter(m: Message):
     if not await guard_user_text(m, user, text):
         return
 
-    ok, msg = apply_promo(user, text)
+    ok, msg = apply_promo(user, text, user_id=user_id)
     user["step"] = "ready"
     save_users(users, only=user_id)
     set_mode(user_id, MODE_PROFILE)

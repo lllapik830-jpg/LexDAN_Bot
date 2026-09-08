@@ -107,10 +107,6 @@ def create_payment(
                 "kind": "initial",
             },
         }
-        from services.sept_promo import PROMO_META_KEY, is_sept_promo_active
-
-        if is_sept_promo_active():
-            payload["metadata"]["promo"] = PROMO_META_KEY
         if with_save:
             payload["save_payment_method"] = True
         r = requests.post(
@@ -232,29 +228,7 @@ def apply_successful_payment(payment: dict) -> dict[str, Any] | None:
     if _already_processed(user, payment_id):
         return None
 
-    from services.sept_promo import (
-        PROMO_META_KEY,
-        is_sept_promo_active,
-        sept_promo_access_until_ts,
-    )
-
-    kind = str(meta.get("kind") or "")
-    promo_flag = str(meta.get("promo") or "") == PROMO_META_KEY
-    # Акция только на первичную оплату / апгрейд, не на автопродление
-    use_promo = kind != "renew" and (promo_flag or is_sept_promo_active())
-
-    if use_promo:
-        until = sept_promo_access_until_ts()
-        if plan == PLAN_CHAT:
-            user["chat_until"] = max(float(user.get("chat_until") or 0), until)
-            user["sub_plan"] = PLAN_CHAT
-        else:
-            user["premium_until"] = max(float(user.get("premium_until") or 0), until)
-            user["sub_plan"] = PLAN_FULL
-            user["in_promo_trial"] = False
-        user["sub_renew_at"] = until
-        days = max(1, int((until - time.time()) / 86400) + 1)
-    elif plan == PLAN_CHAT:
+    if plan == PLAN_CHAT:
         extend_chat_pass(user, SUB_DAYS)
         user["sub_plan"] = PLAN_CHAT
         user["sub_renew_at"] = time.time() + SUB_DAYS * 86400
@@ -287,8 +261,8 @@ def apply_successful_payment(payment: dict) -> dict[str, Any] | None:
         "days": days,
         "renew": meta.get("kind") == "renew",
         "auto": bool(user.get("sub_auto")),
-        "promo": bool(use_promo),
-        "until_label": "30.09.2026" if use_promo else "",
+        "promo": False,
+        "until_label": "",
     }
 
 
@@ -331,8 +305,13 @@ def handle_webhook_payload(body: dict) -> dict[str, Any] | None:
 
 
 def plan_amount_for_user(user: dict, plan: str, *, with_discount: bool = True) -> int:
-    """Цена для checkout. Автопродление всегда без скидки (базовые 399/799)."""
+    """Цена для checkout. Автопродление без %скидки, но с персональной вечной ценой."""
     from services.growth import PRICE_CHAT_MONTH, PRICE_FULL_MONTH
+    from services.promo import lifetime_full_price_rub
+
+    locked = lifetime_full_price_rub(user)
+    if plan == PLAN_FULL and locked is not None:
+        return int(locked)
 
     if not with_discount:
         if plan == PLAN_CHAT:

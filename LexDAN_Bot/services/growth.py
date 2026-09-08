@@ -573,8 +573,16 @@ def _brain_rest_msg(
     *,
     what: str = "уроков",
     limit: int = FREE_GRAMMAR_PER_DAY,
-    price: int = PRICE_FULL_MONTH,
+    price: int | None = None,
+    user: dict | None = None,
 ) -> str:
+    if price is None:
+        if user is not None:
+            from services.pricing import full_price
+
+            price, _ = full_price(user)
+        else:
+            price = PRICE_FULL_MONTH
     return (
         "🦜 <b>Мозгу нужно немного отдохнуть</b>\n\n"
         f"На сегодня лимит бесплатного тарифа исчерпан ({what}: "
@@ -653,7 +661,7 @@ def can_do_grammar_exercise(user: dict) -> tuple[bool, str | None]:
     used = grammar_total_used_today(user)
     if used >= cap:
         user["daily"]["hit_grammar_limit"] = True
-        return False, _brain_rest_msg(what="Grammar", limit=cap)
+        return False, _brain_rest_msg(what="Grammar", limit=cap, user=user)
     return True, None
 
 
@@ -723,7 +731,7 @@ def can_learn_vocab_item(user: dict) -> tuple[bool, str | None]:
     cap = vocab_daily_cap(user)
     if vocab_items_used_today(user) >= cap:
         user["daily"]["hit_vocab_limit"] = True
-        return False, _brain_rest_msg(what="Vocabulary", limit=cap)
+        return False, _brain_rest_msg(what="Vocabulary", limit=cap, user=user)
     return True, None
 
 
@@ -763,7 +771,7 @@ def note_word_learned(user: dict) -> str:
     if not has_lessons_pass(user) and vocab_items_used_today(user) >= vocab_daily_cap(user):
         daily["hit_vocab_limit"] = True
         wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(
-            what="Vocabulary", limit=vocab_daily_cap(user)
+            what="Vocabulary", limit=vocab_daily_cap(user), user=user
         )
     return wrap
 
@@ -785,7 +793,7 @@ def note_phrase_learned(user: dict) -> str:
     if not has_lessons_pass(user) and vocab_items_used_today(user) >= vocab_daily_cap(user):
         daily["hit_vocab_limit"] = True
         wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(
-            what="Vocabulary", limit=vocab_daily_cap(user)
+            what="Vocabulary", limit=vocab_daily_cap(user), user=user
         )
     return wrap
 
@@ -888,8 +896,8 @@ def invite_link(bot_username: str, code: str) -> str:
 
 def subscription_blurb(user: dict) -> str:
     ensure_growth(user)
-    from services.pricing import discount_blurb, lottery_status_lines
-    from services.sept_promo import promo_price_lines_html
+    from services.pricing import catalog_price_lines_html, discount_blurb, lottery_status_lines
+    from services.promo import has_lifetime_full_price, lifetime_price_lines_html
 
     if is_premium(user):
         status = f"✅ Полный доступ ещё <b>{premium_time_label(user)}</b>"
@@ -901,6 +909,12 @@ def subscription_blurb(user: dict) -> str:
     auto_line = ""
     if user.get("sub_auto") and user.get("yookassa_payment_method_id"):
         auto_line = "\n🔁 Автопродление: <b>вкл</b>"
+
+    price_block = (
+        lifetime_price_lines_html(user)
+        if has_lifetime_full_price(user)
+        else catalog_price_lines_html()
+    )
 
     return (
         "💎 <b>Тарифы LexDAN</b>\n\n"
@@ -915,7 +929,7 @@ def subscription_blurb(user: dict) -> str:
         f"• Живая речь — <b>{FREE_STREET_PER_DAY}</b> пак\n"
         f"• Общение — <b>{FREE_CHAT_PER_DAY}</b> сообщ.\n"
         "• тест уровня\n\n"
-        f"{promo_price_lines_html()}"
+        f"{price_block}"
         "🔥 Серия дней и 🎁 друзья дают бустеры — смотри в профиле."
     )
 

@@ -46,39 +46,57 @@ def price_with_discount(base: int, user: dict) -> tuple[int, int]:
 
 
 def chat_price(user: dict) -> tuple[int, int]:
-    from services.sept_promo import catalog_chat_rub
-
-    return price_with_discount(catalog_chat_rub(), user)
+    return price_with_discount(int(PRICE_CHAT_MONTH), user)
 
 
 def full_price(user: dict) -> tuple[int, int]:
-    from services.sept_promo import catalog_full_rub
+    from services.promo import lifetime_full_price_rub
 
-    return price_with_discount(catalog_full_rub(), user)
+    # Персональная вечная цена важнее каталога
+    locked = lifetime_full_price_rub(user)
+    if locked is not None:
+        return int(locked), 0
+    return price_with_discount(int(PRICE_FULL_MONTH), user)
 
 
 def upgrade_price(user: dict) -> tuple[int, int]:
-    """Доплата с тарифа «Общение» до полного (= цена «общения» каталога + скидка)."""
-    from services.sept_promo import catalog_chat_rub
+    """Доплата с тарифа «Общение» до полного (= цена «общения» + скидка)."""
+    return price_with_discount(int(PRICE_CHAT_MONTH), user)
 
-    return price_with_discount(catalog_chat_rub(), user)
+
+def catalog_price_lines_html() -> str:
+    """Блок обычных цен для экрана подписки."""
+    return (
+        f"<b>💬 Только общение</b> — <b>{PRICE_CHAT_MONTH}₽/мес</b>\n"
+        "• безлимит чата (текст + голос)\n"
+        "• апгрейд до полного — доплата в профиле\n\n"
+        f"<b>🚀 Безлимит ко всему</b> — <b>{PRICE_FULL_MONTH}₽/мес</b>\n"
+        "• уроки без лимита (включая Живую речь)\n"
+        "• безлимит общения\n\n"
+    )
 
 
 def discount_blurb(user: dict) -> str:
+    from services.promo import has_lifetime_full_price, lifetime_full_price_rub
+
+    if has_lifetime_full_price(user):
+        rub = lifetime_full_price_rub(user) or 399
+        return (
+            f"\n🏷 <b>Персональная цена навсегда:</b> полный безлимит "
+            f"<b>{rub}₽/мес</b>\n"
+        )
+
     pct = discount_percent(user)
     if pct <= 0:
         return ""
-    from services.sept_promo import catalog_chat_rub, catalog_full_rub
 
     chat, _ = chat_price(user)
     full, _ = full_price(user)
     note = user.get("discount_note") or "награда"
-    base_chat = catalog_chat_rub()
-    base_full = catalog_full_rub()
     return (
         f"\n🏷 <b>Твоя скидка {pct}%</b> ({note})\n"
-        f"• Общение: <s>{base_chat}₽</s> → <b>{chat}₽</b>\n"
-        f"• Всё: <s>{base_full}₽</s> → <b>{full}₽</b>\n"
+        f"• Общение: <s>{PRICE_CHAT_MONTH}₽</s> → <b>{chat}₽</b>\n"
+        f"• Всё: <s>{PRICE_FULL_MONTH}₽</s> → <b>{full}₽</b>\n"
         "Скидка учтётся при оплате через бота.\n"
     )
 

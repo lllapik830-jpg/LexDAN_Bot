@@ -204,20 +204,26 @@ def chat_limit_inline_kb() -> InlineKeyboardMarkup:
 def tariffs_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
     from services.growth import PRICE_CHAT_MONTH, PRICE_FULL_MONTH
     from services.pricing import chat_price, full_price
-    from services.sept_promo import (
-        PROMO_CHAT_RUB,
-        PROMO_FULL_RUB,
-        is_sept_promo_active,
-    )
+    from services.promo import has_lifetime_full_price
 
-    promo = is_sept_promo_active()
+    # Персональная вечная цена — только полный безлимит по закреплённой сумме
+    if user and has_lifetime_full_price(user):
+        full_p, _ = full_price(user)
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=f"🚀 Безлимит ко всему — {full_p}₽/мес (твоя цена)",
+                        callback_data="tariff:full",
+                    )
+                ],
+            ]
+        )
+
     if user:
         chat_p, chat_d = chat_price(user)
         full_p, full_d = full_price(user)
-        if promo:
-            chat_label = f"💬 Общение — {chat_p}₽ (было {PRICE_CHAT_MONTH})"
-            full_label = f"🚀 Полный — {full_p}₽ (было {PRICE_FULL_MONTH})"
-        elif chat_d or full_d:
+        if chat_d or full_d:
             chat_label = (
                 f"💬 Общение — {chat_p}₽ (было {PRICE_CHAT_MONTH})"
                 if chat_d
@@ -231,9 +237,6 @@ def tariffs_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
         else:
             chat_label = f"💬 Только общение — {PRICE_CHAT_MONTH}₽/мес"
             full_label = f"🚀 Безлимит ко всему — {PRICE_FULL_MONTH}₽/мес"
-    elif promo:
-        chat_label = f"💬 Общение — {PROMO_CHAT_RUB}₽ (было {PRICE_CHAT_MONTH})"
-        full_label = f"🚀 Полный — {PROMO_FULL_RUB}₽ (было {PRICE_FULL_MONTH})"
     else:
         chat_label = f"💬 Только общение — {PRICE_CHAT_MONTH}₽/мес"
         full_label = f"🚀 Безлимит ко всему — {PRICE_FULL_MONTH}₽/мес"
