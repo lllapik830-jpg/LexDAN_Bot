@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher
 from flask import Flask, jsonify, request
 
 from config import BOT_TOKEN, PUBLIC_BASE_URL
-from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_street, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews, a0_course, onboard_guided, path_course
+from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_street, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews, a0_course, onboard_guided, path_course, notify
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +50,7 @@ dp.include_routers(
     chat.router,
     lessons.router,
     daily_reviews.router,  # после lessons: иначе hub=grammar_review перехватывает уровни
+    notify.router,
     collection.router,  # до profile catch-all
     profile.router,
 )
@@ -150,9 +151,7 @@ async def main():
             logging.info(f"YooKassa webhook URL: {PUBLIC_BASE_URL}/yookassa/webhook")
         else:
             logging.info("PUBLIC_BASE_URL пуст — укажи его в env для уведомлений ЮKassa")
-        asyncio.create_task(_reminder_loop())
-        asyncio.create_task(_daily_review_loop())
-        asyncio.create_task(_trial_last_day_offer_loop())
+        asyncio.create_task(_notify_loop())
         asyncio.create_task(_autorenew_loop())
         asyncio.create_task(_event_finalize_loop())
         asyncio.create_task(_event_announce_once())
@@ -238,52 +237,22 @@ async def _street_talk_dm_broadcast_once():
         logging.error(f"Street talk DM broadcast error: {e}")
 
 
-async def _daily_review_loop():
-    """Каждые 5 мин: офферы заданий только для 799 (Grammar 12:00, Vocab 16:00 МСК)."""
-    from services.daily_reviews import send_grammar_review_offers, send_vocab_review_offers
+async def _notify_loop():
+    """Новая система уведомлений: раз в 5 мин (1 push/день/юзер, приоритет)."""
+    from services.notify_engine import send_due_notifications
 
-    await asyncio.sleep(70)
+    await asyncio.sleep(55)
     while True:
         try:
-            g = await send_grammar_review_offers(bot)
-            if g.get("sent"):
-                logging.info("Grammar review offers: %s", g)
-            v = await send_vocab_review_offers(bot)
-            if v.get("sent"):
-                logging.info("Vocab review offers: %s", v)
+            result = await send_due_notifications(bot)
+            if result.get("sent"):
+                logging.info("Notify tick: %s", result)
+            week = result.get("week") or {}
+            if week.get("ok"):
+                logging.info("Week results: %s", week)
         except Exception as e:
-            logging.error(f"Daily review loop error: {e}")
+            logging.error(f"Notify loop error: {e}")
         await asyncio.sleep(300)
-
-
-async def _reminder_loop():
-    """Каждые 5 мин: пинги о боте в 12:00 и 18:00 МСК (free / 399)."""
-    from services.reminders import send_due_reminders
-
-    await asyncio.sleep(45)  # дать боту подняться
-    while True:
-        try:
-            n = await send_due_reminders(bot)
-            if n:
-                logging.info(f"Bot pings sent: {n}")
-        except Exception as e:
-            logging.error(f"Reminder loop error: {e}")
-        await asyncio.sleep(300)
-
-
-async def _trial_last_day_offer_loop():
-    """Раз в 6 часов: оффер последнего дня триала (−15%)."""
-    from services.trial_last_day import send_due_last_day_offers
-
-    await asyncio.sleep(90)
-    while True:
-        try:
-            offer = await send_due_last_day_offers(bot)
-            if offer.get("sent"):
-                logging.info("Trial last-day offers: %s", offer)
-        except Exception as e:
-            logging.error(f"Trial last-day offer loop error: {e}")
-        await asyncio.sleep(6 * 3600)
 
 
 async def _event_finalize_loop():

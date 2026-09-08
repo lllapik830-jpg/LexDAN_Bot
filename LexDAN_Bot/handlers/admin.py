@@ -60,6 +60,7 @@ HELP = (
     "/post_street [force] — пост в канал про Живую речь\n"
     "/broadcast_street [force] — рассылка всем: Живая речь открыта\n"
     "/promo_check [code] — статус lifetime-промокодов\n"
+    "/notify_test — превью кандидата уведомления для себя\n"
     "/revoke <code>id</code>\n"
     "/unlock_levels — открыть себе все уровни A0–C2\n"
     "/event — статус ивента + баллы по Grammar/Vocab/Listening\n"
@@ -246,6 +247,38 @@ async def admin_promo_check(m: Message, command: CommandObject):
             )
     else:
         lines.append("Коды: " + ", ".join(f"<code>{c}</code>" for c in lifetime))
+    await m.answer("\n".join(lines), parse_mode="HTML")
+
+
+@router.message(Command("notify_test"))
+async def admin_notify_test(m: Message):
+    """Показать, какой тип уведомления сработал бы сейчас (без отправки всем)."""
+    if not _is_admin(m):
+        return
+    from services.notify_engine import build_candidate
+    from services.notify_state import already_sent_today, days_inactive, now_msk, was_active_today
+    from services.rewards import user_plan
+
+    uid = str(m.from_user.id)
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_growth(user)
+    hour = now_msk().hour
+    cand = build_candidate(uid, user, hour)
+    lines = [
+        f"Сейчас: <b>{now_msk().strftime('%a %H:%M')}</b> МСК",
+        f"План: <b>{user_plan(user)}</b>",
+        f"inactive≈<b>{days_inactive(user):.2f}</b> дн.",
+        f"active_today=<b>{was_active_today(user)}</b>",
+        f"sent_today=<b>{already_sent_today(user)}</b>",
+    ]
+    if cand:
+        lines.append(f"Кандидат: <b>{cand.kind}</b> (prio {cand.priority})")
+        lines.append(f"voice=<b>{cand.voice}</b>")
+        lines.append("")
+        lines.append(cand.text[:500])
+    else:
+        lines.append("Кандидат: <i>нет</i> (уже активен / уже слали / не окно)")
     await m.answer("\n".join(lines), parse_mode="HTML")
 
 

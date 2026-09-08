@@ -541,6 +541,15 @@ def mark_topic_done(user_id: str, level: str, topic_id: str) -> dict:
         if key not in topics:
             topics.append(key)
         u["grammar_progress"]["completed_topics"] = topics
+        # для уведомлений «закрепить материал через 1 день»
+        from datetime import datetime, timedelta, timezone
+
+        msk = timezone(timedelta(hours=3))
+        dates = u.get("topic_completed_at")
+        if not isinstance(dates, dict):
+            dates = {}
+        dates[key] = datetime.now(msk).date().isoformat()
+        u["topic_completed_at"] = dates
 
     return update_lesson(user_id, mut)
 

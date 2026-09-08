@@ -547,6 +547,12 @@ def note_chat_message(user: dict, *, kind: str = "text") -> tuple[bool, str | No
         daily["chat_count"] = daily["chat_messages_today"]
         _bump_kind()
         _maybe_complete_goal(user)
+        try:
+            from services.notify_week import note_chat_points
+
+            note_chat_points(user)
+        except Exception:
+            pass
         return True, None
 
     if used >= FREE_CHAT_PER_DAY:
@@ -566,6 +572,12 @@ def note_chat_message(user: dict, *, kind: str = "text") -> tuple[bool, str | No
         daily["hit_chat_limit"] = True
         user["hit_chat_limit_ever"] = True
     _maybe_complete_goal(user)
+    try:
+        from services.notify_week import note_chat_points
+
+        note_chat_points(user)
+    except Exception:
+        pass
     return True, None
 
 
@@ -703,6 +715,14 @@ def note_grammar_exercise_done(user: dict) -> dict:
     if not has_lessons_pass(user) and grammar_total_used_today(user) >= grammar_daily_cap(user):
         daily["hit_grammar_limit"] = True
     _maybe_complete_goal(user)
+    try:
+        from services.notify_week import note_task_points
+        from services.notify_engine import bump_stats_task
+
+        note_task_points(user, 1)
+        bump_stats_task(user, 1)
+    except Exception:
+        pass
     return streak_info
 
 
@@ -773,6 +793,14 @@ def note_word_learned(user: dict) -> str:
         wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(
             what="Vocabulary", limit=vocab_daily_cap(user), user=user
         )
+    try:
+        from services.notify_week import note_word_points
+        from services.notify_engine import bump_stats_words
+
+        note_word_points(user, 1)
+        bump_stats_words(user, 1)
+    except Exception:
+        pass
     return wrap
 
 
@@ -795,6 +823,14 @@ def note_phrase_learned(user: dict) -> str:
         wrap = (wrap + "\n\n" if wrap else "") + _brain_rest_msg(
             what="Vocabulary", limit=vocab_daily_cap(user), user=user
         )
+    try:
+        from services.notify_week import note_word_points
+        from services.notify_engine import bump_stats_words
+
+        note_word_points(user, 1)
+        bump_stats_words(user, 1)
+    except Exception:
+        pass
     return wrap
 
 
