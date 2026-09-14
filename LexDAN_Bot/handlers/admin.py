@@ -46,6 +46,8 @@ HELP = (
     "/admin — список пользователей + сводка общения\n"
     "/users — живые (зарегистрированы, не блокировали бота)\n"
     "/purge_blocked — проверить Telegram и удалить блоки из БД\n"
+    "/purge_idle — превью: не заходили ≥30д и без заданий\n"
+    "/purge_idle confirm — удалить таких из БД\n"
     "/user <code>id</code> — полная карточка\n"
     "/top — топ по использованию (чат/grammar/vocab/listening/reading)\n"
     "/names — юзернеймы в одну строку (по убыванию активности)\n"
@@ -324,6 +326,53 @@ async def admin_purge_blocked(m: Message):
         text += f"\n\nНовые блоки: {ids}"
         if len(result["removed_scanned"]) > 30:
             text += f" …+{len(result['removed_scanned']) - 30}"
+    try:
+        await status.edit_text(text, parse_mode="HTML")
+    except Exception:
+        await m.answer(text, parse_mode="HTML")
+
+
+@router.message(Command("purge_idle"))
+async def admin_purge_idle(m: Message, command: CommandObject):
+    """Удалить тех, кто не заходил ≥30 дней и не сделал ни одного задания."""
+    if not _is_admin(m):
+        return
+    from services.admin_stats import chunk_html
+    from services.purge_idle import (
+        DEFAULT_IDLE_DAYS,
+        format_idle_purge_preview,
+        purge_idle_users,
+    )
+
+    args = (command.args or "").strip().lower().split()
+    confirm = args and args[0] in {"confirm", "yes", "удалить"}
+    idle_days = DEFAULT_IDLE_DAYS
+    for tok in args:
+        if tok.isdigit():
+            idle_days = max(1, int(tok))
+            break
+
+    if not confirm:
+        for part in chunk_html(format_idle_purge_preview(idle_days=idle_days)):
+            await m.answer(part, parse_mode="HTML")
+        return
+
+    status = await m.answer(
+        f"🧹 Удаляю неактивных (≥{idle_days}д, без заданий)…",
+        parse_mode="HTML",
+    )
+    result = purge_idle_users(idle_days=idle_days)
+    text = (
+        "✅ Чистка неактивных готова.\n\n"
+        f"Кандидатов: <b>{result['candidates']}</b>\n"
+        f"Удалено из БД: <b>{result['deleted']}</b>\n"
+        f"Порог: ≥{result['idle_days']} дн. без визита + ноль заданий"
+    )
+    if result["ids"]:
+        sample = ", ".join(f"<code>{x}</code>" for x in result["ids"][:25])
+        text += f"\n\nId: {sample}"
+        if len(result["ids"]) > 25:
+            text += f" …+{len(result['ids']) - 25}"
     try:
         await status.edit_text(text, parse_mode="HTML")
     except Exception:
