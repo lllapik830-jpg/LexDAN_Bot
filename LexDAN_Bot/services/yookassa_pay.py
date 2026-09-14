@@ -333,10 +333,10 @@ def plan_amount_for_user(user: dict, plan: str, *, with_discount: bool = True) -
 
 def plan_title(plan: str) -> str:
     if plan == PLAN_CHAT:
-        return "Общение"
+        return "Общение"  # legacy автопродления
     if plan == PLAN_UPGRADE:
-        return "Апгрейд до полного доступа"
-    return "Безлимит ко всему"
+        return "Безлимит"
+    return "Безлимит"
 
 
 def disable_autorenew(user_id: str) -> bool:

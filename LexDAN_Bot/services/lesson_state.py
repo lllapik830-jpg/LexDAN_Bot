@@ -550,6 +550,9 @@ def mark_topic_done(user_id: str, level: str, topic_id: str) -> dict:
             dates = {}
         dates[key] = datetime.now(msk).date().isoformat()
         u["topic_completed_at"] = dates
+        from services.free_lesson_limits import SECTION_GRAMMAR, note_free_lesson_topic_done
+
+        note_free_lesson_topic_done(u, SECTION_GRAMMAR)
 
     return update_lesson(user_id, mut)
 

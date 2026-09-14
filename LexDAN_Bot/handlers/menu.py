@@ -260,13 +260,13 @@ async def open_profile(m: Message):
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
-    # Тарифы — бесплатным оба; на 399 — апгрейд до полного
+    # Тарифы — free видит безлимит; legacy chat — переход на безлимит
     if plan == "free":
-        await say(m, "👇 Выбери тариф:", reply_markup=paywall_inline_kb())
+        await say(m, "👇 Оформи безлимит:", reply_markup=paywall_inline_kb())
     elif plan == "chat":
         await say(
             m,
-            "👇 Можно апгрейднуть до полного доступа:",
+            "👇 Можно перейти на безлимит:",
             reply_markup=upgrade_inline_kb(user),
         )
 

@@ -50,33 +50,25 @@ def end_of_today_msk_ts() -> float:
 def trial_offer_html() -> str:
     return (
         "🦜 <b>Эй, друг!</b>\n\n"
-        "Сегодня — <b>последний день</b> твоего бесплатного премиального доступа.\n"
-        "С завтрашнего дня ты возвращаешься на бесплатный тариф… "
+        "Сегодня — <b>последний день</b> твоего бесплатного безлимита.\n"
+        "С завтрашнего дня ты возвращаешься на бесплатный доступ… "
         "но можешь оформить подписку и дальше пользоваться ботом на полную 💚\n\n"
         "🎁 <b>Специально для тебя — только сегодня:</b>\n"
-        "если до конца дня оформишь подписку на месяц — скидка <b>15%</b>:\n\n"
-        "🚀 Полная библиотека знаний:\n"
-        f"<s>{PRICE_FULL_MONTH}₽</s> → <b>{PRICE_FULL_OFFER}₽</b> / мес\n\n"
-        "💬 Безлимитное общение:\n"
-        f"<s>{PRICE_CHAT_MONTH}₽</s> → <b>{PRICE_CHAT_OFFER}₽</b> / мес\n\n"
+        "если до конца дня оформишь <b>Безлимит</b> на месяц — скидка <b>15%</b>:\n\n"
+        f"🚀 Безлимит: <s>{PRICE_FULL_MONTH}₽</s> → <b>{PRICE_FULL_OFFER}₽</b> / мес\n\n"
         "Успей воспользоваться скидкой <b>сегодня</b> — "
         "другого такого шанса не будет ⏳"
     )
 
 
 def trial_offer_kb() -> InlineKeyboardMarkup:
-    """Кнопки с ценой оффера (HTML в кнопках нельзя)."""
-    chat_btn = (
-        f"💬 Общение — {PRICE_CHAT_OFFER}₽  "
-        f"(было {PRICE_CHAT_MONTH})"
-    )
+    """Кнопка с ценой оффера (HTML в кнопках нельзя)."""
     full_btn = (
-        f"🚀 Полный — {PRICE_FULL_OFFER}₽  "
+        f"🚀 Безлимит — {PRICE_FULL_OFFER}₽  "
         f"(было {PRICE_FULL_MONTH})"
     )
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=chat_btn, callback_data="tariff:chat")],
             [InlineKeyboardButton(text=full_btn, callback_data="tariff:full")],
         ]
     )

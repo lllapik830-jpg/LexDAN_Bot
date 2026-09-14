@@ -46,13 +46,12 @@ def _today() -> str:
 
 
 def street_daily_cap(user: dict) -> int | None:
-    """None = безлимит (полный доступ 799 / триал). Иначе 1 пак в день (free и 399)."""
-    from services.growth import FREE_STREET_PER_DAY
+    """None = безлимит (Безлимит / триал). 0 = раздел закрыт на free."""
     from services.rewards import user_plan
 
     if user_plan(user) == "full":
         return None
-    return FREE_STREET_PER_DAY
+    return 0
 
 
 def street_used_today(user: dict) -> int:
@@ -63,26 +62,15 @@ def street_used_today(user: dict) -> int:
 
 
 def can_start_street_pack(user: dict, pack_id: str) -> tuple[bool, str]:
-    from services.growth import FREE_STREET_PER_DAY
-
+    """Живая речь — только с безлимитом."""
     cap = street_daily_cap(user)
     if cap is None:
         return True, ""
-    sm = ensure_street(user)
-    today = _today()
-    if sm.get("daily_date") == today and str(sm.get("daily_pack_id") or "") == str(pack_id):
-        return True, ""
-    used = street_used_today(user)
-    if used >= cap:
-        return (
-            False,
-            f"🤙 На бесплатном и тарифе «Общение» — "
-            f"<b>{FREE_STREET_PER_DAY} пак Живой речи в день</b> "
-            "(теория или диалог — одна кнопка).\n"
-            "Лимит на сегодня уже использован. Завтра снова можно, "
-            "или открой полный доступ (799₽) без дневного лимита.",
-        )
-    return True, ""
+    return (
+        False,
+        "🤙 <b>Живая речь</b> доступна только с безлимитом.\n"
+        "Оформи подписку, чтобы открыть разговорные паки без ограничений.",
+    )
 
 
 def consume_street_slot(user_id: str, pack_id: str) -> dict:

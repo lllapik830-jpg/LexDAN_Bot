@@ -14,18 +14,20 @@ from services.database import get_user
 TRIAL_DAYS = 7
 REF_BONUS_DAYS = 3
 
-# ── Бесплатный тариф (сбалансированные дневные лимиты) ─────────
-FREE_CHAT_PER_DAY = 5
-# Grammar: обычные + доп. задания в одном пуле
-FREE_GRAMMAR_PER_DAY = 5
-# Vocabulary: 1 слово или фраза в день
+# ── Бесплатный тариф (лимиты сбрасываются в 00:00 МСК) ─────────
+FREE_CHAT_PER_DAY = 3
+# Grammar: внутри выбранного раздела даём добить тему (см. free_lesson_limits)
+FREE_GRAMMAR_PER_DAY = 40
+# Vocabulary: 1 слово или фраза = «тема» раздела на день
 FREE_VOCAB_ITEMS_PER_DAY = 1
-# Listening: 1 ситуация в день (см. listening_state.listening_daily_cap)
+# Listening / Reading: 1 тема в выбранном разделе
 FREE_LISTENING_PER_DAY = 1
-# Reading: 1 тема в день (см. reading_state.reading_daily_cap)
 FREE_READING_PER_DAY = 1
-# Живая речь: 1 пак/диалог в день (см. street_talk.street_daily_cap)
-FREE_STREET_PER_DAY = 1
+# Живая речь на free недоступна (только «Безлимит»)
+FREE_STREET_PER_DAY = 0
+
+# Огонь дня на free: только слово + фраза (2 из 4)
+FREE_DAILY_FIRE_KINDS = ("word", "phrase")
 
 # Совместимость со старым кодом «баллов»
 POINT_GRAMMAR_EXERCISE = 1
@@ -38,9 +40,10 @@ FREE_GRAMMAR_EXTRA_PER_DAY = FREE_GRAMMAR_PER_DAY
 DAILY_WORDS_GOAL = 1
 DAILY_CHAT_GOAL = 3
 
-# Тарифы (мягкий paywall — оплата подключим отдельно)
-PRICE_CHAT_MONTH = 399  # безлимит только «Общение»
-PRICE_FULL_MONTH = 799  # безлимит ко всему
+# Единственный платный тариф в каталоге
+PRICE_FULL_MONTH = 799  # «Безлимит» ₽/мес
+# Legacy: старые оплаты «только общение» (не продаём, но читаем chat_until)
+PRICE_CHAT_MONTH = 399
 
 MSK = timezone(timedelta(hours=3))
 
@@ -142,6 +145,9 @@ def ensure_growth(user: dict) -> dict:
             "hit_vocab_limit": False,
             "grammar_extra_today": 0,
             "hit_grammar_extra_limit": False,
+            # Free: один раздел уроков в день после 1 темы
+            "free_lesson_section": "",
+            "free_lesson_topic_done": False,
         }
     else:
         # Мягкая миграция со старых free-дефолтов (общий пул 10 баллов)
@@ -168,6 +174,8 @@ def ensure_growth(user: dict) -> dict:
         daily.setdefault("chat_count", int(daily.get("chat_messages_today") or 0))
         daily.setdefault("chat_text_today", 0)
         daily.setdefault("chat_voice_today", 0)
+        daily.setdefault("free_lesson_section", "")
+        daily.setdefault("free_lesson_topic_done", False)
         items = int(daily.get("vocab_items_today") or 0)
         wp = int(daily.get("words_today") or 0) + int(daily.get("phrases_today") or 0)
         if wp > items:
@@ -560,9 +568,10 @@ def note_chat_message(user: dict, *, kind: str = "text") -> tuple[bool, str | No
         user["hit_chat_limit_ever"] = True
         return False, (
             "🦜 <b>Мы здорово поболтали!</b>\n\n"
-            "На сегодня хватит — мозгу и языку полезно отдохнуть.\n"
-            f"(Лимит бесплатного чата: <b>{FREE_CHAT_PER_DAY}</b> сообщ. текст+голос.)\n"
-            "Завтра снова можно продолжить, а полный безлимит — по кнопке ниже 👇"
+            "На сегодня лимит бесплатного общения исчерпан "
+            f"(<b>{FREE_CHAT_PER_DAY}</b> сообщ. текст+голос).\n"
+            "Завтра снова можно продолжить.\n"
+            "Безлимит общения и уроков — по кнопке ниже 👇"
         )
 
     daily["chat_messages_today"] = used + 1
@@ -584,7 +593,7 @@ def note_chat_message(user: dict, *, kind: str = "text") -> tuple[bool, str | No
 def _brain_rest_msg(
     *,
     what: str = "уроков",
-    limit: int = FREE_GRAMMAR_PER_DAY,
+    limit: int = 1,
     price: int | None = None,
     user: dict | None = None,
 ) -> str:
@@ -597,16 +606,15 @@ def _brain_rest_msg(
             price = PRICE_FULL_MONTH
     return (
         "🦜 <b>Мозгу нужно немного отдохнуть</b>\n\n"
-        f"На сегодня лимит бесплатного тарифа исчерпан ({what}: "
+        f"На сегодня лимит бесплатного доступа исчерпан ({what}: "
         f"<b>{limit}</b>/день).\n\n"
         "<b>Бесплатно в день:</b>\n"
-        f"• Grammar (включая доп. задания) — <b>{FREE_GRAMMAR_PER_DAY}</b>\n"
-        f"• Vocabulary — <b>{FREE_VOCAB_ITEMS_PER_DAY}</b> слово/фраза\n"
-        f"• Listening — <b>{FREE_LISTENING_PER_DAY}</b> аудирование\n"
-        f"• Живая речь — <b>{FREE_STREET_PER_DAY}</b> пак\n"
-        f"• Общение — <b>{FREE_CHAT_PER_DAY}</b> сообщ.\n\n"
+        "• Уроки — <b>1 раздел</b> на выбор (1 тема)\n"
+        "• Огонь дня — <b>2</b> искры (слово + фраза)\n"
+        f"• Общение с Рико — <b>{FREE_CHAT_PER_DAY}</b> сообщ.\n"
+        "• Живая речь и все голоса — только с безлимитом\n\n"
         "Завтра лимиты обновятся 💚\n"
-        f"С подпиской за <b>{price}₽/мес</b> — безлимит."
+        f"Тариф <b>«Безлимит»</b> — <b>{price}₽/мес</b>."
     )
 
 
@@ -664,11 +672,15 @@ def can_start_new_lesson(user: dict) -> tuple[bool, str | None]:
 
 
 def can_do_grammar_exercise(user: dict) -> tuple[bool, str | None]:
+    from services.free_lesson_limits import SECTION_GRAMMAR, check_section_access
     from services.rewards import has_lessons_pass
 
     ensure_growth(user)
     if has_lessons_pass(user):
         return True, None
+    ok_sec, msg_sec = check_section_access(user, SECTION_GRAMMAR)
+    if not ok_sec:
+        return False, msg_sec
     cap = grammar_daily_cap(user)
     used = grammar_total_used_today(user)
     if used >= cap:
@@ -743,11 +755,15 @@ def vocab_items_remaining(user: dict) -> int:
 
 
 def can_learn_vocab_item(user: dict) -> tuple[bool, str | None]:
+    from services.free_lesson_limits import SECTION_VOCABULARY, check_section_access
     from services.rewards import has_lessons_pass
 
     ensure_growth(user)
     if has_lessons_pass(user):
         return True, None
+    ok_sec, msg_sec = check_section_access(user, SECTION_VOCABULARY)
+    if not ok_sec:
+        return False, msg_sec
     cap = vocab_daily_cap(user)
     if vocab_items_used_today(user) >= cap:
         user["daily"]["hit_vocab_limit"] = True
@@ -780,8 +796,10 @@ def note_word_learned(user: dict) -> str:
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["words_today"] = int(daily.get("words_today") or 0) + 1
+    from services.free_lesson_limits import SECTION_VOCABULARY, note_free_lesson_topic_done
     from services.rewards import has_lessons_pass
 
+    note_free_lesson_topic_done(user, SECTION_VOCABULARY)
     if not has_lessons_pass(user):
         daily["vocab_items_today"] = vocab_items_used_today(user)
     goal_just = _maybe_complete_goal(user)
@@ -810,8 +828,10 @@ def note_phrase_learned(user: dict) -> str:
     streak_info = touch_streak(user)
     daily = user["daily"]
     daily["phrases_today"] = int(daily.get("phrases_today") or 0) + 1
+    from services.free_lesson_limits import SECTION_VOCABULARY, note_free_lesson_topic_done
     from services.rewards import has_lessons_pass
 
+    note_free_lesson_topic_done(user, SECTION_VOCABULARY)
     if not has_lessons_pass(user):
         daily["vocab_items_today"] = vocab_items_used_today(user)
     goal_just = _maybe_complete_goal(user)
@@ -936,11 +956,12 @@ def subscription_blurb(user: dict) -> str:
     from services.promo import has_lifetime_full_price, lifetime_price_lines_html
 
     if is_premium(user):
-        status = f"✅ Полный доступ ещё <b>{premium_time_label(user)}</b>"
-    elif has_chat_pass(user):
-        status = "✅ Безлимит «Общение» активен"
+        status = f"✅ Безлимит ещё <b>{premium_time_label(user)}</b>"
+    elif has_chat_pass(user) and not is_premium(user):
+        # Legacy: старый тариф «Общение» до конца оплаченного периода
+        status = "✅ Безлимит общения (старый тариф) активен"
     else:
-        status = "🆓 Бесплатный тариф"
+        status = "🆓 Бесплатный доступ"
 
     auto_line = ""
     if user.get("sub_auto") and user.get("yookassa_payment_method_id"):
@@ -953,18 +974,16 @@ def subscription_blurb(user: dict) -> str:
     )
 
     return (
-        "💎 <b>Тарифы LexDAN</b>\n\n"
+        "💎 <b>Подписка LexDAN</b>\n\n"
         f"Сейчас: {status}{auto_line}\n"
         f"{discount_blurb(user)}"
         f"{lottery_status_lines(user)}\n"
-        "<b>Бесплатно (в день)</b>\n"
-        f"• Grammar (включая доп.) — <b>{FREE_GRAMMAR_PER_DAY}</b> заданий\n"
-        f"• Vocabulary — <b>{FREE_VOCAB_ITEMS_PER_DAY}</b> слово/фраза\n"
-        f"• Listening — <b>{FREE_LISTENING_PER_DAY}</b> аудирование\n"
-        f"• Reading — <b>{FREE_READING_PER_DAY}</b> тема\n"
-        f"• Живая речь — <b>{FREE_STREET_PER_DAY}</b> пак\n"
-        f"• Общение — <b>{FREE_CHAT_PER_DAY}</b> сообщ.\n"
-        "• тест уровня\n\n"
+        "<b>Бесплатно (в день, сброс 00:00 МСК)</b>\n"
+        "• Уроки — <b>1 раздел</b> на выбор (Grammar / Vocab / Listening / Reading)\n"
+        "• Огонь дня — <b>2</b> искры (слово + фраза)\n"
+        f"• Общение с Рико — <b>{FREE_CHAT_PER_DAY}</b> сообщ.\n"
+        "• Живая речь — недоступна\n"
+        "• Голоса — только базовый (остальные можно послушать)\n\n"
         f"{price_block}"
         "🔥 Серия дней и 🎁 друзья дают бустеры — смотри в профиле."
     )

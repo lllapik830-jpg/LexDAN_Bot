@@ -175,7 +175,7 @@ def exercise_write_kb() -> ReplyKeyboardMarkup:
 def paywall_inline_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Выбрать тариф", callback_data="tariff:open")],
+            [InlineKeyboardButton(text="💳 Оформить безлимит", callback_data="tariff:open")],
         ]
     )
 
@@ -183,7 +183,7 @@ def paywall_inline_kb() -> InlineKeyboardMarkup:
 def lesson_limit_inline_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Купить доступ", callback_data="tariff:open")],
+            [InlineKeyboardButton(text="💳 Оформить безлимит", callback_data="tariff:open")],
         ]
     )
 
@@ -193,7 +193,7 @@ def chat_limit_inline_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🚀 Активировать полный доступ",
+                    text="💳 Оформить безлимит",
                     callback_data="tariff:open",
                 )
             ],
@@ -202,65 +202,47 @@ def chat_limit_inline_kb() -> InlineKeyboardMarkup:
 
 
 def tariffs_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
-    from services.growth import PRICE_CHAT_MONTH, PRICE_FULL_MONTH
-    from services.pricing import chat_price, full_price
+    """Один платный тариф — «Безлимит» 799₽ (или персональная цена)."""
+    from services.growth import PRICE_FULL_MONTH
+    from services.pricing import full_price
     from services.promo import has_lifetime_full_price
 
-    # Персональная вечная цена — только полный безлимит по закреплённой сумме
     if user and has_lifetime_full_price(user):
         full_p, _ = full_price(user)
-        return InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text=f"🚀 Безлимит ко всему — {full_p}₽/мес (твоя цена)",
-                        callback_data="tariff:full",
-                    )
-                ],
-            ]
-        )
-
-    if user:
-        chat_p, chat_d = chat_price(user)
+        label = f"🚀 Безлимит — {full_p}₽/мес (твоя цена)"
+    elif user:
         full_p, full_d = full_price(user)
-        if chat_d or full_d:
-            chat_label = (
-                f"💬 Общение — {chat_p}₽ (было {PRICE_CHAT_MONTH})"
-                if chat_d
-                else f"💬 Только общение — {PRICE_CHAT_MONTH}₽/мес"
-            )
-            full_label = (
-                f"🚀 Полный — {full_p}₽ (было {PRICE_FULL_MONTH})"
-                if full_d
-                else f"🚀 Безлимит ко всему — {PRICE_FULL_MONTH}₽/мес"
-            )
-        else:
-            chat_label = f"💬 Только общение — {PRICE_CHAT_MONTH}₽/мес"
-            full_label = f"🚀 Безлимит ко всему — {PRICE_FULL_MONTH}₽/мес"
+        label = (
+            f"🚀 Безлимит — {full_p}₽/мес (было {PRICE_FULL_MONTH})"
+            if full_d
+            else f"🚀 Безлимит — {PRICE_FULL_MONTH}₽/мес"
+        )
     else:
-        chat_label = f"💬 Только общение — {PRICE_CHAT_MONTH}₽/мес"
-        full_label = f"🚀 Безлимит ко всему — {PRICE_FULL_MONTH}₽/мес"
+        label = f"🚀 Безлимит — {PRICE_FULL_MONTH}₽/мес"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=chat_label, callback_data="tariff:chat")],
-            [InlineKeyboardButton(text=full_label, callback_data="tariff:full")],
+            [InlineKeyboardButton(text=label, callback_data="tariff:full")],
         ]
     )
 
 
 def upgrade_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
-    """Кнопка апгрейда 399 → 799 для тарифа «Общение»."""
-    from services.pricing import upgrade_price
+    """
+    Legacy: апгрейд со старого «Общение» → Безлимит.
+    В каталоге 399 больше нет; кнопка только у тех, у кого ещё chat_until.
+    """
+    from services.pricing import full_price
+    from services.growth import PRICE_FULL_MONTH
 
-    price, disc = upgrade_price(user) if user else (399, 0)
+    price, disc = full_price(user) if user else (PRICE_FULL_MONTH, 0)
     label = (
-        f"🚀 Апгрейд до полного — {price}₽ (−{disc}%)"
+        f"🚀 Перейти на безлимит — {price}₽ (−{disc}%)"
         if disc
-        else f"🚀 Апгрейд до полного — {price}₽"
+        else f"🚀 Перейти на безлимит — {price}₽/мес"
     )
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=label, callback_data="tariff:upgrade")],
+            [InlineKeyboardButton(text=label, callback_data="tariff:full")],
         ]
     )

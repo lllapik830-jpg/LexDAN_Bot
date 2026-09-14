@@ -396,6 +396,17 @@ async def open_street_section(m: Message):
     ensure_lesson(user)
     if (user.get("lesson") or {}).get("hub") != "level_hub":
         return
+    from services.rewards import user_plan
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
+
+    if user_plan(user) != "full":
+        await m.answer(
+            "🤙 <b>Живая речь</b> доступна только с безлимитом.\n"
+            "Оформи подписку, чтобы открыть разговорные паки.",
+            parse_mode="HTML",
+        )
+        await m.answer("👇", reply_markup=lesson_limit_inline_kb())
+        return
     level = _lesson_level(user)
     if not street_talk_open(level):
         return

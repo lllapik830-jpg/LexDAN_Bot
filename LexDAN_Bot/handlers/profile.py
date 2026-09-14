@@ -96,7 +96,7 @@ async def subscription_info(m: Message):
                 )
             ]
         ]
-    caption = "Выбери тариф:" if plan == "free" else "Тарифы и управление:"
+    caption = "Оформи безлимит:" if plan == "free" else "Подписка и управление:"
     await m.answer(
         caption,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),

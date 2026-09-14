@@ -417,6 +417,14 @@ async def open_vocabulary(m: Message):
     if assessment_busy(user):
         return
     ensure_lesson(user)
+    from services.free_lesson_limits import SECTION_VOCABULARY, check_section_access
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
+
+    ok, limit_msg = check_section_access(user, SECTION_VOCABULARY)
+    if not ok:
+        await m.answer(limit_msg, parse_mode="HTML")
+        await m.answer("👇", reply_markup=lesson_limit_inline_kb())
+        return
     level = user["lesson"].get("level") or user.get("level") or "A1"
     if not get_vocab_topics(level):
         await m.answer(

@@ -52,7 +52,15 @@ def listening_used_today(user: dict) -> int:
 
 def can_start_listening(user: dict) -> tuple[bool, str]:
     """Можно ли начать новую ситуацию сегодня."""
+    from services.free_lesson_limits import (
+        SECTION_LISTENING,
+        check_section_access,
+    )
     from services.growth import FREE_LISTENING_PER_DAY
+
+    ok_sec, msg_sec = check_section_access(user, SECTION_LISTENING)
+    if not ok_sec:
+        return False, msg_sec or ""
 
     cap = listening_daily_cap(user)
     if cap is None:
@@ -61,9 +69,9 @@ def can_start_listening(user: dict) -> tuple[bool, str]:
     if used >= cap:
         return (
             False,
-            f"🎧 На твоём тарифе — <b>{FREE_LISTENING_PER_DAY} ситуация Listening в день</b>.\n"
-            "Лимит на сегодня уже использован. Завтра снова можно, "
-            "или открой полный доступ (799₽) без дневного лимита.",
+            f"🎧 На бесплатном — <b>{FREE_LISTENING_PER_DAY} ситуация Listening в день</b> "
+            "(это твой раздел на сегодня).\n"
+            "Лимит исчерпан. Завтра снова можно, или оформи безлимит 👇",
         )
     return True, ""
 
@@ -98,6 +106,9 @@ def mark_topic_done(user_id: str, level: str, topic_id: str) -> dict:
         sm = ensure_listening(u)
         sm["progress"][progress_key(level, topic_id)] = True
         sm["session"] = None
+        from services.free_lesson_limits import SECTION_LISTENING, note_free_lesson_topic_done
+
+        note_free_lesson_topic_done(u, SECTION_LISTENING)
 
     return _save(user_id, mut)
 

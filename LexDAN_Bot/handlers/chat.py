@@ -82,23 +82,20 @@ def _voices_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
             )
         return InlineKeyboardMarkup(inline_keyboard=rows)
 
-    # Группируем: сначала 399, потом 799
-    for min_plan, tag in (("chat", "399"), ("full", "799")):
-        for v in CHAT_VOICES:
-            if v["min_plan"] != min_plan:
-                continue
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        text=f"🎧 {v['label']}",
-                        callback_data=f"vlisten:{v['key']}",
-                    ),
-                    InlineKeyboardButton(
-                        text=f"✅ ({tag})",
-                        callback_data=f"vset:{v['key']}",
-                    ),
-                ]
-            )
+    # Все голоса каталога — с безлимитом (прослушать можно всегда)
+    for v in CHAT_VOICES:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🎧 {v['label']}",
+                    callback_data=f"vlisten:{v['key']}",
+                ),
+                InlineKeyboardButton(
+                    text="✅",
+                    callback_data=f"vset:{v['key']}",
+                ),
+            ]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

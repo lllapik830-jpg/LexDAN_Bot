@@ -194,6 +194,22 @@ async def daily_fire_item(m: Message):
     users = users_for(uid)
     user = get_user(users, uid)
     ensure_growth(user)
+
+    # Free: только слово + фраза; голос/факт — с безлимитом
+    from services.growth import FREE_DAILY_FIRE_KINDS
+    from services.rewards import user_plan
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
+
+    if user_plan(user) != "full" and kind not in FREE_DAILY_FIRE_KINDS:
+        await m.answer(
+            "🔥 На бесплатном доступны только <b>слово</b> и <b>фраза</b> дня.\n"
+            "Голос и факт — с безлимитом.",
+            reply_markup=daily_fire_kb(user),
+            parse_mode="HTML",
+        )
+        await m.answer("👇", reply_markup=lesson_limit_inline_kb())
+        return
+
     note_lesson_activity(user)
     first_open = not is_opened(user, kind)
 

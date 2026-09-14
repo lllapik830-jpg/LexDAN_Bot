@@ -197,7 +197,10 @@ async def open_listening_for_level(m: Message, user: dict, level: str) -> None:
     if plan == "full":
         limit_note = "Безлимит ситуаций на твоём тарифе ✨"
     else:
-        limit_note = "На free и 399₽ — <b>1 ситуация в день</b> · на 799₽ — безлимит."
+        limit_note = (
+            "Бесплатно: <b>1 ситуация в день</b>, если выбрал Listening как раздел сегодня. "
+            "С безлимитом — без ограничений."
+        )
     await m.answer(
         f"🎧 <b>Listening · {level}</b>\n\n"
         f"{limit_note}\n"
@@ -216,6 +219,14 @@ async def open_listening_section(m: Message):
         return
     ensure_lesson(user)
     if (user.get("lesson") or {}).get("hub") != "level_hub":
+        return
+    from services.free_lesson_limits import SECTION_LISTENING, check_section_access
+    from handlers.lesson_keyboards import lesson_limit_inline_kb
+
+    ok, limit_msg = check_section_access(user, SECTION_LISTENING)
+    if not ok:
+        await m.answer(limit_msg, parse_mode="HTML")
+        await m.answer("👇", reply_markup=lesson_limit_inline_kb())
         return
     level = (user.get("lesson") or {}).get("level") or user.get("level") or "A1"
     await open_listening_for_level(m, user, level)

@@ -47,9 +47,9 @@ def user_plan(user: dict) -> str:
 
 def plan_label(plan: str) -> str:
     return {
-        "free": "начальная",
-        "chat": "продвинутая",
-        "full": "премиальная",
+        "free": "бесплатный",
+        "chat": "общение (старый)",
+        "full": "безлимит",
     }.get(plan, plan)
 
 

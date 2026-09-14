@@ -42,15 +42,9 @@ async def _start_checkout(c: CallbackQuery, plan: str) -> None:
     user = get_user(users, str(c.from_user.id))
     ensure_growth(user)
 
+    # PLAN_UPGRADE больше не продаём отдельно — апгрейд = Безлимит
     if plan == PLAN_UPGRADE:
-        from services.rewards import user_plan
-
-        if user_plan(user) != "chat":
-            await c.answer(
-                "Апгрейд доступен на тарифе «Общение» (399₽).",
-                show_alert=True,
-            )
-            return
+        plan = PLAN_FULL
 
     if not yookassa_configured():
         contact = f"@{SUPPORT_USERNAME}" if SUPPORT_USERNAME else "поддержку"
@@ -170,7 +164,7 @@ async def tariff_open(c: CallbackQuery):
     save_users(users)
     await c.answer()
     await c.message.answer(
-        subscription_blurb(user) + "\n\nВыбери тариф:",
+        subscription_blurb(user) + "\n\nОформи безлимит:",
         reply_markup=tariffs_inline_kb(user),
         parse_mode="HTML",
     )
@@ -178,7 +172,14 @@ async def tariff_open(c: CallbackQuery):
 
 @router.callback_query(F.data == "tariff:chat")
 async def tariff_chat(c: CallbackQuery):
-    await _start_checkout(c, PLAN_CHAT)
+    """Старый тариф 399 больше не продаём — предлагаем безлимит."""
+    await c.answer()
+    await c.message.answer(
+        "💬 Тариф «Только общение» больше не продаётся.\n"
+        "Сейчас один платный тариф — <b>Безлимит</b> (уроки + общение + голоса).",
+        parse_mode="HTML",
+    )
+    await _start_checkout(c, PLAN_FULL)
 
 
 @router.callback_query(F.data == "tariff:full")
@@ -188,7 +189,8 @@ async def tariff_full(c: CallbackQuery):
 
 @router.callback_query(F.data == "tariff:upgrade")
 async def tariff_upgrade(c: CallbackQuery):
-    await _start_checkout(c, PLAN_UPGRADE)
+    """Legacy callback: апгрейд = покупка безлимита."""
+    await _start_checkout(c, PLAN_FULL)
 
 
 @router.callback_query(F.data == "tariff:cancel_auto")

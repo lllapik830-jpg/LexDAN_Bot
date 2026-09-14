@@ -40,18 +40,17 @@ RICO_VOICE_CHOICES = (
 
 
 # Чат:
-# free → только Adam (дефолт)
-# 399 (chat) → British/American ниже
-# 799 (full) → все голоса
+# free → только Adam (дефолт ElevenLabs), остальные можно послушать
+# Безлимит (full) → все голоса
 CHAT_VOICES: list[dict] = [
-    # ── 399₽ (Общение) ──────────────────────────────────────────────
+    # Все голоса каталога — только с «Безлимитом»
     {
         "key": "scotty",
         "name": "Scotty",
         "accent": "British",
         "flag": "🇬🇧",
         "voice_id": "NfUrCNRReUL9RXS9upG1",
-        "min_plan": "chat",
+        "min_plan": "full",
     },
     {
         "key": "emmaline",
@@ -59,7 +58,7 @@ CHAT_VOICES: list[dict] = [
         "accent": "British",
         "flag": "🇬🇧",
         "voice_id": "nDJIICjR9zfJExIFeSCN",
-        "min_plan": "chat",
+        "min_plan": "full",
     },
     {
         "key": "joe",
@@ -67,7 +66,7 @@ CHAT_VOICES: list[dict] = [
         "accent": "British",
         "flag": "🇬🇧",
         "voice_id": "av1BMOR1GPgThz9p4fLo",
-        "min_plan": "chat",
+        "min_plan": "full",
     },
     {
         "key": "ed",
@@ -75,9 +74,8 @@ CHAT_VOICES: list[dict] = [
         "accent": "American",
         "flag": "🇺🇸",
         "voice_id": "dHd5gvgSOzSfduK4CvEg",
-        "min_plan": "chat",
+        "min_plan": "full",
     },
-    # ── 799₽ (полный) ───────────────────────────────────────────────
     {
         "key": "lucas",
         "name": "Lucas",
@@ -191,8 +189,11 @@ def set_chat_voice(user: dict, key: str) -> tuple[bool, str]:
     if not v:
         return False, "Такого голоса нет."
     if not _plan_ok(user_plan(user), v["min_plan"]):
-        need = "399₽ (Общение)" if v["min_plan"] == "chat" else "799₽ (полный доступ)"
-        return False, f"🔒 Голос <b>{voice_label(v)}</b> доступен на тарифе <b>{need}</b>."
+        return (
+            False,
+            "🎙 Этот голос доступен только с безлимитом. "
+            "Оформи подписку, чтобы использовать все голоса.",
+        )
     user["chat_voice_key"] = key
     return True, f"🎙 Ок! Теперь озвучка: <b>{voice_label(v)}</b>"
 
@@ -207,8 +208,8 @@ def voices_help_text(user: dict) -> str:
     cur = current_voice_label(user)
     plan_title = {
         "free": "бесплатный",
-        "chat": "399₽ · Общение",
-        "full": "799₽ · полный доступ",
+        "chat": "безлимит общения (старый)",
+        "full": "Безлимит",
     }.get(plan, plan)
 
     lines = [
@@ -216,17 +217,13 @@ def voices_help_text(user: dict) -> str:
         f"Сейчас выбран: <b>{cur}</b>\n",
         f"Твой тариф: <b>{plan_title}</b>\n",
         "🎧 Прослушать можно любой голос бесплатно (не тратит лимит чата).\n"
-        "✅ Выбрать для ответов — только голоса твоего тарифа.\n",
+        "✅ Выбрать для ответов — базовый Adam на free, все голоса с безлимитом.\n",
         "━━━━━━━━━━━━━━\n",
         "<b>🆓 Бесплатно</b>\n"
         "• Adam · American 🇺🇸\n",
-        "<b>💬 399₽ · Общение</b> (+ всё с бесплатного)\n",
+        f"<b>🚀 Безлимит · {len(CHAT_VOICES)} голосов</b>\n",
     ]
-    for v in voices_for_min_plan("chat"):
-        lines.append(f"• {voice_label(v)}")
-    lines.append("")
-    lines.append("<b>🚀 799₽ · полный доступ</b> (+ всё с 399)\n")
-    for v in voices_for_min_plan("full"):
+    for v in CHAT_VOICES:
         lines.append(f"• {voice_label(v)}")
 
     lines.append("\n━━━━━━━━━━━━━━")
@@ -239,7 +236,7 @@ def voices_help_text(user: dict) -> str:
     else:
         lines.append(
             "\nНа бесплатном для ответов — <b>Adam</b>. "
-            "Послушай премиум ниже и возьми подписку, чтобы выбрать их 👇"
+            "Послушай другие голоса ниже и оформи безлимит, чтобы выбрать их 👇"
         )
 
     lines.append("\nКнопки ниже: 🎧 прослушать · ✅ выбрать")
@@ -255,23 +252,21 @@ def _voices_help_text_preview(user: dict) -> str:
             cur = cur[: -len(suffix)]
     plan_title = {
         "free": "бесплатный",
-        "chat": "399₽ · Общение",
-        "full": "799₽ · полный доступ",
+        "chat": "безлимит общения (старый)",
+        "full": "Безлимит",
     }.get(plan, plan)
 
     full_n = len(CHAT_VOICES)
-    chat_n = len(voices_for_min_plan("chat"))
     avail = available_chat_voices(user)
 
     lines = [
         f"Сейчас выбран: <b>{cur}</b>\n",
         f"Твой тариф: <b>{plan_title}</b>\n",
         "🎧 Прослушать можно бесплатно (не тратит лимит чата).\n"
-        "✅ Выбрать для ответов — только голоса твоего тарифа.\n",
+        "✅ Выбрать — Adam на free · все голоса с безлимитом.\n",
         "━━━━━━━━━━━━━━\n",
         "🆓 Бесплатно: <b>Adam · American 🇺🇸</b>\n"
-        f"💬 399₽: <b>+{chat_n}</b> голоса · "
-        f"🚀 полный: <b>{full_n}</b> голосов на выбор\n",
+        f"🚀 Безлимит: <b>{full_n}</b> голосов на выбор\n",
         "━━━━━━━━━━━━━━",
     ]
     if avail:
@@ -279,7 +274,7 @@ def _voices_help_text_preview(user: dict) -> str:
     else:
         lines.append(
             "\nНа бесплатном для ответов — <b>Adam</b>. "
-            "Чтобы выбирать другие голоса — нужен тариф 👇"
+            "Чтобы выбирать другие голоса — нужен безлимит 👇"
         )
     return "\n".join(lines)
 
