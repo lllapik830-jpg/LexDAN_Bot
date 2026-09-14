@@ -95,6 +95,7 @@ from services.lesson_state import (
     advance_speak_phrase,
     EXERCISE_TYPES,
     ALL_EXERCISE_NUMS,
+    GRAMMAR_TASKS_OVERVIEW_HTML,
 )
 from services.rico_tutor import (
     rico_topic_chat_text,
@@ -1436,18 +1437,11 @@ async def open_assignments(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     done = get_done_exercises(user, level, topic_id)
-    lines = ["📝 <b>Задания по теме</b>\n", "Сложность растёт от 1 к 8:\n"]
-    for num, title in EXERCISE_TYPES:
-        mark = "✅" if num in done else "▫️"
-        lines.append(f"{mark} <b>Задание {num}</b> — {title}")
-    lines.append(
-        "\n🦜 <b>8 заданий на тему:</b>\n"
-        "1–3 — выбор кнопкой · 4–6 — напиши форму слова · "
-        "7 — RU→EN · 8 — EN→RU\n"
-        "В переводах можно спросить «как переводится слово …».\n"
-        "Все 8 заданий → тема с ✅. Все темы → откроется тест по Grammar."
+    await m.answer(
+        GRAMMAR_TASKS_OVERVIEW_HTML,
+        reply_markup=exercises_menu_kb(done),
+        parse_mode="HTML",
     )
-    await m.answer("\n".join(lines), reply_markup=exercises_menu_kb(done), parse_mode="HTML")
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == "⬅️ К темам")
@@ -1606,19 +1600,9 @@ async def gs_tasks(cq: CallbackQuery):
     users = load_users()
     user = get_user(users, uid)
     done = get_done_exercises(user, level, topic_id)
-    lines = ["📝 <b>Задания по теме</b>\n", "Сложность растёт от 1 к 8:\n"]
-    for num, title in EXERCISE_TYPES:
-        mark = "✅" if num in done else "▫️"
-        lines.append(f"{mark} <b>Задание {num}</b> — {title}")
-    lines.append(
-        "\n🦜 <b>8 заданий на тему:</b>\n"
-        "1–3 — выбор кнопкой · 4–6 — напиши форму слова · "
-        "7 — RU→EN · 8 — EN→RU\n"
-        "Все 8 заданий → тема с ✅."
-    )
     await cq.answer()
     await cq.message.answer(
-        "\n".join(lines),
+        GRAMMAR_TASKS_OVERVIEW_HTML,
         reply_markup=exercises_menu_kb(done),
         parse_mode="HTML",
     )

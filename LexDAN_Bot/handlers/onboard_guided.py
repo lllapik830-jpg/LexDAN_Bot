@@ -133,7 +133,7 @@ def _got_it_kb() -> InlineKeyboardMarkup:
 
 
 async def maybe_send_df_done_cta(m: Message, user: dict, users: dict, uid: str) -> bool:
-    """После просмотра всех 4 разделов Огня дня — CTA на грамматику."""
+    """После первой искры Огня дня — CTA на грамматику (сокращённый онбординг)."""
     if not is_guided_onboard(user):
         return False
     ob = ensure_onboard(user)
@@ -141,7 +141,7 @@ async def maybe_send_df_done_cta(m: Message, user: dict, users: dict, uid: str) 
         return False
     from services.daily_fire import opened_count, mark_ritual_celebrated
 
-    if opened_count(user) < 4:
+    if opened_count(user) < 1:
         return False
 
     mark_ritual_celebrated(user)
@@ -244,7 +244,7 @@ async def imit_start_cmd(m: Message):
     set_mode(uid, MODE_MENU)
     await m.answer(
         "🧪 <b>Имитация полного онбординга</b>\n"
-        "Привет → имя → тест → подарок → Огонь дня → to be → 8 заданий.\n"
+        "Привет → имя → тест → подарок → одна искра Огня → to be → 8 заданий.\n"
         "Выход: /imit_finish",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML",

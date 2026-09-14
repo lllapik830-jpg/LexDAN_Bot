@@ -1,6 +1,6 @@
 """
 Материалы для входного теста уровня.
-Тексты: английский оригинал + эталонный русский перевод (не длиннее 4–5 предложений).
+Тексты: английский оригинал + эталонный русский перевод (2–3 предложения).
 """
 
 LEVELS = ["A0", "A1", "A2", "B1", "B2", "C1", "C2"]
@@ -436,9 +436,26 @@ def unlock_next_level_after_grammar(user: dict, passed_level: str) -> str | None
     return nxt if raised else None
 
 
+def _clip_to_sentences(text: str, n: int = 3) -> str:
+    import re
+
+    t = (text or "").strip()
+    if not t:
+        return t
+    parts = re.split(r"(?<=[.!?…])\s+", t)
+    parts = [p.strip() for p in parts if p.strip()]
+    if len(parts) <= n:
+        return t
+    return " ".join(parts[:n])
+
+
 def get_translation(level: str, variant: int = 0) -> dict:
     items = TRANSLATION_TEXTS.get(level) or TRANSLATION_TEXTS["A1"]
-    return items[variant % len(items)]
+    raw = items[variant % len(items)]
+    return {
+        "en": _clip_to_sentences(raw.get("en") or "", 3),
+        "ru": _clip_to_sentences(raw.get("ru") or "", 3),
+    }
 
 
 def pick_vocab(level: str, used_ens: list[str] | None = None) -> dict:

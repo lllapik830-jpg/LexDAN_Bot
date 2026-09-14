@@ -163,7 +163,7 @@ async def leave_daily_fire(m: Message):
         if is_imit_active(user):
             tip = "🧪 В сценарии выход в меню закрыт. Смотри Огонь дня или /imit_finish"
         else:
-            tip = "Сначала просмотри разделы Огня дня — меню откроется чуть позже."
+            tip = "Сначала открой одну искру Огня дня — дальше покажем урок."
         await m.answer(tip, reply_markup=ReplyKeyboardRemove())
         # вернуть кнопки огня без «в меню»
         await m.answer(hub_intro(user), reply_markup=daily_fire_kb(user, guided=True), parse_mode="HTML")
@@ -227,7 +227,7 @@ async def daily_fire_item(m: Message):
     else:
         text = format_fact(data, first_open=first_open)
 
-    # Голос Рико в каждом разделе; CTA после 4-х разделов — уже после голоса
+    # Голос Рико в каждом разделе; на онбординге CTA — после первой искры
     await m.answer(text, reply_markup=daily_fire_kb(user), parse_mode="HTML")
     tts_parts = tts_parts_for(kind, data)
     if not tts_parts:

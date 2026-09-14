@@ -570,6 +570,18 @@ _VOCAB_NEAR: dict[str, list[str]] = {
     "beautiful": ["красивый", "прекрасный", "симпатичный"],
     "important": ["важный", "существенный", "значимый"],
     "available": ["доступный", "имеющийся", "свободный"],
+    "hungry": ["голодный", "голоден", "проголодавшийся"],
+    "book": ["книга", "книжка", "бронировать", "заказать"],
+    "hello": ["привет", "здравствуйте", "здравствуй", "приветствие"],
+    "improve": ["улучшать", "улучшить", "совершенствовать", "повышать"],
+    "prefer": ["предпочитать", "предпочесть", "больше нравиться"],
+    "suggest": ["предлагать", "советовать", "предложить", "посоветовать"],
+    "reluctant": ["неохотный", "нежелающий", "несклонный", "сопротивляющийся"],
+    "consequence": ["последствие", "результат", "итог"],
+    "travel": ["путешествовать", "поездка", "путешествие", "ездить"],
+    "busy": ["занятый", "занят", "хлопотный"],
+    "invite": ["приглашать", "пригласить", "звать"],
+    "problem": ["проблема", "задача", "трудность"],
 }
 
 
@@ -610,19 +622,90 @@ def vocab_locally_ok(en_word: str, acceptable_ru: list[str], user_ru: str) -> bo
     hints.extend(_VOCAB_NEAR.get(en, []))
     for tok in re.findall(r"[a-z']+", en):
         hints.extend(_VOCAB_NEAR.get(tok, []))
-    return any(_ru_close(h, user_ru) for h in hints)
+    # разбиваем ответ и подсказки на слова — «быть голодным» vs «голодный»
+    user_parts = re.findall(r"[а-яёa-z]+", (user_ru or "").lower().replace("ё", "е"))
+    for h in hints:
+        if _ru_close(h, user_ru):
+            return True
+        hint_parts = re.findall(r"[а-яёa-z]+", (h or "").lower().replace("ё", "е"))
+        for hp in hint_parts:
+            if len(hp) < 4:
+                continue
+            if _ru_close(hp, user_ru):
+                return True
+            for up in user_parts:
+                if len(up) >= 4 and _ru_close(hp, up):
+                    return True
+    return False
+
+
+def _translation_is_nonsense(user_ru: str) -> bool:
+    """Пустой / без кириллицы / клавиатурный мусор — не зачёт смысла."""
+    t = (user_ru or "").strip()
+    if len(t) < 6:
+        return True
+    low = t.lower().replace("ё", "е")
+    cyr = re.findall(r"[а-я]", low)
+    if len(cyr) < 5:
+        return True
+    # одна-две буквы на всё сообщение
+    if len(cyr) >= 8 and len(set(cyr)) <= 2:
+        return True
+    # латиница/цифры почти без смысла
+    letters = re.findall(r"[а-яa-z]", low)
+    if letters and len(cyr) / max(1, len(letters)) < 0.35:
+        return True
+    return False
+
+
+def _translation_token_overlap(user_ru: str, reference_ru: str) -> float:
+    """Доля значимых токенов эталона, попавших в ответ (грубо)."""
+    stop = {
+        "и", "в", "на", "с", "по", "к", "у", "о", "а", "но", "что", "это",
+        "как", "не", "из", "за", "от", "до", "для", "же", "бы", "ли", "то",
+        "он", "она", "они", "мы", "вы", "я", "ты", "его", "ее", "их",
+    }
+    ref = {
+        w
+        for w in re.findall(r"[а-я]{4,}", (reference_ru or "").lower().replace("ё", "е"))
+        if w not in stop
+    }
+    if not ref:
+        return 0.0
+    usr = set(
+        re.findall(r"[а-я]{4,}", (user_ru or "").lower().replace("ё", "е"))
+    )
+    if not usr:
+        return 0.0
+    hit = 0
+    for r in ref:
+        if any(_ru_close(r, u) for u in usr):
+            hit += 1
+    return hit / len(ref)
 
 
 def judge_translation(source_en: str, reference_ru: str, user_ru: str) -> dict:
-    fallback = {"score": 55, "cefr_estimate": "A2"}
+    # Жёсткий отсев ерунды до GPT
+    if _translation_is_nonsense(user_ru):
+        return {"score": 8, "cefr_estimate": "A0"}
+
+    overlap = _translation_token_overlap(user_ru, reference_ru)
+    # Явный похожий смысл по ключевым словам — не занижаем
+    local_boost = overlap >= 0.35
+
+    fallback = {
+        "score": 72 if local_boost else (28 if overlap < 0.12 else 55),
+        "cefr_estimate": "A2",
+    }
     prompt = {
         "role": "system",
         "content": (
-            "Placement-test judge for English→Russian translation. "
-            "Score 0-100 by MAIN IDEA, not word-for-word. "
-            "If the student captured the gist (who/what/why, key facts), "
-            "score 70-95 even with synonyms, shorter phrasing, or missed minor details. "
-            "Typos OK. Low score only if empty, off-topic, or meaning is wrong. "
+            "Placement-test judge for English→Russian translation of 2–3 sentences. "
+            "Score 0-100 by MAIN IDEA / gist, not word-for-word. "
+            "Synonyms, shorter phrasing, minor omissions OK → score 70-95. "
+            "Typos OK. "
+            "Score under 25 only if empty, gibberish, off-topic, or meaning clearly wrong. "
+            "Do NOT give mid scores to nonsense (keyboard mash, random words). "
             "Also estimate CEFR A0-C2 from the student's Russian. "
             'Return ONLY JSON: {"score":0-100,"cefr_estimate":"A2"}'
         ),
@@ -634,23 +717,40 @@ def judge_translation(source_en: str, reference_ru: str, user_ru: str) -> dict:
             f"Student:\n{user_ru}"
         ),
     }
-    return _ask_json([prompt, user], fallback, temperature=0.0)
+    data = _ask_json([prompt, user], fallback, temperature=0.0)
+    try:
+        score = int(data.get("score") or 0)
+    except (TypeError, ValueError):
+        score = int(fallback["score"])
+    # Подстраховка: GPT не должен «прощать» мусор и не должен валить близкий смысл
+    if _translation_is_nonsense(user_ru):
+        score = min(score, 10)
+    elif local_boost and score < 55:
+        score = max(score, 70)
+    elif overlap < 0.08 and score > 40 and len((user_ru or "").strip()) < 40:
+        score = min(score, 25)
+    data["score"] = score
+    return data
 
 
 def judge_vocab(en_word: str, acceptable_ru: list[str], user_ru: str) -> dict:
     if vocab_locally_ok(en_word, acceptable_ru, user_ru):
         return {"correct": True}
+    if not _ru_key(user_ru):
+        return {"correct": False}
     fallback = {"correct": False}
     prompt = {
         "role": "system",
         "content": (
             "Generous vocab check for a placement test. "
-            "correct=true if the student's Russian has the SAME core meaning. "
+            "correct=true if the student's Russian has the SAME core meaning "
+            "OR is a common synonym / near-synonym / morphological form. "
             "The Acceptable list is HINTS, not a closed set. "
-            "Common synonyms and morphology count as true "
-            "(famous → известный / знаменитый / популярный; "
-            "hungry → голодный / голоден). "
-            "False only if empty, unrelated, or clearly another meaning. "
+            "Examples that MUST be true: "
+            "famous → известный / знаменитый / популярный; "
+            "hungry → голодный / голоден; "
+            "book → книга / книжка. "
+            "False ONLY if empty, unrelated, or clearly another meaning. "
             'Return ONLY JSON: {"correct":bool}'
         ),
     }

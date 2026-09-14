@@ -195,13 +195,11 @@ def _write_prompt(topic: str, left: int) -> str:
         "🎯 Задание 4/4: письмо\n\n"
         f"Тема: {topic}\n\n"
         "Напиши текст на английском — до 10 предложений.\n"
-        f"🔄 Осталось замен текста: {left}"
+        f"🔄 Осталось замен текста: {left}\n\n"
+        "Можно нажать «⏭️ Пропустить задание», если хочешь быстрее."
     )
     if left <= 0:
-        text += (
-            "\n\nЗамен больше нет — напиши текст или нажми "
-            "«⏭️ Пропустить задание»."
-        )
+        text += "\n\nЗамен больше нет — напиши текст или пропусти задание."
     return text
 
 
@@ -224,7 +222,8 @@ def _awk(user: dict):
     left = int(a.get("write_replacements_left", 3))
     return assess_write_kb(
         no_menu=_assess_no_menu(user),
-        show_skip=left <= 0,
+        show_skip=True,
+        show_replace=left > 0,
     )
 
 
@@ -349,7 +348,8 @@ async def start_level_test_flow(
     user = _u
     await m.answer(
         "🎯 Тест уровня — задание 1/4: перевод\n\n"
-        "Переведи текст на русский.\n"
+        "Переведи 2–3 предложения на русский.\n"
+        "Смысл важнее дословности — синонимы ок.\n"
         "Если сложно — нажми «Дай текст проще» или «Пропустить задание».\n\n"
         f"🇬🇧 Текст:\n{a['translate_source_en']}",
         reply_markup=_atk(user, show_skip=True),
@@ -682,7 +682,7 @@ async def _start_vocab_flow(m: Message, level: str):
     await m.answer(
         "🎯 Задание 2/4: словарь\n\n"
         "Переведи слово на русский. Всего 4 слова.\n"
-        "Если не знаешь — жми «Не знаю».\n\n"
+        "Синонимы засчитываются. Если не знаешь — жми «Не знаю».\n\n"
         f"1/4 🇬🇧 {a['vocab_en']}",
         reply_markup=_adk(user),
     )

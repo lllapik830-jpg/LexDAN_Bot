@@ -10,9 +10,23 @@ from data.assessment_data import LEVELS, get_translation, pick_topic
 from services.gpt import _ask_json
 
 
+def _clip_to_sentences(text: str, n: int = 3) -> str:
+    """Обрезать до n предложений (для короткого онбординг-теста)."""
+    import re
+
+    t = (text or "").strip()
+    if not t:
+        return t
+    parts = re.split(r"(?<=[.!?…])\s+", t)
+    parts = [p.strip() for p in parts if p.strip()]
+    if len(parts) <= n:
+        return t
+    return " ".join(parts[:n])
+
+
 def generate_translation(level: str, seed: str = "") -> dict:
     """
-    EN текст 4–5 предложений + эталонный RU перевод под CEFR level.
+    EN текст 2–3 предложения + эталонный RU перевод под CEFR level.
     """
     fallback = get_translation(level, random.randint(0, 1))
     tip = {
@@ -31,7 +45,8 @@ def generate_translation(level: str, seed: str = "") -> dict:
                 "role": "system",
                 "content": (
                     "Create a UNIQUE English placement-test passage and its Russian translation. "
-                    "Exactly 4 or 5 short sentences. No dialogue labels. "
+                    "Exactly 2 or 3 short sentences (prefer 2–3, never more than 3). "
+                    "No dialogue labels. "
                     f"CEFR target: {level} ({tip}). "
                     "Make content different every time (different topic). "
                     "Return ONLY JSON: "
@@ -45,10 +60,10 @@ def generate_translation(level: str, seed: str = "") -> dict:
         ],
         {"en": fallback["en"], "ru": fallback["ru"]},
         temperature=0.95,
-        max_tokens=450,
+        max_tokens=280,
     )
-    en = (data.get("en") or "").strip()
-    ru = (data.get("ru") or "").strip()
+    en = _clip_to_sentences((data.get("en") or "").strip(), 3)
+    ru = _clip_to_sentences((data.get("ru") or "").strip(), 3)
     if not en or not ru:
         return fallback
     return {"en": en, "ru": ru}
