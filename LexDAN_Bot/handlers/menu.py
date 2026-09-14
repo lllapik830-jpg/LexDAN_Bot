@@ -76,6 +76,7 @@ async def open_chat(m: Message):
     set_mode(uid, MODE_CHAT)
     users = users_for(uid)
     user = get_user(users, uid)
+    user["picking_chat_voice"] = False
     ensure_growth(user)
     note_lesson_activity(user)
 

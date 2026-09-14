@@ -206,8 +206,12 @@ async def vocab_review_yes(m: Message):
     set_mode(uid, MODE_LESSONS)
     set_vocab_hub(uid, "global_drill_menu")
     save_users(users, only=uid)
+    from services.tg_out import section_banner
+
+    await section_banner(m, "📋")
     await m.answer(
-        "🦜 Супер! Открываю задания по изученным словам и фразам ✨",
+        "📋 <b>Повторение Vocabulary</b>\n\n"
+        "Супер! Открываю задания по изученным словам и фразам ✨",
         reply_markup=global_drill_menu_kb(),
         parse_mode="HTML",
     )

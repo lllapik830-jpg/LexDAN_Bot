@@ -199,52 +199,7 @@ def set_chat_voice(user: dict, key: str) -> tuple[bool, str]:
 
 
 def voices_help_text(user: dict) -> str:
-    from services.ui_preview import ui_preview_only
-
-    if ui_preview_only(user=user):
-        return _voices_help_text_preview(user)
-
-    plan = user_plan(user)
-    cur = current_voice_label(user)
-    plan_title = {
-        "free": "бесплатный",
-        "chat": "безлимит общения (старый)",
-        "full": "Безлимит",
-    }.get(plan, plan)
-
-    lines = [
-        "🎙 <b>Голоса озвучки в «Общаться»</b>\n",
-        f"Сейчас выбран: <b>{cur}</b>\n",
-        f"Твой тариф: <b>{plan_title}</b>\n",
-        "🎧 Прослушать можно любой голос бесплатно (не тратит лимит чата).\n"
-        "✅ Выбрать для ответов — базовый Adam на free, все голоса с безлимитом.\n",
-        "━━━━━━━━━━━━━━\n",
-        "<b>🆓 Бесплатно</b>\n"
-        "• Adam · American 🇺🇸\n",
-        f"<b>🚀 Безлимит · {len(CHAT_VOICES)} голосов</b>\n",
-    ]
-    for v in CHAT_VOICES:
-        lines.append(f"• {voice_label(v)}")
-
-    lines.append("\n━━━━━━━━━━━━━━")
-    avail = available_chat_voices(user)
-    if avail:
-        lines.append("\n<b>Тебе можно выбрать сейчас:</b>")
-        for v in avail:
-            mark = "✅" if user.get("chat_voice_key") == v["key"] else "▫️"
-            lines.append(f"{mark} {voice_label(v)}")
-    else:
-        lines.append(
-            "\nНа бесплатном для ответов — <b>Adam</b>. "
-            "Послушай другие голоса ниже и оформи безлимит, чтобы выбрать их 👇"
-        )
-
-    lines.append("\nКнопки ниже: 🎧 прослушать · ✅ выбрать")
-    return "\n".join(lines)
-
-
-def _voices_help_text_preview(user: dict) -> str:
-    """Короткий текст хаба голосов (превью для менеджера)."""
+    """Короткий хаб выбора голоса (для всех)."""
     plan = user_plan(user)
     cur = current_voice_label(user)
     for suffix in (" (бесплатный)", " (по умолчанию)"):
@@ -280,24 +235,16 @@ def _voices_help_text_preview(user: dict) -> str:
 
 
 def rico_alt_voice_unlocked(user: dict | None) -> bool:
-    """Второй голос Рико — приз 1–2 места (или явный флаг / менеджер)."""
+    """Второй голос Рико — только победителю ивента (не менеджеру)."""
     if not user:
         return False
-    if user.get("rico_alt_voice_unlocked") or user.get("dev_unlock"):
+    if user.get("rico_alt_voice_unlocked"):
         return True
-    try:
-        from config import MANAGER_ID
-
-        uid = user.get("telegram_id") or user.get("id")
-        if uid is not None and int(uid) == int(MANAGER_ID):
-            return True
-    except Exception:
-        pass
     ep = user.get("event_prizes")
     if isinstance(ep, dict) and ep.get("exclusive_voice"):
         return True
     place = int(ep.get("place") or 0) if isinstance(ep, dict) else 0
-    return place in {1, 2}
+    return place == 1
 
 
 def resolve_rico_voice_id(user: dict | None = None) -> str:

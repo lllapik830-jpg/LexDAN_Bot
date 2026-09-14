@@ -186,6 +186,7 @@ def _roles_phrase(topic: dict) -> str:
 async def open_listening_for_level(m: Message, user: dict, level: str) -> None:
     from services.growth import ensure_growth
     from services.rewards import user_plan
+    from services.tg_out import section_banner
 
     uid = str(m.from_user.id)
     ensure_growth(user)
@@ -195,17 +196,19 @@ async def open_listening_for_level(m: Message, user: dict, level: str) -> None:
     ensure_listening(user)
     plan = user_plan(user)
     if plan == "full":
-        limit_note = "Безлимит ситуаций на твоём тарифе ✨"
+        limit_note = "✨ Безлимит ситуаций на твоём тарифе"
     else:
         limit_note = (
-            "Бесплатно: <b>1 ситуация в день</b>, если выбрал Listening как раздел сегодня. "
-            "С безлимитом — без ограничений."
+            "🆓 Бесплатно: <b>1 ситуация в день</b> "
+            "(если Listening — твой раздел сегодня).\n"
+            "🚀 С безлимитом — без ограничений."
         )
+    await section_banner(m, "🎧")
     await m.answer(
         f"🎧 <b>Listening · {level}</b>\n\n"
-        f"{limit_note}\n"
-        "Выбери тему — короткий диалог + 3 задания на понимание.\n"
-        "Если выйдешь посреди темы, прогресс темы сбросится.",
+        f"{limit_note}\n\n"
+        "🎙 Выбери тему — короткий диалог + <b>3 задания</b> на понимание.\n"
+        "⚠️ Если выйдешь посреди темы — прогресс темы сбросится.",
         reply_markup=listening_topics_kb(level, user),
         parse_mode="HTML",
     )
@@ -453,7 +456,7 @@ async def listening_listened(m: Message):
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter("listening_play"), F.text.regexp(r"^\d{1,2}$"))
 async def listening_replay_turn(m: Message):
-    """Повтор текста реплики по номеру + озвучка + кнопка перевести."""
+    """Показать текст реплики по номеру (без повторной озвучки — экономия TTS)."""
     uid = str(m.from_user.id)
     users = load_users()
     user = get_user(users, uid)
@@ -474,15 +477,6 @@ async def listening_replay_turn(m: Message):
         f"<b>{label}</b>\n\n{turn['text']}",
         reply_markup=turn_replay_inline_kb(n),
         parse_mode="HTML",
-    )
-    level = sess.get("level") or "A1"
-    await send_voice_reply(
-        m,
-        turn["text"],
-        title=label,
-        voice_id=_cast_voice_id(turn.get("voice_id")),
-        slow=_slow_for_level(level),
-        allow_gtts_fallback=False,
     )
 
 

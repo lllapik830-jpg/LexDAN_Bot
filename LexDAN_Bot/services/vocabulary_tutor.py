@@ -155,9 +155,17 @@ def _article(word: str) -> str:
 
 
 def _word_example_kind(en: str) -> tuple[str, str]:
-    """Return (form_to_use_in_sentence, kind) where kind is verb|multi|adj|noun."""
+    """Return (form_to_use_in_sentence, kind) where kind is verb|multi|adj|noun|greet."""
     w = (en or "word").strip()
     low = w.lower()
+    greet = {
+        "hello", "hi", "goodbye", "bye", "please", "thank you", "thanks", "sorry",
+        "yes", "no", "welcome", "ok", "okay", "excuse me", "see you", "how are you",
+        "nice to meet you", "good morning", "good afternoon", "good evening",
+        "good night", "cheers",
+    }
+    if low in greet or low.startswith(("good ", "nice to ", "how are ", "excuse ", "see you", "thank ")):
+        return w, "greet"
     if low.startswith("to ") and len(w) > 3:
         base = w[3:].strip()
         if base:
@@ -174,16 +182,40 @@ def _word_example_kind(en: str) -> tuple[str, str]:
 
 def _diverse_word_examples(en: str, ru: str) -> tuple[str, str, str, str]:
     """Локальные примеры: слово USE в реальной ситуации (не мета про изучение)."""
-    raw = (en or "word").strip()
-    w, kind = _word_example_kind(raw)
-    r = (ru or "").strip() or raw
-    a = _article(w)
+    from data.vocab_example_bank import lookup_word_example
 
+    raw = (en or "word").strip()
+    r = (ru or "").strip() or raw
+    bank = lookup_word_example(raw, r)
+    if bank:
+        e1, e1r = bank
+        # второй пример — вариация
+        e2 = f"Everyone heard \"{raw}\" clearly." if " " in raw or raw.lower() in {
+            "bye", "hello", "hi", "yes", "no", "sorry", "thanks", "please"
+        } else f"This {raw} is important for me."
+        e2r = (
+            f"Все чётко услышали «{r}»."
+            if " " in raw or raw.lower() in {
+                "bye", "hello", "hi", "yes", "no", "sorry", "thanks", "please"
+            }
+            else f"Этот {r} важен для меня."
+        )
+        return e1, e1r, e2, e2r
+
+    w, kind = _word_example_kind(raw)
+    a = _article(w)
+    if kind == "greet":
+        return (
+            f"She said \"{raw}\" when she was leaving.",
+            f"Она сказала «{r}», когда уходила.",
+            f"He smiled and answered, \"{raw}.\"",
+            f"Он улыбнулся и ответил: «{r}.»",
+        )
     if kind == "verb":
         templates = [
             (
                 f"I {w} in the park every morning.",
-                f"Я каждое утро занимаюсь этим ({r}) в парке.",
+                f"Я каждое утро делаю это ({r}) в парке.",
                 f"Do you want to {w} with me after work?",
                 f"Хочешь {r} со мной после работы?",
             ),
@@ -564,56 +596,25 @@ def rico_word_card(level: str, topic_title: str, word: dict) -> str:
         "example2_en": e2,
         "example2_ru": e2r,
     }
-    try:
-        data = _ask_json(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "Ты Рико 🦜 — дружелюбный репетитор английского для русскоязычных. "
-                        "Объясни слово ТОЛЬКО по-русски (кроме самих английских примеров). "
-                        "Верни JSON:\n"
-                        "{"
-                        '"meaning_ru":"краткое понятное объяснение на русском",'
-                        '"association_ru":"короткая ассоциация/мнемоника на русском",'
-                        '"example1_en":"живое предложение со словом (не шаблон)",'
-                        '"example1_ru":"перевод примера 1 на русский",'
-                        '"example2_en":"ДРУГОЕ живое предложение со словом",'
-                        '"example2_ru":"перевод примера 2 на русский"'
-                        "}\n"
-                        "FORBIDDEN templates: 'Today I learned …', 'I know the word …', "
-                        "'I can't imagine my day without …', 'Could you explain what … means', "
-                        "'Don't forget to practise …', 'I looked up …', 'make a sentence with …', "
-                        "'using … correctly', 'mentioned … twice', 'talked about …', "
-                        "'This is my …', 'I use … every day' as the only pattern. "
-                        "Examples must USE the word as vocabulary in a real-life situation, "
-                        "not talk about learning the word. "
-                        "CRITICAL: if the word means a PERSON/ROLE (dependant, teacher, guardian…) "
-                        "or an ABSTRACT idea (freedom, kinship…), do NOT treat it like an object "
-                        "(never 'on the table', 'on the bus', 'pass me the …'). "
-                        "Make two DIFFERENT natural sentences that contain the word. "
-                        f"Эмодзи для ассоциации: {emoji}. Уровень CEFR: {level}."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"Тема: {topic_title}. Слово: {en} = {ru}. Seed {random.random()}",
-                },
-            ],
-            fallback,
-            temperature=0.75,
-            max_tokens=380,
-        )
-        return _format_word_card(word, data if isinstance(data, dict) else fallback)
-    except Exception as e:
-        logging.error(f"rico_word_card: {e}")
-        return _format_word_card(word, fallback)
+    # Для стабильных примеров в карточках/повторении используем банк (без GPT-ерунды)
+    return _format_word_card(word, fallback)
 
 
 def _diverse_phrase_examples(en: str, ru: str) -> tuple[str, str, str, str]:
     """Фраза в живом диалоге/контексте — не мета «People often say…»."""
+    from data.vocab_example_bank import lookup_phrase_example
+
     p = (en or "phrase").strip()
     r = (ru or "").strip() or p
+    bank = lookup_phrase_example(p, r)
+    if bank:
+        e1, e1r = bank
+        return (
+            e1,
+            e1r,
+            f"Before leaving, my friend called out, \"{p}!\"",
+            f"Перед уходом подруга крикнула: «{r}!»",
+        )
     templates = [
         (
             f"\"{p},\" she said and waved.",
@@ -715,45 +716,7 @@ def rico_phrase_card(level: str, topic_title: str, phrase: dict) -> str:
         "example2_en": e2,
         "example2_ru": e2r,
     }
-    try:
-        data = _ask_json(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "Ты Рико 🦜. Объясни устойчивую фразу ТОЛЬКО по-русски "
-                        "(примеры предложений — на английском + перевод). JSON:\n"
-                        "{"
-                        '"meaning_ru":"...",'
-                        '"when_ru":"когда говорят",'
-                        '"association_ru":"...",'
-                        '"example1_en":"живое предложение с фразой",'
-                        '"example1_ru":"...",'
-                        '"example2_en":"другое живое предложение",'
-                        '"example2_ru":"..."'
-                        "}\n"
-                        "FORBIDDEN: 'I say … to friends', 'Everyone knows …', "
-                        "'People often say …', 'Native speakers use …', "
-                        "'I'd probably say …', 'Try dropping … into your conversation'. "
-                        "Examples must USE the phrase in a real-life dialogue or situation, "
-                        "not talk about learning or explaining the phrase. "
-                        "Two DIFFERENT natural examples that contain the phrase. "
-                        f"Эмодзи: {emoji}. Уровень: {level}."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"Тема: {topic_title}. Фраза: {en} = {ru}. Seed {random.random()}",
-                },
-            ],
-            fallback,
-            temperature=0.75,
-            max_tokens=380,
-        )
-        return _format_phrase_card(phrase, data if isinstance(data, dict) else fallback)
-    except Exception as e:
-        logging.error(f"rico_phrase_card: {e}")
-        return _format_phrase_card(phrase, fallback)
+    return _format_phrase_card(phrase, fallback)
 
 
 def check_vocab_sentence(

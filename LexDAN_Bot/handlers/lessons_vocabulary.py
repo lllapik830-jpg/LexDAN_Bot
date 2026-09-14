@@ -91,7 +91,7 @@ from data.vocabulary_words import iter_level_words
 router = Router()
 VOCAB_INTRO = (
     "📗 <b>Vocabulary</b>\n\n"
-    "🦜 Учим слова по темам: текст → карточки → одно предложение со словом.\n"
+    "Учим слова по темам: текст → карточки → одно предложение со словом.\n"
     "Есть устойчивые фразы отдельной кнопкой.\n"
     "Когда все слова уровня изучены — появится <b>🎯 Тест Vocabulary</b>."
 )
@@ -449,6 +449,9 @@ async def open_vocabulary(m: Message):
         done = wd and (pt == 0 or pd)
         return learned, total, done
 
+    from services.tg_out import section_banner
+
+    await section_banner(m, "📗")
     await m.answer(VOCAB_INTRO, parse_mode="HTML")
     extra = ""
     if is_level_vocab_words_complete(user, level) and not is_vocab_final_passed(user, level):
@@ -1068,9 +1071,14 @@ async def global_tasks_menu(m: Message):
     if not user.get("assessment_done") and not user.get("dev_unlock"):
         await m.answer("Сначала пройди тест уровня.")
         return
+    from services.tg_out import section_banner
+
     set_vocab_hub(str(m.from_user.id), "global_drill_menu")
+    await section_banner(m, "📋")
     await m.answer(
-        "🦜 <b>Решили закрепить результат?</b> Выбери задание:",
+        "📋 <b>Задания по всем уровням</b>\n\n"
+        "Закрепи изученные слова и фразы — с нормальными примерами ✨\n"
+        "Выбери задание:",
         reply_markup=global_drill_menu_kb(),
         parse_mode="HTML",
     )

@@ -7,7 +7,14 @@ import random
 
 from aiogram import F, Router
 from aiogram.dispatcher.event.bases import SkipHandler
-from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
+from aiogram.types import (
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    CallbackQuery,
+)
 
 from data.street_talk import (
     BTN_BACK_PACKS,
@@ -118,9 +125,9 @@ def _packs_kb(user: dict) -> ReplyKeyboardMarkup:
 
 
 def _intro_kb() -> ReplyKeyboardMarkup:
+    """Минимальная reply-клавиатура — навигация слайдов в inline под текстом."""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BTN_NEXT)],
             [KeyboardButton(text=BTN_BACK_PACKS)],
             [KeyboardButton(text="🔙 Вернуться в меню")],
         ],
@@ -159,6 +166,32 @@ def _produce_kb() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
     )
+
+
+def _street_slide_inline(slide: dict) -> InlineKeyboardMarkup:
+    """Кнопки под текстом — как в Grammar."""
+    kind = slide.get("kind")
+    rows: list[list[InlineKeyboardButton]] = []
+    if kind in {"intro", "item"}:
+        rows.append(
+            [InlineKeyboardButton(text="➡️ Далее", callback_data="st:next")]
+        )
+    if kind == "produce":
+        rows.append(
+            [InlineKeyboardButton(text="💡 Напомнить", callback_data="st:remind")]
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="⏭ Пропустить",
+                    callback_data="st:skip_speak",
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton(text="⬅️ К пакам", callback_data="st:packs")]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _kb_for_slide(slide: dict) -> ReplyKeyboardMarkup:
@@ -293,6 +326,7 @@ async def _play_dialogue(m: Message, user: dict, pack: dict) -> None:
 
 async def _present_slide(m: Message, user: dict) -> None:
     from services.elevenlabs import send_rico_voice
+    from aiogram.types import ReplyKeyboardRemove
 
     uid = str(m.from_user.id)
     pack = current_pack(user) or {}
@@ -310,7 +344,6 @@ async def _present_slide(m: Message, user: dict) -> None:
     await _wipe_slide_msgs(m, uid)
 
     html = ""
-    kb = _kb_for_slide(slide)
     voice_en = ""
     if kind == "intro":
         html = pack.get("intro_html") or "Поехали."
@@ -324,7 +357,16 @@ async def _present_slide(m: Message, user: dict) -> None:
         await _goto_packs(m)
         return
 
-    card = await m.answer(html, reply_markup=kb, parse_mode="HTML")
+    card = await m.answer(
+        html,
+        reply_markup=_street_slide_inline(slide),
+        parse_mode="HTML",
+    )
+    # убрать нижние reply-кнопки — навигация под текстом
+    try:
+        await m.answer("🤙", reply_markup=ReplyKeyboardRemove())
+    except Exception:
+        pass
     voice_id = None
     if voice_en:
         sent = await send_rico_voice(m, voice_en, user=user, title="Живая речь")
@@ -376,10 +418,13 @@ async def open_street_for_level(m: Message, user: dict, level: str) -> None:
     uid = str(m.from_user.id)
     if not street_talk_open(level):
         return
+    from services.tg_out import section_banner
+
     ensure_street(user)
     set_street_list(uid, level)
     users = load_users()
     user = get_user(users, uid)
+    await section_banner(m, "🤙")
     await m.answer(
         section_intro_html(level),
         reply_markup=_packs_kb(user),
@@ -457,10 +502,61 @@ async def street_next(m: Message):
     user = get_user(users, str(m.from_user.id))
     pack = current_pack(user) or {}
     slide = current_slide(user)
-    if pack.get("kind") == "dialogue" or slide.get("kind") != "intro":
+    if pack.get("kind") == "dialogue":
+        return
+    if slide.get("kind") not in {"intro", "item"}:
         return
     await try_delete_user_tap(m)
     await _advance(m)
+
+
+@router.callback_query(F.data == "st:next")
+async def street_cb_next(c: CallbackQuery):
+    await c.answer()
+    if not c.from_user or not c.message:
+        return
+    users = load_users()
+    user = get_user(users, str(c.from_user.id))
+    pack = current_pack(user) or {}
+    slide = current_slide(user)
+    if pack.get("kind") == "dialogue":
+        return
+    if slide.get("kind") not in {"intro", "item"}:
+        return
+    await _advance(c.message)
+
+
+@router.callback_query(F.data == "st:skip_speak")
+async def street_cb_skip(c: CallbackQuery):
+    await c.answer()
+    if not c.message:
+        return
+    await _advance(c.message)
+
+
+@router.callback_query(F.data == "st:remind")
+async def street_cb_remind(c: CallbackQuery):
+    await c.answer()
+    if not c.from_user or not c.message:
+        return
+    uid = str(c.from_user.id)
+    users = load_users()
+    user = get_user(users, uid)
+    slide = current_slide(user)
+    if slide.get("kind") != "produce":
+        return
+    s = get_session(user) or {}
+    await _del(c.message, s.get("remind_msg_id"))
+    sent = await c.message.answer(format_remind_html(slide["task"]), parse_mode="HTML")
+    update_session(uid, remind_msg_id=sent.message_id if sent else None)
+
+
+@router.callback_query(F.data == "st:packs")
+async def street_cb_packs(c: CallbackQuery):
+    await c.answer()
+    if not c.message:
+        return
+    await _goto_packs(c.message)
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter(*_SLIDE_HUBS), F.text == BTN_REMIND)

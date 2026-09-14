@@ -228,20 +228,15 @@ async def _begin_grammar_slides(m: Message, user: dict, topic: dict) -> None:
     level = (user.get("lesson") or {}).get("level") or "A0"
     slides = get_grammar_slides(level, topic["id"]) or []
     ack = is_ack_topic(topic)
-    await m.answer("📚", reply_markup=ReplyKeyboardRemove())
+    from services.grammar_topic_emoji import topic_emoji
+
+    await m.answer(topic_emoji(topic), reply_markup=ReplyKeyboardRemove())
     sent = await m.answer(
         slides[0],
         reply_markup=_grammar_slide_kb(0, len(slides), ack=ack),
         parse_mode="HTML",
     )
     save_grammar_slide_message(uid, sent.chat.id, sent.message_id)
-    await m.answer(
-        "Листай слайды кнопками под текстом 👆",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="⬅️ К темам")]],
-            resize_keyboard=True,
-        ),
-    )
 
 
 VOICE_ONLY_TEXT = (
@@ -330,24 +325,10 @@ async def _show_grammar_test_question(m: Message, user: dict):
 
 async def open_level_hub(m: Message, level: str):
     set_level_hub(str(m.from_user.id), level)
-    from config import MANAGER_ID
-
-    extra = "\n🎧 <b>Listening</b> доступен."
-    available = "Сейчас доступны <b>Grammar</b>, <b>Vocabulary</b> и <b>Listening</b>."
-    from data.street_talk import street_talk_open
-
-    if street_talk_open(level):
-        extra += "\n🤙 <b>Живая речь</b> — как говорят живьём, не как в учебнике."
-        available = (
-            "Сейчас доступны <b>Grammar</b>, <b>Vocabulary</b>, <b>Listening</b> "
-            "и <b>Живая речь</b>."
-        )
-    if m.from_user and m.from_user.id == MANAGER_ID:
-        extra += "\n📖 <b>Reading</b> — тестовый доступ."
-    else:
-        extra += "\n📖 Reading · 🗣 Speaking · ✍️ Writing — <i>скоро</i> 🚀"
     await m.answer(
-        get_level_welcome(level) + "\n\n" + available + extra,
+        get_level_welcome(level)
+        + "\n\nВыбирай раздел ниже — <b>Grammar</b>, <b>Vocabulary</b>, "
+        "<b>Listening</b>, <b>Reading</b> или <b>Живая речь</b>! 🚀",
         reply_markup=level_sections_kb(user_id=m.from_user.id),
         parse_mode="HTML",
     )
@@ -718,6 +699,7 @@ async def open_grammar(m: Message):
     ensure_lesson(user)
     from services.free_lesson_limits import SECTION_GRAMMAR, check_section_access
     from handlers.lesson_keyboards import lesson_limit_inline_kb
+    from services.tg_out import section_banner
 
     ok, limit_msg = check_section_access(user, SECTION_GRAMMAR)
     if not ok:
@@ -731,6 +713,7 @@ async def open_grammar(m: Message):
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
+    await section_banner(m, "📘")
     await m.answer(get_grammar_section_intro(level), parse_mode="HTML")
     await m.answer(
         format_topics_list(level, _completed_topic_ids(user, level)),
@@ -805,6 +788,26 @@ async def open_grammar_extra(m: Message):
         return
     ensure_lesson(user)
     level = (user.get("lesson") or {}).get("level") or user.get("level") or "A1"
+
+    from services.growth import is_premium, ensure_growth
+    from services.pricing import full_price
+    from handlers.lesson_keyboards import tariffs_inline_kb
+
+    ensure_growth(user)
+    save_users(users, only=str(m.from_user.id))
+    if not is_premium(user):
+        price, _ = full_price(user)
+        await m.answer(
+            "🔒 <b>Доп. задания</b> — только на безлимите "
+            f"(<b>{price}₽/мес</b>).\n\n"
+            "Они помогают закрепить материал после теста по уровню. "
+            "На бесплатном пока недоступны 👇",
+            reply_markup=grammar_topics_kb(level, user),
+            parse_mode="HTML",
+        )
+        await m.answer("Тарифы:", reply_markup=tariffs_inline_kb(user))
+        return
+
     if level == "A0" or level not in {"A1", "A2", "B1", "B2", "C1", "C2"}:
         await m.answer(
             "Доп. задания доступны с уровня A1.",

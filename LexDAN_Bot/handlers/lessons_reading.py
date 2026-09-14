@@ -74,6 +74,7 @@ async def open_reading_for_level(m: Message, user: dict, level: str) -> None:
     uid = str(m.from_user.id)
     from services.growth import ensure_growth
     from services.rewards import user_plan
+    from services.tg_out import section_banner
 
     ensure_growth(user)
     set_reading_list(uid, level)
@@ -82,18 +83,20 @@ async def open_reading_for_level(m: Message, user: dict, level: str) -> None:
     ensure_reading(user)
     plan = user_plan(user)
     if plan == "full":
-        limit_note = "Безлимит тем на твоём тарифе ✨"
+        limit_note = "✨ Безлимит тем на твоём тарифе"
     else:
         limit_note = (
-            "Бесплатно: <b>1 тема в день</b>, если выбрал Reading как раздел сегодня. "
-            "С безлимитом — без ограничений."
+            "🆓 Бесплатно: <b>1 тема в день</b> "
+            "(если Reading — твой раздел сегодня).\n"
+            "🚀 С безлимитом — без ограничений."
         )
+    await section_banner(m, "📖")
     await m.answer(
         f"📖 <b>Reading · {level}</b>\n\n"
-        f"{limit_note}\n"
-        "Выбери тему — короткий текст + 3 задания (без озвучки).\n"
-        "Чтобы закрыть тему галочкой, нужно пройти все 3 задания подряд.\n"
-        "Если выйдешь раньше — прогресс темы сбросится.",
+        f"{limit_note}\n\n"
+        "📄 Выбери тему — короткий текст + <b>3 задания</b> (без озвучки).\n"
+        "✅ Чтобы закрыть тему галочкой — пройди все 3 задания подряд.\n"
+        "⚠️ Если выйдешь раньше — прогресс темы сбросится.",
         reply_markup=reading_topics_kb(level, user),
         parse_mode="HTML",
     )

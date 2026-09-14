@@ -34,6 +34,7 @@ async def chat_own_topic(m: Message):
     """Сбросить предложенную тему — юзер начинает со своей."""
     users = load_users()
     user = get_user(users, str(m.from_user.id))
+    user["picking_chat_voice"] = False
     user["chat_own_topic"] = True
     user["chat_topic_offered"] = False
     user["chat_topic_dived"] = False
@@ -60,30 +61,12 @@ def _selected_chat_voice_key(user: dict) -> str:
 
 
 def _voices_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
-    """У каждого голоса: прослушать + выбрать. В превью — только доступные; ✅ только у выбранного."""
-    from services.ui_preview import ui_preview_only
-
+    """У каждого доступного голоса: прослушать + выбрать (✅ у выбранного)."""
     rows = []
-    if user is not None and ui_preview_only(user=user):
-        selected = _selected_chat_voice_key(user)
-        for v in available_chat_voices(user):
-            mark = "✅" if v["key"] == selected else "▫️"
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        text=f"🎧 {v['label']}",
-                        callback_data=f"vlisten:{v['key']}",
-                    ),
-                    InlineKeyboardButton(
-                        text=mark,
-                        callback_data=f"vset:{v['key']}",
-                    ),
-                ]
-            )
-        return InlineKeyboardMarkup(inline_keyboard=rows)
-
-    # Все голоса каталога — с безлимитом (прослушать можно всегда)
-    for v in CHAT_VOICES:
+    selected = _selected_chat_voice_key(user) if user is not None else ""
+    voices = available_chat_voices(user) if user is not None else list(CHAT_VOICES)
+    for v in voices:
+        mark = "✅" if v["key"] == selected else "▫️"
         rows.append(
             [
                 InlineKeyboardButton(
@@ -91,7 +74,7 @@ def _voices_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
                     callback_data=f"vlisten:{v['key']}",
                 ),
                 InlineKeyboardButton(
-                    text="✅",
+                    text=mark,
                     callback_data=f"vset:{v['key']}",
                 ),
             ]
@@ -101,15 +84,14 @@ def _voices_inline_kb(user: dict | None = None) -> InlineKeyboardMarkup:
 
 @router.message(ModeFilter(MODE_CHAT), F.text == BTN_CHAT_VOICE)
 async def chat_voice_picker(m: Message):
-    from services.ui_preview import ui_preview_only
     from services.tg_out import section_banner
 
     users = load_users()
     user = get_user(users, str(m.from_user.id))
-    preview = ui_preview_only(user=user)
+    user["picking_chat_voice"] = True
+    save_users(users, only=str(m.from_user.id))
 
-    if preview:
-        await section_banner(m, "🎙")
+    await section_banner(m, "🎙")
 
     await m.answer(
         voices_help_text(user),
@@ -117,8 +99,8 @@ async def chat_voice_picker(m: Message):
         parse_mode="HTML",
     )
 
-    avail = available_chat_voices(user) if preview else True
-    if preview and not avail:
+    avail = available_chat_voices(user)
+    if not avail:
         from handlers.lesson_keyboards import tariffs_inline_kb
 
         await m.answer("Тарифы:", reply_markup=tariffs_inline_kb(user))
@@ -126,7 +108,7 @@ async def chat_voice_picker(m: Message):
 
     await m.answer(
         f"Фраза для прослушивания:\n<i>«{VOICE_PREVIEW_PHRASE}»</i>",
-        reply_markup=_voices_inline_kb(user if preview else None),
+        reply_markup=_voices_inline_kb(user),
         parse_mode="HTML",
     )
 
@@ -153,13 +135,12 @@ async def chat_voice_listen(c: CallbackQuery):
 
 @router.callback_query(F.data.startswith("vset:"))
 async def chat_voice_pick(c: CallbackQuery):
-    from services.ui_preview import ui_preview_only
-
     key = (c.data or "").split(":", 1)[-1].strip()
     users = load_users()
     user = get_user(users, str(c.from_user.id))
     ok, msg = set_chat_voice(user, key)
     if ok:
+        user["picking_chat_voice"] = True  # остаёмся в выборе, пока не уйдёт назад
         save_users(users, only=str(c.from_user.id))
     await c.answer("Готово" if ok else "Нужен тариф", show_alert=not ok)
     await c.message.answer(msg, reply_markup=chat_menu(), parse_mode="HTML")
@@ -168,16 +149,15 @@ async def chat_voice_pick(c: CallbackQuery):
 
         await c.message.answer("Тарифы:", reply_markup=tariffs_inline_kb(user))
         return
-    if ui_preview_only(user=user):
-        kb = _voices_inline_kb(user)
-        try:
-            await c.message.edit_reply_markup(reply_markup=kb)
-        except Exception:
-            await c.message.answer(
-                f"Фраза для прослушивания:\n<i>«{VOICE_PREVIEW_PHRASE}»</i>",
-                reply_markup=kb,
-                parse_mode="HTML",
-            )
+    kb = _voices_inline_kb(user)
+    try:
+        await c.message.edit_reply_markup(reply_markup=kb)
+    except Exception:
+        await c.message.answer(
+            f"Фраза для прослушивания:\n<i>«{VOICE_PREVIEW_PHRASE}»</i>",
+            reply_markup=kb,
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data.startswith("voice:"))
@@ -198,6 +178,8 @@ async def translate_last(m: Message):
     user_id = str(m.from_user.id)
     users = load_users()
     user = get_user(users, user_id)
+    user["picking_chat_voice"] = False
+    save_users(users, only=user_id)
     last = user.get("last_bot_reply")
 
     if not last:
@@ -261,6 +243,17 @@ async def chat_text(m: Message):
     users = load_users()
     user = get_user(users, str(m.from_user.id))
     ensure_growth(user)
+
+    # В экране выбора голоса текст не уходит в диалог «Общаться»
+    if user.get("picking_chat_voice"):
+        await m.answer(
+            "🎙 Сейчас открыт <b>выбор голоса</b>.\n"
+            "Выбери голос кнопками ниже.\n"
+            "Для общения вернись назад в меню или просто начни из «🗣️ Общаться» заново.",
+            reply_markup=chat_menu(),
+            parse_mode="HTML",
+        )
+        return
 
     from services.moderation import guard_user_text, ensure_moderation, is_banned, ban_remaining_text
 
