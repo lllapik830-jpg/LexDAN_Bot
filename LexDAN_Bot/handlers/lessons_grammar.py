@@ -147,7 +147,7 @@ class GrammarSlideClarifyFilter(BaseFilter):
         return bool(les.get("awaiting_clarify"))
 
 
-def _grammar_slide_kb(idx: int, total: int) -> InlineKeyboardMarkup:
+def _grammar_slide_kb(idx: int, total: int, *, ack: bool = False) -> InlineKeyboardMarkup:
     last = idx >= total - 1
     rows: list[list[InlineKeyboardButton]] = []
     nav: list[InlineKeyboardButton] = []
@@ -159,14 +159,24 @@ def _grammar_slide_kb(idx: int, total: int) -> InlineKeyboardMarkup:
         rows.append(nav)
     rows.append([InlineKeyboardButton(text="❓ Уточнить", callback_data="gs:ask")])
     if last:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    text="📝 Перейти к заданиям",
-                    callback_data="gs:tasks",
-                )
-            ]
-        )
+        if ack:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text="✅ Ознакомился",
+                        callback_data="gs:ack",
+                    )
+                ]
+            )
+        else:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text="📝 Перейти к заданиям",
+                        callback_data="gs:tasks",
+                    )
+                ]
+            )
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -186,10 +196,12 @@ async def _render_grammar_slide(bot, user: dict, *, chat_id: int | None = None) 
     slides = get_grammar_slides(level, topic_id) or []
     if not slides:
         return
+    topic = get_topic(level, topic_id)
+    ack = is_ack_topic(topic)
     idx = int(les.get("grammar_slide") or 0)
     idx = max(0, min(idx, len(slides) - 1))
     text = slides[idx]
-    kb = _grammar_slide_kb(idx, len(slides))
+    kb = _grammar_slide_kb(idx, len(slides), ack=ack)
     msg_id = les.get("slide_msg_id")
     cid = chat_id or les.get("slide_chat_id")
     if msg_id and cid:
@@ -207,21 +219,21 @@ async def _render_grammar_slide(bot, user: dict, *, chat_id: int | None = None) 
 
 
 async def _begin_grammar_slides(m: Message, user: dict, topic: dict) -> None:
-    """Старт теории слайдами (прототип для превью)."""
+    """Старт теории слайдами."""
     uid = str(m.from_user.id)
     open_grammar_slides(uid, topic["id"], topic["title"])
     users = load_users()
     user = get_user(users, uid)
     level = (user.get("lesson") or {}).get("level") or "A0"
     slides = get_grammar_slides(level, topic["id"]) or []
+    ack = is_ack_topic(topic)
     await m.answer("📚", reply_markup=ReplyKeyboardRemove())
     sent = await m.answer(
         slides[0],
-        reply_markup=_grammar_slide_kb(0, len(slides)),
+        reply_markup=_grammar_slide_kb(0, len(slides), ack=ack),
         parse_mode="HTML",
     )
     save_grammar_slide_message(uid, sent.chat.id, sent.message_id)
-    # Кнопка «к темам» остаётся в reply после первого действия — дадим лёгкий nav
     await m.answer(
         "Листай слайды кнопками под текстом 👆",
         reply_markup=ReplyKeyboardMarkup(
@@ -1587,7 +1599,7 @@ async def gs_tasks(cq: CallbackQuery):
     topic_id = les.get("topic_id")
     topic = get_topic(level, topic_id) if topic_id else None
     if is_ack_topic(topic):
-        await cq.answer("У этой темы нет заданий", show_alert=True)
+        await cq.answer("У этой темы нет заданий — жми «Ознакомился»", show_alert=True)
         return
     set_grammar_clarify(uid, False)
     open_exercises_menu(uid)
@@ -1608,6 +1620,44 @@ async def gs_tasks(cq: CallbackQuery):
     await cq.message.answer(
         "\n".join(lines),
         reply_markup=exercises_menu_kb(done),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "gs:ack")
+async def gs_ack(cq: CallbackQuery):
+    """Ack-темы (алфавит/цифры): засчитать после слайдов."""
+    uid = str(cq.from_user.id)
+    users = load_users()
+    user = get_user(users, uid)
+    les = user.get("lesson") or {}
+    if les.get("hub") != "grammar_slides":
+        await cq.answer()
+        return
+    level = les.get("level") or "A0"
+    topic_id = les.get("topic_id")
+    topic = get_topic(level, topic_id) if topic_id else None
+    if not is_ack_topic(topic):
+        await cq.answer("Для этой темы жми «К заданиям»", show_alert=True)
+        return
+    set_grammar_clarify(uid, False)
+    mark_topic_done(uid, level, topic_id)
+    users = load_users()
+    user = get_user(users, uid)
+    ensure_growth(user)
+    note_lesson_completed(user)
+    save_users(users, only=uid)
+    set_grammar_list(uid, level)
+    users = load_users()
+    user = get_user(users, uid)
+    extra = ""
+    if all_grammar_topics_done(user, level) and not is_grammar_test_passed(user, level):
+        extra = "\n\n🔓 Основные темы пройдены — открой <b>🎯 Тест по Grammar</b>!"
+    await cq.answer()
+    await cq.message.answer(
+        f"✅ Тема «{topic['title']}» засчитана!{extra}\n\n"
+        + format_topics_list(level, _completed_topic_ids(user, level)),
+        reply_markup=grammar_topics_kb(level, user),
         parse_mode="HTML",
     )
 

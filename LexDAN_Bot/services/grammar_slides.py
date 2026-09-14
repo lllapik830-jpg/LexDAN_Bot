@@ -1,20 +1,38 @@
 """
-Состояние слайдов теории Grammar (прототип).
-Превью UX — только MANAGER (ui_preview), пока владелец не скажет «заливай».
+Состояние и выдача слайдов теории Grammar (как в онбординге).
+Для всех пользователей и всех тем раздела.
 """
 
 from __future__ import annotations
 
-from data.grammar_slides import get_grammar_slides, has_grammar_slides
+from data.grammar_slides import get_manual_slides, intro_to_slides
 from services.lesson_state import ensure_lesson, update_lesson
-from services.ui_preview import ui_preview_only
+
+
+def get_grammar_slides(level: str, topic_id: str) -> list[str] | None:
+    """Ручной банк или авто-разбивка rico_intro темы."""
+    manual = get_manual_slides(level, topic_id)
+    if manual:
+        return manual
+
+    from data.grammar_curriculum import get_topic, is_ack_topic
+
+    topic = get_topic(level, topic_id)
+    if not topic:
+        return None
+    intro = (topic.get("rico_intro") or "").strip()
+    if not intro:
+        return None
+    return intro_to_slides(intro, ack=is_ack_topic(topic))
+
+
+def has_grammar_slides(level: str, topic_id: str) -> bool:
+    return get_grammar_slides(level, topic_id) is not None
 
 
 def grammar_slides_enabled(user: dict, level: str, topic_id: str) -> bool:
-    """Слайды вместо одного rico_intro — пока только превью + темы с банком."""
-    if not has_grammar_slides(level, topic_id):
-        return False
-    return ui_preview_only(user=user)
+    """Слайды вместо одного длинного rico_intro — для всех."""
+    return has_grammar_slides(level, topic_id)
 
 
 def open_grammar_slides(user_id: str, topic_id: str, title: str) -> dict:
@@ -72,15 +90,3 @@ def remember_clarify_msg(user_id: str, message_id: int) -> dict:
         u["lesson"]["clarify_ids"] = ids[-12:]
 
     return update_lesson(user_id, mut)
-
-
-__all__ = [
-    "grammar_slides_enabled",
-    "get_grammar_slides",
-    "has_grammar_slides",
-    "open_grammar_slides",
-    "set_grammar_slide_index",
-    "save_grammar_slide_message",
-    "set_grammar_clarify",
-    "remember_clarify_msg",
-]
