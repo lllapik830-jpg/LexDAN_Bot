@@ -14,7 +14,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-MAX_PER_MINUTE = 12
+MAX_PER_MINUTE = 20
 WINDOW_SEC = 60.0
 COOLDOWN_SEC = 120.0  # 2 минуты
 STRIKES_FOR_BAN = 3
