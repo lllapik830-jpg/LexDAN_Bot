@@ -244,8 +244,15 @@ async def _wipe_slide_msgs(m: Message, uid: str, *, keep_card: bool = False) -> 
         update_session(uid, voice_msg_id=None, heard_msg_id=None, remind_msg_id=None)
 
 
-async def _goto_sections(m: Message) -> None:
-    uid = str(m.from_user.id)
+def _uid(m: Message, user_id: str | int | None = None) -> str:
+    """Реальный пользователь: в CallbackQuery message.from_user — это бот."""
+    if user_id is not None and str(user_id).strip():
+        return str(user_id)
+    return str(m.from_user.id)
+
+
+async def _goto_sections(m: Message, *, user_id: str | int | None = None) -> None:
+    uid = _uid(m, user_id)
     users = load_users()
     user = get_user(users, uid)
     level = _lesson_level(user)
@@ -255,12 +262,12 @@ async def _goto_sections(m: Message) -> None:
     set_level_hub(uid, level)
     await m.answer(
         f"🎓 Уровень {level} — выбери раздел:",
-        reply_markup=level_sections_kb(user_id=m.from_user.id),
+        reply_markup=level_sections_kb(user_id=uid),
     )
 
 
-async def _goto_packs(m: Message) -> None:
-    uid = str(m.from_user.id)
+async def _goto_packs(m: Message, *, user_id: str | int | None = None) -> None:
+    uid = _uid(m, user_id)
     users = load_users()
     user = get_user(users, uid)
     level = _lesson_level(user)
@@ -277,13 +284,15 @@ async def _goto_packs(m: Message) -> None:
     )
 
 
-async def _play_dialogue(m: Message, user: dict, pack: dict) -> None:
+async def _play_dialogue(
+    m: Message, user: dict, pack: dict, *, user_id: str | int | None = None
+) -> None:
     from services.elevenlabs import send_voice_reply
 
-    uid = str(m.from_user.id)
+    uid = _uid(m, user_id)
     s = get_session(user) or {}
     if s.get("played"):
-        await _advance(m)
+        await _advance(m, user_id=uid)
         return
 
     await m.answer(
@@ -321,24 +330,23 @@ async def _play_dialogue(m: Message, user: dict, pack: dict) -> None:
         heard_msg_id=None,
         remind_msg_id=None,
     )
-    await _advance(m)
+    await _advance(m, user_id=uid)
 
 
-async def _present_slide(m: Message, user: dict) -> None:
+async def _present_slide(m: Message, user: dict, *, user_id: str | int | None = None) -> None:
     from services.elevenlabs import send_rico_voice
-    from aiogram.types import ReplyKeyboardRemove
 
-    uid = str(m.from_user.id)
+    uid = _uid(m, user_id)
     pack = current_pack(user) or {}
     title = pack.get("title_ru") or "Живая речь"
     slide = current_slide(user)
     kind = slide.get("kind")
     if kind == "done":
-        await _finish_pack(m, user, pack)
+        await _finish_pack(m, user, pack, user_id=uid)
         return
 
     if kind == "intro" and pack.get("kind") == "dialogue":
-        await _play_dialogue(m, user, pack)
+        await _play_dialogue(m, user, pack, user_id=uid)
         return
 
     await _wipe_slide_msgs(m, uid)
@@ -354,7 +362,7 @@ async def _present_slide(m: Message, user: dict) -> None:
     elif kind == "produce":
         html = format_produce_html(title, slide["n"], slide["total"], slide["task"])
     else:
-        await _goto_packs(m)
+        await _goto_packs(m, user_id=uid)
         return
 
     card = await m.answer(
@@ -362,11 +370,6 @@ async def _present_slide(m: Message, user: dict) -> None:
         reply_markup=_street_slide_inline(slide),
         parse_mode="HTML",
     )
-    # убрать нижние reply-кнопки — навигация под текстом
-    try:
-        await m.answer("🤙", reply_markup=ReplyKeyboardRemove())
-    except Exception:
-        pass
     voice_id = None
     if voice_en:
         sent = await send_rico_voice(m, voice_en, user=user, title="Живая речь")
@@ -384,8 +387,10 @@ async def _present_slide(m: Message, user: dict) -> None:
     )
 
 
-async def _finish_pack(m: Message, user: dict, pack: dict) -> None:
-    uid = str(m.from_user.id)
+async def _finish_pack(
+    m: Message, user: dict, pack: dict, *, user_id: str | int | None = None
+) -> None:
+    uid = _uid(m, user_id)
     level = _lesson_level(user)
     await _wipe_slide_msgs(m, uid)
     set_street_list(uid, level)
@@ -395,8 +400,10 @@ async def _finish_pack(m: Message, user: dict, pack: dict) -> None:
     await m.answer(text, reply_markup=_packs_kb(user), parse_mode="HTML")
 
 
-async def _advance(m: Message, *, flash: Message | None = None) -> None:
-    uid = str(m.from_user.id)
+async def _advance(
+    m: Message, *, flash: Message | None = None, user_id: str | int | None = None
+) -> None:
+    uid = _uid(m, user_id)
     if flash:
         await asyncio.sleep(3)
         await _del(m, flash.message_id)
@@ -409,9 +416,9 @@ async def _advance(m: Message, *, flash: Message | None = None) -> None:
     users = load_users()
     user = get_user(users, uid)
     if nxt is None:
-        await _finish_pack(m, user, pack)
+        await _finish_pack(m, user, pack, user_id=uid)
         return
-    await _present_slide(m, user)
+    await _present_slide(m, user, user_id=uid)
 
 
 async def open_street_for_level(m: Message, user: dict, level: str) -> None:
@@ -515,23 +522,24 @@ async def street_cb_next(c: CallbackQuery):
     await c.answer()
     if not c.from_user or not c.message:
         return
+    uid = str(c.from_user.id)
     users = load_users()
-    user = get_user(users, str(c.from_user.id))
+    user = get_user(users, uid)
     pack = current_pack(user) or {}
     slide = current_slide(user)
     if pack.get("kind") == "dialogue":
         return
     if slide.get("kind") not in {"intro", "item"}:
         return
-    await _advance(c.message)
+    await _advance(c.message, user_id=uid)
 
 
 @router.callback_query(F.data == "st:skip_speak")
 async def street_cb_skip(c: CallbackQuery):
     await c.answer()
-    if not c.message:
+    if not c.from_user or not c.message:
         return
-    await _advance(c.message)
+    await _advance(c.message, user_id=str(c.from_user.id))
 
 
 @router.callback_query(F.data == "st:remind")
@@ -554,9 +562,9 @@ async def street_cb_remind(c: CallbackQuery):
 @router.callback_query(F.data == "st:packs")
 async def street_cb_packs(c: CallbackQuery):
     await c.answer()
-    if not c.message:
+    if not c.from_user or not c.message:
         return
-    await _goto_packs(c.message)
+    await _goto_packs(c.message, user_id=str(c.from_user.id))
 
 
 @router.message(ModeFilter(MODE_LESSONS), LessonHubFilter(*_SLIDE_HUBS), F.text == BTN_REMIND)
