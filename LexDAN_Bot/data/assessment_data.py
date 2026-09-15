@@ -5,6 +5,67 @@
 
 LEVELS = ["A0", "A1", "A2", "B1", "B2", "C1", "C2"]
 
+# Входной онбординг-тест: фиксированные материалы (перевод → слова → 1 аудио)
+ONBOARD_TRANSLATE = {
+    "en": "I usually get up at seven in the morning.",
+    "ru": (
+        "Я обычно встаю в семь утра. "
+        "Я обычно встаю в семь часов утра. "
+        "Обычно я поднимаюсь в семь утра."
+    ),
+}
+
+# 3 слова EN→RU по оценке перевода (A0 / A1 / A2)
+ONBOARD_VOCAB = {
+    "A0": [
+        {"en": "book", "ru": ["книга", "книжка"]},
+        {"en": "water", "ru": ["вода"]},
+        {"en": "friend", "ru": ["друг", "подруга", "друзья"]},
+    ],
+    "A1": [
+        {"en": "house", "ru": ["дом"]},
+        {"en": "school", "ru": ["школа"]},
+        {"en": "morning", "ru": ["утро"]},
+    ],
+    "A2": [
+        {"en": "family", "ru": ["семья"]},
+        {"en": "weather", "ru": ["погода"]},
+        {"en": "happy", "ru": ["счастливый", "счастлив", "радостный", "довольный"]},
+    ],
+}
+
+ONBOARD_LISTEN = {
+    "A0": "I like apples.",
+    "A1": "My brother works in a shop near our house.",
+    "A2": "I drink coffee every morning before work.",
+}
+
+ONBOARD_VOCAB_COUNT = 3
+ONBOARD_LISTEN_COUNT = 1
+
+
+def clamp_onboard_level(level: str) -> str:
+    """Онбординг-тест ставит только A0–A2."""
+    if level in {"A0", "A1", "A2"}:
+        return level
+    if level in LEVELS and level_index(level) > level_index("A2"):
+        return "A2"
+    return "A0"
+
+
+def level_from_translate_score(score: int) -> str:
+    """Верно → A2; gist → A1; неверно → A0."""
+    try:
+        s = int(score)
+    except (TypeError, ValueError):
+        s = 0
+    if s >= 70:
+        return "A2"
+    if s >= 40:
+        return "A1"
+    return "A0"
+
+
 # Два варианта текста на каждый уровень (второй нужен на A0 перед «Пропустить»)
 TRANSLATION_TEXTS = {
     "C2": [

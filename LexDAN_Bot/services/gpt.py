@@ -700,13 +700,14 @@ def judge_translation(source_en: str, reference_ru: str, user_ru: str) -> dict:
     prompt = {
         "role": "system",
         "content": (
-            "Placement-test judge for English→Russian translation of 2–3 sentences. "
+            "Placement-test judge for English→Russian translation of ONE sentence. "
             "Score 0-100 by MAIN IDEA / gist, not word-for-word. "
             "Synonyms, shorter phrasing, minor omissions OK → score 70-95. "
+            "Partial gist / incomplete but related → score 40-69. "
             "Typos OK. "
             "Score under 25 only if empty, gibberish, off-topic, or meaning clearly wrong. "
             "Do NOT give mid scores to nonsense (keyboard mash, random words). "
-            "Also estimate CEFR A0-C2 from the student's Russian. "
+            "Also estimate CEFR A0-A2 from the student's Russian (this test caps at A2). "
             'Return ONLY JSON: {"score":0-100,"cefr_estimate":"A2"}'
         ),
     }

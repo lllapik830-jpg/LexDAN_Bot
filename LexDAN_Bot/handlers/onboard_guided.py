@@ -91,7 +91,7 @@ def _slide_kb(idx: int) -> InlineKeyboardMarkup:
         rows.append(
             [
                 InlineKeyboardButton(
-                    text="📝 Перейти к заданиям",
+                    text="📝 К заданию",
                     callback_data="og:tasks",
                 )
             ]
@@ -107,7 +107,13 @@ def grammar_cta_kb() -> InlineKeyboardMarkup:
                     text="🚀 Начать",
                     callback_data="og:start_be",
                 )
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⏳ Потом",
+                    callback_data="og:start_be",
+                )
+            ],
         ]
     )
 
@@ -399,6 +405,7 @@ async def cb_got_it(c: CallbackQuery):
 
 @router.callback_query(F.data == "og:tasks")
 async def cb_go_tasks(c: CallbackQuery):
+    """После слайда to be — сразу одно задание (без длинного обзора)."""
     await c.answer()
     if not c.from_user or not c.message:
         return
@@ -411,17 +418,23 @@ async def cb_go_tasks(c: CallbackQuery):
     if ob.get("clarify_ids"):
         await c.answer("Сначала закрой уточнение кнопкой «Понял»", show_alert=True)
         return
-    ob["stage"] = "tasks_menu"
+    ob["stage"] = "tasks"
     ob["awaiting_clarify"] = False
     save_users(users, only=uid)
     try:
         await c.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
-    await c.message.answer(
-        TASKS_OVERVIEW_HTML,
-        reply_markup=tasks_start_kb(),
-        parse_mode="HTML",
+
+    from handlers.lessons_grammar import _launch_exercise
+
+    await _launch_exercise(
+        c.message,
+        uid,
+        ONBOARD_TOPIC_LEVEL,
+        ONBOARD_TOPIC_ID,
+        ONBOARD_TOPIC_TITLE,
+        1,
     )
 
 

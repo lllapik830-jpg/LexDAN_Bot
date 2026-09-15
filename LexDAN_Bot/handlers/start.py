@@ -54,22 +54,20 @@ HELLO_RICO_VOICE_EN = (
 )
 
 ASK_NAME_RICO = (
-    "🦜 <b>Рико:</b> «Отлично! Прежде чем начать, давай познакомимся поближе.\n"
-    "Как тебя зовут?»"
+    "🦜 <b>Рико:</b> «Отлично! Как тебя зовут?»\n\n"
+    "✍️ Напиши имя <b>одним словом</b> (лучше по-английски)"
 )
 
 NAME_CONFIRM = (
     "Приятно познакомиться, <b>{name}</b>! 💚\n\n"
-    "🦜 <b>Рико:</b> «Хочу убедиться, что правильно расслышал. "
-    "Мне нужно только твоё имя, а не фразы вроде «Hello, I'm Ann».»\n\n"
-    "Если всё верно — жми кнопку 👇"
+    "Всё верно?"
 )
 
 PRE_TEST_HTML = (
-    "Супер! Тогда начинаем 🎯\n\n"
-    "📝 Сейчас будет небольшой тест. Отвечай как умеешь — здесь нет ошибок, "
-    "это просто проверка твоего уровня, чтобы качественнее подобрать тебе задания!\n"
-    "После прохождения тебя будет ждать подарок 🎁"
+    "Супер, <b>{name}</b>! Тогда начинаем 🎯\n\n"
+    "📝 Тест на 5–6 минут: перевод, слова, слушание.\n"
+    "Здесь нет ошибок — просто проверка, чтобы подобрать задания по уровню.\n\n"
+    "🎁 После теста получишь подарок!"
 )
 
 WELCOME_AGAIN = (
@@ -100,6 +98,10 @@ BTN_NAME_YES = "✅ Да, это моё имя"
 BTN_NAME_REDO = "✍️ Написать заново"
 BTN_ONBOARD_GO = "✅ Погнали!"
 BTN_ONBOARD_DAILY_FIRE = "🔥 Огонь дня"
+
+
+def _pre_test_text(name: str) -> str:
+    return PRE_TEST_HTML.format(name=_esc(name or "друг"))
 
 
 def _rules_kb() -> ReplyKeyboardMarkup:
@@ -225,7 +227,11 @@ async def _send_pre_test(m: Message, user_id: str, name: str) -> None:
     grant_referral_bonuses(user_id, users)
     save_users(users, only=user_id)
 
-    await m.answer(PRE_TEST_HTML, reply_markup=_pre_test_kb(), parse_mode="HTML")
+    await m.answer(
+        _pre_test_text(name),
+        reply_markup=_pre_test_kb(),
+        parse_mode="HTML",
+    )
     from aiogram.types import ReplyKeyboardRemove
 
     if is_onboard_locked(user):
@@ -325,7 +331,11 @@ async def start_cmd(m: Message, command: CommandObject = None):
 
     if user.get("step") == "awaiting_onboard_go":
         save_users(users, only=user_id)
-        await m.answer(PRE_TEST_HTML, reply_markup=_pre_test_kb(), parse_mode="HTML")
+        await m.answer(
+            _pre_test_text(user.get("name") or "друг"),
+            reply_markup=_pre_test_kb(),
+            parse_mode="HTML",
+        )
         return
 
     if user.get("step") == "awaiting_promo":
@@ -378,7 +388,11 @@ async def onboard_check_level(c: CallbackQuery):
         return
 
     if user.get("name") and user.get("step") == "awaiting_onboard_go":
-        await c.message.answer(PRE_TEST_HTML, reply_markup=_pre_test_kb(), parse_mode="HTML")
+        await c.message.answer(
+            _pre_test_text(user.get("name") or "друг"),
+            reply_markup=_pre_test_kb(),
+            parse_mode="HTML",
+        )
         return
 
     if user.get("name"):

@@ -517,6 +517,10 @@ async def _finish_exercise_ok(
         )
     if speak_items:
         # Сначала только «верно» + произношение; праздник темы — после ГС
+        # Онбординг: после 1-го задания сразу финал (без остальных 7)
+        if guided and num == 1:
+            topic_just_done = True
+            next_num = None
         await m.answer(text, parse_mode="HTML")
         start_speak_practice(
             user_id,
@@ -554,7 +558,7 @@ async def _finish_exercise_ok(
         )
         return
 
-    if guided and (topic_just_done or next_num is None):
+    if guided and (topic_just_done or next_num is None or num == 1):
         clear_active_exercise(user_id)
         await m.answer(text + extra, parse_mode="HTML")
         from handlers.onboard_guided import finish_guided_after_topic

@@ -18,6 +18,9 @@ from handlers.keyboards import (
 )
 from data.assessment_data import (
     LEVELS,
+    ONBOARD_VOCAB_COUNT,
+    clamp_onboard_level,
+    level_from_translate_score,
     level_index,
     lower_level,
     user_level_ceiling,
@@ -39,7 +42,6 @@ from services.assessment import (
     adjust_level,
     average_level,
 )
-from services.assessment_gen import estimate_level_from_translation
 from services.gpt import judge_translation, judge_vocab, judge_listening, judge_writing
 from services.elevenlabs import send_rico_voice
 
@@ -49,7 +51,9 @@ BTN_CHECK = "🎯 Проверить уровень"
 BTN_AGAIN = "🎯 Пройти тест снова"
 BTN_EASIER = "⬇️ Дай текст проще"
 BTN_SKIP = "⏭️ Пропустить задание"
+BTN_SKIP_SHORT = "⏭ Пропустить"
 BTN_DONT_KNOW = "🙈 Не знаю"
+BTN_ASSESS_TRANSLATE = "🌍 Перевести"
 BTN_REPLACE = "🔄 Заменить текст"
 
 RICO_BEFORE_TEST = (
@@ -173,8 +177,12 @@ def _is_nav_button(text: str) -> bool:
         BTN_AGAIN,
         BTN_EASIER,
         BTN_SKIP,
+        BTN_SKIP_SHORT,
         BTN_DONT_KNOW,
+        BTN_ASSESS_TRANSLATE,
         BTN_REPLACE,
+        "⏭ Пропустить задание",
+        "Пропустить задание",
         "🔙 Вернуться в меню",
         *LEVELS,
     }
@@ -347,11 +355,10 @@ async def start_level_test_flow(
     _su(_users, only=uid)
     user = _u
     await m.answer(
-        "🎯 Тест уровня — задание 1/4: перевод\n\n"
-        "Переведи 2–3 предложения на русский.\n"
-        "Смысл важнее дословности — синонимы ок.\n"
-        "Если сложно — нажми «Дай текст проще» или «Пропустить задание».\n\n"
-        f"🇬🇧 Текст:\n{a['translate_source_en']}",
+        "🎯 Тест уровня · задание 1/3: перевод\n\n"
+        "Переведи предложение на русский.\n"
+        "Смысл важнее дословности — синонимы ок.\n\n"
+        f"🇬🇧 {a['translate_source_en']}",
         reply_markup=_atk(user, show_skip=True),
     )
 
@@ -398,11 +405,29 @@ async def easier_text(m: Message):
     )
 
 
+@router.message(ModeFilter(MODE_LESSONS), F.text == BTN_ASSESS_TRANSLATE)
+async def assess_translate_hint(m: Message):
+    """Кнопка «🌍 Перевести» — подсказка написать ответ текстом (не готовый перевод)."""
+    users = load_users()
+    user = get_user(users, str(m.from_user.id))
+    ensure_user_fields(user)
+    a = user["assessment"]
+    if a.get("phase") != "translate":
+        return
+    await m.answer(
+        "✍️ Напиши перевод предложения <b>текстом</b> в чат.\n"
+        "Если совсем не знаешь — жми «Не знаю» или «Пропустить».",
+        reply_markup=_atk(user, show_skip=True),
+        parse_mode="HTML",
+    )
+
+
 @router.message(
     ModeFilter(MODE_LESSONS),
     F.text.in_(
         {
             BTN_SKIP,
+            BTN_SKIP_SHORT,
             "⏭ Пропустить задание",
             "Пропустить задание",
         }
@@ -415,11 +440,9 @@ async def skip_translate(m: Message):
     a = user["assessment"]
     phase = a.get("phase")
     if phase == "write":
-        current = a.get("write_level") or a.get("cefr") or "A2"
-        translate_est = a.get("translate_estimate") or current
-        final = average_level([translate_est, current])
-        await m.answer("⏭️ Ок, пропускаем письмо.")
-        await _finish_test(m, str(m.from_user.id), final)
+        translate_est = clamp_onboard_level(a.get("translate_estimate") or "A0")
+        await m.answer("⏭ Ок, пропускаем.")
+        await _finish_test(m, str(m.from_user.id), translate_est)
         return
     # Иногда phase теряется при гонке сохранений — если текст перевода есть, это translate
     if phase != "translate" and (a.get("translate_source_en") or "").strip():
@@ -434,7 +457,6 @@ async def skip_translate(m: Message):
         from aiogram.types import ReplyKeyboardRemove
 
         if is_onboard_locked(user):
-            # Тест мог записаться не на того uid — чиним и пропускаем, без меню уроков
             if not (a.get("translate_source_en") or "").strip():
                 user = start_assessment(str(m.from_user.id))
                 a = user["assessment"]
@@ -445,13 +467,12 @@ async def skip_translate(m: Message):
             u = get_user(users, str(m.from_user.id))
             u["assessment"] = a
             _save(users, only=str(m.from_user.id))
-            est = a.get("translate_level") or "A1"
-            set_translate_estimate(str(m.from_user.id), est)
+            set_translate_estimate(str(m.from_user.id), "A0")
             await m.answer(
-                "⏭️ Ок, пропускаем перевод без оценки.",
+                "⏭ Ок, идём дальше с уровнем A0.",
                 reply_markup=ReplyKeyboardRemove(),
             )
-            await _start_vocab_flow(m, est)
+            await _start_vocab_flow(m, "A0")
             return
         await m.answer(
             "Сейчас нечего пропускать.",
@@ -459,11 +480,10 @@ async def skip_translate(m: Message):
         )
         return
 
-    # Пропуск без оценки — берём текущий уровень текста как оценку
-    est = a.get("translate_level") or "A1"
-    set_translate_estimate(str(m.from_user.id), est)
-    await m.answer("⏭️ Ок, пропускаем перевод без оценки.")
-    await _start_vocab_flow(m, est)
+    # Пропуск / не знаю по смыслу → A0
+    set_translate_estimate(str(m.from_user.id), "A0")
+    await m.answer("⏭ Ок, идём дальше с уровнем A0.")
+    await _start_vocab_flow(m, "A0")
 
 
 @router.message(ModeFilter(MODE_LESSONS), F.text == BTN_DONT_KNOW)
@@ -474,8 +494,12 @@ async def dont_know(m: Message):
     a = user["assessment"]
     phase = a.get("phase")
 
+    if phase == "translate":
+        set_translate_estimate(str(m.from_user.id), "A0")
+        await m.answer("🙈 Ок — ставим A0 и идём к словам.")
+        await _start_vocab_flow(m, "A0")
+        return
     if phase == "vocab":
-        # Просто скип без показа правильного ответа
         await _advance_vocab(m, user, success=False)
     elif phase == "listen":
         await _advance_listen(m, user, success=False)
@@ -661,13 +685,7 @@ async def _handle_translate_answer(m: Message, user: dict, text: str):
         text,
     )
     score = int(result.get("score") or 0)
-    text_level = a.get("translate_level") or "B2"
-    gpt_est = result.get("cefr_estimate") or text_level
-    rule_est = estimate_level_from_translation(text_level, score)
-
-    if gpt_est not in LEVELS:
-        gpt_est = rule_est
-    final_est = LEVELS[min(level_index(gpt_est), level_index(rule_est))]
+    final_est = level_from_translate_score(score)
 
     set_translate_estimate(str(m.from_user.id), final_est)
     await _start_vocab_flow(m, final_est)
@@ -676,14 +694,15 @@ async def _handle_translate_answer(m: Message, user: dict, text: str):
 async def _start_vocab_flow(m: Message, level: str):
     from services.tg_out import status
 
+    level = clamp_onboard_level(level)
     async with status(m, "Готовлю слова…"):
         user = begin_vocab(str(m.from_user.id), level)
     a = user["assessment"]
     await m.answer(
-        "🎯 Задание 2/4: словарь\n\n"
-        "Переведи слово на русский. Всего 4 слова.\n"
+        "🎯 Задание 2/3: словарь\n\n"
+        "Переведи 3 слова на русский.\n"
         "Синонимы засчитываются. Если не знаешь — жми «Не знаю».\n\n"
-        f"1/4 🇬🇧 {a['vocab_en']}",
+        f"1/{ONBOARD_VOCAB_COUNT} 🇬🇧 {a['vocab_en']}",
         reply_markup=_adk(user),
     )
 
@@ -695,25 +714,23 @@ async def _handle_vocab_answer(m: Message, user: dict, text: str):
     if correct:
         await m.answer("✅ Верно!")
     else:
-        # В тесте уровня ответы не показываем
         await m.answer("❌ Не совсем — идём дальше.")
     await _advance_vocab(m, user, success=correct)
 
 
 async def _advance_vocab(m: Message, user: dict, success: bool):
     a = user["assessment"]
-    level = a.get("vocab_level") or "A2"
-    level = adjust_level(level, success)
+    level = clamp_onboard_level(a.get("vocab_level") or a.get("translate_estimate") or "A0")
     idx = int(a.get("vocab_i", 0))
 
-    if idx >= 3:
+    if idx >= ONBOARD_VOCAB_COUNT - 1:
         await _start_listen_flow(m, level)
         return
 
     user = next_vocab(str(m.from_user.id), level)
     a = user["assessment"]
     await m.answer(
-        f"{a['vocab_i'] + 1}/4 🇬🇧 {a['vocab_en']}",
+        f"{a['vocab_i'] + 1}/{ONBOARD_VOCAB_COUNT} 🇬🇧 {a['vocab_en']}",
         reply_markup=_adk(user),
     )
 
@@ -722,11 +739,13 @@ async def _start_listen_flow(m: Message, level: str):
     from services.database import users_for, get_user as _gu
 
     uid = str(m.from_user.id)
+    level = clamp_onboard_level(level)
     probe = _gu(users_for(uid), uid)
     await m.answer(
-        "🎯 Задание 3/4: аудирование\n\n"
+        "🎯 Задание 3/3: аудирование\n\n"
         "Слушай голосовое и напиши, что услышал(а), на английском.\n"
-        "Всего 3 голосовых. Если не распознал — жми «Не знаю».",
+        "Можно переслушать — тапни по голосовому.\n"
+        "Если не распознал — жми «Не знаю».",
         reply_markup=_adk(probe),
     )
     user = begin_listen(str(m.from_user.id), level)
@@ -744,30 +763,26 @@ async def _send_listen_audio(m: Message, text: str, number: int):
     uid = str(m.from_user.id)
     users = users_for(uid)
     user = get_user(users, uid)
-    await m.answer(f"🎧 {number}/3", reply_markup=_adk(user))
+    await m.answer(f"🎧 {number}/1", reply_markup=_adk(user))
     a = user.get("assessment") or {}
     voice_ids = list(a.get("listen_voice_ids") or [])
-    if len(voice_ids) < 3:
-        pool = [
-            v["voice_id"]
-            for v in CHAT_VOICES
-            if v.get("voice_id")
-            and v["voice_id"] not in {RICO_VOICE_ID, RICO_VOICE_ALT_ID}
-        ]
-        random.shuffle(pool)
-        # 3 разных голоса
-        voice_ids = pool[:3] if len(pool) >= 3 else (pool * 3)[:3]
-        a["listen_voice_ids"] = voice_ids
+    pool = [
+        v.get("voice_id") or v.get("id")
+        for v in CHAT_VOICES
+        if (v.get("voice_id") or v.get("id"))
+        and (v.get("voice_id") or v.get("id")) not in {RICO_VOICE_ID, RICO_VOICE_ALT_ID}
+    ]
+    pool = [p for p in pool if p]
+    random.shuffle(pool)
+    vid = pool[0] if pool else None
+    if vid:
+        a["listen_voice_ids"] = [vid]
         user["assessment"] = a
         save_users(users, only=uid)
-    idx = max(0, min(number - 1, len(voice_ids) - 1))
-    vid = voice_ids[idx]
-    await send_voice_reply(
-        m,
-        text,
-        title=f"Listen {number}",
-        voice_id=vid,
-    )
+        await send_voice_reply(m, text, title=f"Listen {number}", voice_id=vid)
+    else:
+        await send_rico_voice(m, text, user=user, title=f"Listen {number}")
+
 
 async def _handle_listen_answer(m: Message, user: dict, text: str):
     a = user["assessment"]
@@ -778,18 +793,10 @@ async def _handle_listen_answer(m: Message, user: dict, text: str):
 
 
 async def _advance_listen(m: Message, user: dict, success: bool):
+    """Одно аудио → финал (уровень из перевода)."""
     a = user["assessment"]
-    level = a.get("listen_level") or "A2"
-    level = adjust_level(level, success)
-    idx = int(a.get("listen_i", 0))
-
-    if idx >= 2:
-        await _start_write_flow(m, level)
-        return
-
-    user = next_listen(str(m.from_user.id), level)
-    a = user["assessment"]
-    await _send_listen_audio(m, a["listen_text"], a["listen_i"] + 1)
+    final = clamp_onboard_level(a.get("translate_estimate") or a.get("cefr") or "A0")
+    await _finish_test(m, str(m.from_user.id), final)
 
 
 async def _start_write_flow(m: Message, level: str):

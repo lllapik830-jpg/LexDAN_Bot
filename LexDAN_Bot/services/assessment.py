@@ -4,7 +4,17 @@
 
 import uuid
 
-from data.assessment_data import LEVELS, lower_level, raise_level, level_index, pick_topic
+from data.assessment_data import (
+    LEVELS,
+    ONBOARD_LISTEN,
+    ONBOARD_TRANSLATE,
+    ONBOARD_VOCAB,
+    clamp_onboard_level,
+    lower_level,
+    raise_level,
+    level_index,
+    pick_topic,
+)
 from services.database import users_for, save_users, get_user
 from services.assessment_gen import (
     generate_translation,
@@ -60,19 +70,38 @@ def update_user(user_id: str, mutator) -> dict:
     return user
 
 
+def _onboard_vocab_item(level: str, index: int, used: list | None = None) -> dict:
+    lvl = clamp_onboard_level(level)
+    bank = list(ONBOARD_VOCAB.get(lvl) or ONBOARD_VOCAB["A0"])
+    used_set = {str(x).lower() for x in (used or [])}
+    for item in bank:
+        if str(item.get("en") or "").lower() not in used_set:
+            return {"en": item["en"], "ru": list(item.get("ru") or [])}
+    # fallback: по индексу
+    item = bank[int(index) % len(bank)]
+    return {"en": item["en"], "ru": list(item.get("ru") or [])}
+
+
+def _onboard_listen_text(level: str) -> str:
+    lvl = clamp_onboard_level(level)
+    return str(ONBOARD_LISTEN.get(lvl) or ONBOARD_LISTEN["A0"])
+
+
 def start_assessment(user_id: str) -> dict:
-    item = generate_translation("B2", seed=f"{user_id}-{uuid.uuid4()}")
+    """Входной тест онбординга: одно предложение + слова + 1 аудио."""
 
     def mut(user):
         user["assessment"] = _blank_assessment()
         a = user["assessment"]
         a["phase"] = "translate"
-        a["cefr"] = "B2"
-        a["translate_level"] = "B2"
+        a["cefr"] = "A2"
+        a["translate_level"] = "A2"
         a["translate_variant"] = 0
-        a["translate_source_en"] = item["en"]
-        a["translate_reference_ru"] = item["ru"]
+        a["translate_source_en"] = ONBOARD_TRANSLATE["en"]
+        a["translate_reference_ru"] = ONBOARD_TRANSLATE["ru"]
+        a["translate_estimate"] = "A0"
         a["a0_second_shown"] = False
+        a["onboard_lite"] = True
 
     return update_user(user_id, mut)
 
@@ -101,17 +130,19 @@ def set_translate_estimate(user_id: str, level: str) -> dict:
 
 
 def begin_vocab(user_id: str, level: str) -> dict:
-    word = generate_vocab(level, [])
+    lvl = clamp_onboard_level(level)
+    word = _onboard_vocab_item(lvl, 0, [])
 
     def mut(user):
         a = user["assessment"]
         a["phase"] = "vocab"
-        a["cefr"] = level
-        a["vocab_level"] = level
+        a["cefr"] = lvl
+        a["vocab_level"] = lvl
         a["vocab_i"] = 0
         a["vocab_en"] = word["en"]
         a["vocab_ru"] = word["ru"]
         a["vocab_used"] = [word["en"]]
+        a["onboard_lite"] = True
 
     return update_user(user_id, mut)
 
@@ -121,12 +152,13 @@ def next_vocab(user_id: str, level: str) -> dict:
     user = get_user(users, user_id)
     ensure_user_fields(user)
     used = list(user["assessment"].get("vocab_used") or [])
-    word = generate_vocab(level, used)
+    lvl = clamp_onboard_level(level)
+    word = _onboard_vocab_item(lvl, len(used), used)
 
     def mut(u):
         a = u["assessment"]
-        a["vocab_level"] = level
-        a["cefr"] = level
+        a["vocab_level"] = lvl
+        a["cefr"] = lvl
         a["vocab_i"] = int(a.get("vocab_i", 0)) + 1
         a["vocab_en"] = word["en"]
         a["vocab_ru"] = word["ru"]
@@ -138,16 +170,18 @@ def next_vocab(user_id: str, level: str) -> dict:
 
 
 def begin_listen(user_id: str, level: str) -> dict:
-    text = generate_listen(level, [])
+    lvl = clamp_onboard_level(level)
+    text = _onboard_listen_text(lvl)
 
     def mut(user):
         a = user["assessment"]
         a["phase"] = "listen"
-        a["listen_level"] = level
-        a["cefr"] = level
+        a["listen_level"] = lvl
+        a["cefr"] = lvl
         a["listen_i"] = 0
         a["listen_text"] = text
         a["listen_used"] = [text]
+        a["onboard_lite"] = True
 
     return update_user(user_id, mut)
 
@@ -157,16 +191,19 @@ def next_listen(user_id: str, level: str) -> dict:
     user = get_user(users, user_id)
     ensure_user_fields(user)
     used = list(user["assessment"].get("listen_used") or [])
-    text = generate_listen(level, used)
+    lvl = clamp_onboard_level(level)
+    # онбординг: одно аудио; если всё же вызвали — не меняем текст
+    text = _onboard_listen_text(lvl) if not used else (used[-1] if used else _onboard_listen_text(lvl))
 
     def mut(u):
         a = u["assessment"]
-        a["listen_level"] = level
-        a["cefr"] = level
+        a["listen_level"] = lvl
+        a["cefr"] = lvl
         a["listen_i"] = int(a.get("listen_i", 0)) + 1
         a["listen_text"] = text
         used2 = list(a.get("listen_used") or [])
-        used2.append(text)
+        if text not in used2:
+            used2.append(text)
         a["listen_used"] = used2
 
     return update_user(user_id, mut)

@@ -137,9 +137,13 @@ def lessons_home_levels(
 
 
 def assess_translate_kb(show_skip: bool = True, *, no_menu: bool = False) -> ReplyKeyboardMarkup:
-    rows = [[KeyboardButton(text="⬇️ Дай текст проще")]]
+    """Онбординг-перевод: Перевести / Не знаю / Пропустить."""
+    rows = [
+        [KeyboardButton(text="🌍 Перевести")],
+        [KeyboardButton(text="🙈 Не знаю")],
+    ]
     if show_skip:
-        rows.append([KeyboardButton(text="⏭️ Пропустить задание")])
+        rows.append([KeyboardButton(text="⏭ Пропустить")])
     if not no_menu:
         rows.append([KeyboardButton(text="🔙 Вернуться в меню")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
