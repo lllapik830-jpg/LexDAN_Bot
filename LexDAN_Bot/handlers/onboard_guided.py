@@ -250,7 +250,7 @@ async def imit_start_cmd(m: Message):
     set_mode(uid, MODE_MENU)
     await m.answer(
         "🧪 <b>Имитация полного онбординга</b>\n"
-        "Привет → имя → тест → подарок → одна искра Огня → to be → 8 заданий.\n"
+        "Привет → имя → тест → подарок → одна искра Огня → to be (1 слайд + 1 задание).\n"
         "Выход: /imit_finish",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML",
