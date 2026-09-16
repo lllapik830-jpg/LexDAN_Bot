@@ -8,6 +8,7 @@ MSK = timezone(timedelta(hours=3))
 
 # Приоритеты (больше = важнее). В день уходит только один тип.
 P_TRIAL_END = 100
+P_ONBOARD_DRIP = 95
 P_VOICE_MISS = 90
 P_WEEK_RESULTS = 85
 P_REVIEW = 80

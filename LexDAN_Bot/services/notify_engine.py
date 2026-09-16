@@ -24,6 +24,7 @@ from services.notify_copy import (
 )
 from services.notify_state import (
     P_FREE_REMIND,
+    P_ONBOARD_DRIP,
     P_PAID_EXCL,
     P_PAID_PLAN,
     P_PAID_STATS,
@@ -152,16 +153,54 @@ def _is_trial_ending(user: dict) -> bool:
     return 0 < left <= 24 * 3600
 
 
+def _onboard_drip_candidate(user: dict, hour: int) -> Candidate | None:
+    """Пинг по реальному прогрессу онбординга (таймер от стадии, не CSV)."""
+    from services.onboard_drip import (
+        drip_due,
+        kb_for_kind,
+        mark_drip_sent,
+        text_for_kind,
+    )
+
+    kind = drip_due(user, hour=hour)
+    if not kind:
+        return None
+    text = text_for_kind(kind)
+    if not text:
+        return None
+
+    def prep(u: dict, k: str = kind) -> None:
+        mark_drip_sent(u, k)
+
+    return Candidate(
+        f"onboard_drip_{kind}",
+        P_ONBOARD_DRIP,
+        text=text,
+        kb=kb_for_kind(kind),
+        prep=prep,
+    )
+
+
 def build_candidate(uid: str, user: dict, hour: int) -> Candidate | None:
     ensure_growth(user)
     ensure_notify(user)
     if user.get("tg_blocked"):
         return None
-    if not user.get("name") or user.get("step") != "ready":
-        return None
     if user.get("imitating_registration"):
         return None
     if already_sent_today(user):
+        return None
+
+    # Онбординг-drip: и без имени / до ready — иначе intro не доходит
+    trial_ending = False
+    if user.get("name") and user.get("step") == "ready":
+        trial_ending = _is_trial_ending(user)
+    if not trial_ending:
+        drip = _onboard_drip_candidate(user, hour)
+        if drip:
+            return drip
+
+    if not user.get("name") or user.get("step") != "ready":
         return None
     if was_active_today(user):
         return None
@@ -452,6 +491,27 @@ async def send_due_notifications(bot, *, limit: int = 40) -> dict[str, Any]:
     # Сначала попытка недельных итогов (пн 18:00)
     week_res = await finalize_week_and_notify(bot)
 
+    channel_posted = False
+    try:
+        from config import CHANNEL_USERNAME
+        from services.onboard_drip import (
+            CHANNEL_POST_HTML,
+            mark_channel_social_posted,
+            should_post_channel_social,
+        )
+
+        if should_post_channel_social(hour=hour):
+            await bot.send_message(
+                f"@{CHANNEL_USERNAME.lstrip('@')}",
+                CHANNEL_POST_HTML,
+                parse_mode="HTML",
+            )
+            mark_channel_social_posted()
+            channel_posted = True
+            log.info("Onboard drip: social proof posted to channel")
+    except Exception as e:
+        log.warning("Onboard drip channel post: %s", e)
+
     users = load_users()
     sent = 0
     fail = 0
@@ -519,6 +579,7 @@ async def send_due_notifications(bot, *, limit: int = 40) -> dict[str, Any]:
         "sent": sent,
         "fail": fail,
         "week": week_res,
+        "channel_posted": channel_posted,
     }
 
 

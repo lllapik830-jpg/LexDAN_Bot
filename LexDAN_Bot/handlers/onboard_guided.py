@@ -47,6 +47,7 @@ from services.onboard_guided import (
     finish_imit_onboard,
     is_guided_onboard,
     onboard_stage,
+    set_onboard_stage,
     start_imit_onboard,
 )
 from services.lesson_state import open_topic
@@ -152,7 +153,7 @@ async def maybe_send_df_done_cta(m: Message, user: dict, users: dict, uid: str) 
 
     mark_ritual_celebrated(user)
     ob["df_done_sent"] = True
-    ob["stage"] = "grammar_cta"
+    set_onboard_stage(user, "grammar_cta")
     save_users(users, only=uid)
     # Убрать кнопки разделов Огня дня
     await m.answer("✨", reply_markup=ReplyKeyboardRemove())
@@ -207,7 +208,7 @@ async def begin_to_be_slides(m: Message, uid: str) -> None:
     users = load_users()
     user = get_user(users, uid)
     ob = ensure_onboard(user)
-    ob["stage"] = "slides"
+    set_onboard_stage(user, "slides")
     ob["slide"] = 0
     ob["awaiting_clarify"] = False
     ob["clarify_ids"] = []
@@ -418,7 +419,7 @@ async def cb_go_tasks(c: CallbackQuery):
     if ob.get("clarify_ids"):
         await c.answer("Сначала закрой уточнение кнопкой «Понял»", show_alert=True)
         return
-    ob["stage"] = "tasks"
+    set_onboard_stage(user, "tasks")
     ob["awaiting_clarify"] = False
     save_users(users, only=uid)
     try:
@@ -445,8 +446,7 @@ async def onboard_start_tasks(m: Message):
     user = get_user(users, uid)
     if not is_guided_onboard(user) or onboard_stage(user) != "tasks_menu":
         return
-    ob = ensure_onboard(user)
-    ob["stage"] = "tasks"
+    set_onboard_stage(user, "tasks")
     save_users(users, only=uid)
 
     from handlers.lessons_grammar import _launch_exercise

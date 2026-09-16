@@ -219,11 +219,11 @@ async def _send_pre_test(m: Message, user_id: str, name: str) -> None:
     user["rules_accepted"] = True  # часть 1: без отдельного экрана правил
     user["mode"] = MODE_MENU
     user["step"] = "awaiting_onboard_go"
-    from services.onboard_guided import ensure_onboard, ensure_live_onboard, is_onboard_locked
+    from services.onboard_guided import ensure_onboard, ensure_live_onboard, is_onboard_locked, set_onboard_stage
 
     ensure_live_onboard(user)
     if is_onboard_locked(user):
-        ensure_onboard(user)["stage"] = "pre_test"
+        set_onboard_stage(user, "pre_test")
     grant_referral_bonuses(user_id, users)
     save_users(users, only=user_id)
 

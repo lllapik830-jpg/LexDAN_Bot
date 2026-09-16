@@ -92,6 +92,7 @@ def _blank() -> dict[str, Any]:
         "slide_msg_id": None,
         "slide_chat_id": None,
         "clarify_ids": [],
+        "stage_at": 0.0,
     }
 
 
@@ -141,6 +142,17 @@ def onboard_stage(user: dict) -> str:
     return str(ensure_onboard(user).get("stage") or "")
 
 
+def set_onboard_stage(user: dict, stage: str) -> None:
+    """Сменить стадию и сбросить таймер «застрял с …» для drip-уведомлений."""
+    import time
+
+    ob = ensure_onboard(user)
+    prev = str(ob.get("stage") or "")
+    ob["stage"] = stage
+    if prev != stage or not ob.get("stage_at"):
+        ob["stage_at"] = time.time()
+
+
 def path_channel_html() -> str:
     from config import CHANNEL_URL, CHANNEL_USERNAME
 
@@ -153,11 +165,14 @@ def path_channel_html() -> str:
 
 def ensure_live_onboard(user: dict) -> None:
     """Включить направляемый путь для нового пользователя (без сброса профиля)."""
+    import time
+
     ob = ensure_onboard(user)
     if ob.get("active") or ob.get("stage") == "done":
         return
     if user.get("assessment_done"):
         return
+    prev = str(ob.get("stage") or "")
     ob.update(
         {
             "active": True,
@@ -169,6 +184,8 @@ def ensure_live_onboard(user: dict) -> None:
             "df_done_sent": False,
         }
     )
+    if prev != str(ob.get("stage") or "") or not ob.get("stage_at"):
+        ob["stage_at"] = time.time()
 
 
 def advance_imit_after_test(user: dict) -> None:
@@ -178,7 +195,7 @@ def advance_imit_after_test(user: dict) -> None:
     ob = ensure_onboard(user)
     if not ob.get("active"):
         return
-    ob["stage"] = "daily_fire"
+    set_onboard_stage(user, "daily_fire")
     ob["slide"] = 0
     ob["awaiting_clarify"] = False
     ob["df_intro_sent"] = False
@@ -191,6 +208,8 @@ def advance_imit_after_test(user: dict) -> None:
 
 def start_imit_onboard(user: dict) -> None:
     """Полная имитация онбординга с нуля: привет → имя → тест → огонь → to be."""
+    import time
+
     from services.daily_fire import KINDS, ensure_daily_fire
     from services.growth import ensure_growth
     from services.lesson_state import ensure_progress, progress_key
@@ -220,6 +239,7 @@ def start_imit_onboard(user: dict) -> None:
             "awaiting_clarify": False,
             "df_intro_sent": False,
             "df_done_sent": False,
+            "stage_at": time.time(),
         }
     )
 
@@ -273,7 +293,7 @@ def complete_guided_path(user: dict) -> None:
     ob = ensure_onboard(user)
     was_imit = bool(ob.get("imit"))
     ob.update(_blank())
-    ob["stage"] = "done"
+    set_onboard_stage(user, "done")
     if was_imit:
         ob["imit"] = True
 
