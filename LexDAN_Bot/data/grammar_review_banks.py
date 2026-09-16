@@ -8954,4 +8954,8 @@ REVIEW_BANKS: dict[str, list[dict]] = {
 
 
 def get_review_bank(topic_id: str) -> list[dict]:
+    from data.grammar_review_banks_advanced import ADVANCED_REVIEW_BANKS
+
+    if topic_id in ADVANCED_REVIEW_BANKS:
+        return list(ADVANCED_REVIEW_BANKS[topic_id])
     return list(REVIEW_BANKS.get(topic_id) or [])

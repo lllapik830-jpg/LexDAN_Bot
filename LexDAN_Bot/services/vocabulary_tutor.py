@@ -182,24 +182,13 @@ def _word_example_kind(en: str) -> tuple[str, str]:
 
 def _diverse_word_examples(en: str, ru: str) -> tuple[str, str, str, str]:
     """Локальные примеры: слово USE в реальной ситуации (не мета про изучение)."""
-    from data.vocab_example_bank import lookup_word_example
+    from data.vocab_example_bank import lookup_word_examples
 
     raw = (en or "word").strip()
     r = (ru or "").strip() or raw
-    bank = lookup_word_example(raw, r)
+    bank = lookup_word_examples(raw, r)
     if bank:
-        e1, e1r = bank
-        # второй пример — вариация
-        e2 = f"Everyone heard \"{raw}\" clearly." if " " in raw or raw.lower() in {
-            "bye", "hello", "hi", "yes", "no", "sorry", "thanks", "please"
-        } else f"This {raw} is important for me."
-        e2r = (
-            f"Все чётко услышали «{r}»."
-            if " " in raw or raw.lower() in {
-                "bye", "hello", "hi", "yes", "no", "sorry", "thanks", "please"
-            }
-            else f"Этот {r} важен для меня."
-        )
+        (e1, e1r), (e2, e2r) = bank
         return e1, e1r, e2, e2r
 
     w, kind = _word_example_kind(raw)
@@ -602,19 +591,14 @@ def rico_word_card(level: str, topic_title: str, word: dict) -> str:
 
 def _diverse_phrase_examples(en: str, ru: str) -> tuple[str, str, str, str]:
     """Фраза в живом диалоге/контексте — не мета «People often say…»."""
-    from data.vocab_example_bank import lookup_phrase_example
+    from data.vocab_example_bank import lookup_phrase_examples
 
     p = (en or "phrase").strip()
     r = (ru or "").strip() or p
-    bank = lookup_phrase_example(p, r)
+    bank = lookup_phrase_examples(p, r)
     if bank:
-        e1, e1r = bank
-        return (
-            e1,
-            e1r,
-            f"Before leaving, my friend called out, \"{p}!\"",
-            f"Перед уходом подруга крикнула: «{r}!»",
-        )
+        (e1, e1r), (e2, e2r) = bank
+        return e1, e1r, e2, e2r
     templates = [
         (
             f"\"{p},\" she said and waved.",
@@ -816,13 +800,15 @@ def rico_dont_remember(item: dict, *, is_phrase: bool = False) -> str:
     emoji = item.get("emoji") or "💡"
     kind = "фраза" if is_phrase else "слово"
     if is_phrase:
-        ex_en, ex_ru, _, _ = _diverse_phrase_examples(en, ru)
+        ex_en, ex_ru, ex2_en, ex2_ru = _diverse_phrase_examples(en, ru)
     else:
-        ex_en, ex_ru, _, _ = _diverse_word_examples(en, ru)
+        ex_en, ex_ru, ex2_en, ex2_ru = _diverse_word_examples(en, ru)
     return (
         f"🦜 {emoji} Не страшно! <b>{en}</b> — <i>{ru}</i>\n\n"
         f"Запомни: {kind} «{en}» = {ru}.\n"
-        f"Пример: <b>{ex_en}</b>\n"
-        f"<i>{ex_ru}</i>\n\n"
+        f"1) <b>{ex_en}</b>\n"
+        f"<i>{ex_ru}</i>\n"
+        f"2) <b>{ex2_en}</b>\n"
+        f"<i>{ex2_ru}</i>\n\n"
         "Дальше следующее задание 👇"
     )

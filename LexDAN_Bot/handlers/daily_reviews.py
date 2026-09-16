@@ -65,12 +65,20 @@ async def _send_current_review(m: Message, user: dict) -> None:
         total = int(gr.get("total") or 0)
         clear_review(user)
         save_users(users_for(str(m.from_user.id)), only=str(m.from_user.id))
-        await m.answer(
-            f"🦜 Красава! Повторение закончено: <b>{ok}/{total}</b>.\n"
-            "Так материал лучше остаётся в голове. Увидимся на следующем круге 💚",
-            parse_mode="HTML",
-            reply_markup=main_menu(user),
-        )
+        if total <= 0:
+            await m.answer(
+                "🦜 По этой теме пока нет нормального набора на повторение. "
+                "Выбери другую пройденную тему в Grammar — или зайди чуть позже 💚",
+                parse_mode="HTML",
+                reply_markup=main_menu(user),
+            )
+        else:
+            await m.answer(
+                f"🦜 Красава! Повторение закончено: <b>{ok}/{total}</b>.\n"
+                "Так материал лучше остаётся в голове. Увидимся на следующем круге 💚",
+                parse_mode="HTML",
+                reply_markup=main_menu(user),
+            )
         set_mode(str(m.from_user.id), MODE_MENU)
         return
     n = int(gr.get("index") or 0) + 1
@@ -154,9 +162,17 @@ async def grammar_review_yes(m: Message):
     set_vocab_hub(uid, "grammar_review")
     users = users_for(uid)
     user = get_user(users, uid)
-    if not (user.get("grammar_review") or {}).get("active"):
-        start_review_session(user, level, tid, title)
+    gr = user.get("grammar_review") or {}
+    if not gr.get("active") or not int(gr.get("total") or 0):
+        clear_review(user)
         save_users(users, only=uid)
+        set_mode(uid, MODE_MENU)
+        await m.answer(
+            "🦜 По этой теме пока нет готового набора на повторение "
+            "(или банк ещё сырой). Выбери другую пройденную тему в Grammar 💚",
+            reply_markup=main_menu(user),
+        )
+        return
     await m.answer(
         f"🦜 Отлично! Повторяем тему <b>{title}</b>.\n"
         "Пять разных заданий — я рядом, пиши спокойно ✨",

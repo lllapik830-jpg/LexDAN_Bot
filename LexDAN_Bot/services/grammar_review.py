@@ -21,6 +21,91 @@ BTN_START_VOCAB_TOPIC = "📚 Пройти тему Vocabulary"
 
 REVIEW_TYPES = ("mcq", "word_form", "order_words", "translate_en", "write_sentence")
 
+_JUNK_MARKERS = (
+    "Пример про",
+    "Pattern:",
+    "Complete:",
+    "Fill:",
+    "This illustrates",
+    "This is about",
+    "Use «",
+)
+
+
+def _is_junk_review_item(item: dict) -> bool:
+    blob = " ".join(
+        str(item.get(k) or "")
+        for k in (
+            "sentence_ru",
+            "sentence_en",
+            "answer",
+            "instruction_ru",
+            "tip",
+        )
+    )
+    if any(m in blob for m in _JUNK_MARKERS):
+        return True
+    if (item.get("subtype") or "") == "order_words":
+        words = item.get("words") or []
+        if len(words) < 3:
+            return True
+    return False
+
+
+def completed_practice_topics(user: dict) -> list[tuple[str, str, str]]:
+    """[(level, topic_id, title), ...] только темы с заданиями."""
+    ensure_progress(user)
+    out: list[tuple[str, str, str]] = []
+    for key in list(user["grammar_progress"].get("completed_topics") or []):
+        if ":" not in str(key):
+            continue
+        level, tid = str(key).split(":", 1)
+        topic = get_topic(level, tid)
+        if not topic or is_ack_topic(topic):
+            continue
+        bank = get_review_bank(tid)
+        if not bank:
+            continue
+        # тема годится для повторения, только если есть полный набор типов без заглушек
+        if len(pick_review_set(tid)) < len(REVIEW_TYPES):
+            continue
+        out.append((level, tid, topic.get("title") or tid))
+    return out
+
+
+def pick_review_set(topic_id: str) -> list[dict]:
+    """Ровно 5 заданий разных типов из резерва темы (без заглушек)."""
+    bank = get_review_bank(topic_id)
+    by_type: dict[str, list[dict]] = {t: [] for t in REVIEW_TYPES}
+    for item in bank:
+        if _is_junk_review_item(item):
+            continue
+        st = (item.get("subtype") or "").strip()
+        if st in by_type:
+            by_type[st].append(dict(item))
+    chosen: list[dict] = []
+    for st in REVIEW_TYPES:
+        pool = by_type.get(st) or []
+        if not pool:
+            continue
+        item = dict(random.choice(pool))
+        item["subtype"] = st
+        item["kind"] = "mcq" if st == "mcq" else "write"
+        # не светим спойлер-подсказки
+        tip = _sanitize_tip(str(item.get("tip") or ""))
+        if tip:
+            item["tip"] = tip
+        else:
+            item.pop("tip", None)
+        if st == "mcq":
+            item = _shuffle_mcq_options(item)
+        chosen.append(item)
+    # неполные наборы не отдаём — иначе «0/0» / обрубок
+    if len(chosen) < len(REVIEW_TYPES):
+        return []
+    random.shuffle(chosen)
+    return chosen
+
 
 def _shuffle_mcq_options(item: dict) -> dict:
     """Правильный ответ не должен всегда быть на 1-й кнопке."""
@@ -59,52 +144,6 @@ def _sanitize_tip(tip: str) -> str:
     return t
 
 
-def completed_practice_topics(user: dict) -> list[tuple[str, str, str]]:
-    """[(level, topic_id, title), ...] только темы с заданиями."""
-    ensure_progress(user)
-    out: list[tuple[str, str, str]] = []
-    for key in list(user["grammar_progress"].get("completed_topics") or []):
-        if ":" not in str(key):
-            continue
-        level, tid = str(key).split(":", 1)
-        topic = get_topic(level, tid)
-        if not topic or is_ack_topic(topic):
-            continue
-        if not get_review_bank(tid):
-            continue
-        out.append((level, tid, topic.get("title") or tid))
-    return out
-
-
-def pick_review_set(topic_id: str) -> list[dict]:
-    """Ровно 5 заданий разных типов из резерва темы."""
-    bank = get_review_bank(topic_id)
-    by_type: dict[str, list[dict]] = {t: [] for t in REVIEW_TYPES}
-    for item in bank:
-        st = (item.get("subtype") or "").strip()
-        if st in by_type:
-            by_type[st].append(dict(item))
-    chosen: list[dict] = []
-    for st in REVIEW_TYPES:
-        pool = by_type.get(st) or []
-        if not pool:
-            continue
-        item = dict(random.choice(pool))
-        item["subtype"] = st
-        item["kind"] = "mcq" if st == "mcq" else "write"
-        # не светим спойлер-подсказки
-        tip = _sanitize_tip(str(item.get("tip") or ""))
-        if tip:
-            item["tip"] = tip
-        else:
-            item.pop("tip", None)
-        if st == "mcq":
-            item = _shuffle_mcq_options(item)
-        chosen.append(item)
-    random.shuffle(chosen)
-    return chosen
-
-
 def ensure_grammar_review(user: dict) -> dict:
     if "grammar_review" not in user or not isinstance(user.get("grammar_review"), dict):
         user["grammar_review"] = {}
@@ -113,6 +152,19 @@ def ensure_grammar_review(user: dict) -> dict:
 
 def start_review_session(user: dict, level: str, topic_id: str, title: str) -> dict:
     queue = pick_review_set(topic_id)
+    if not queue:
+        gr = {
+            "active": False,
+            "level": level,
+            "topic_id": topic_id,
+            "title": title,
+            "queue": [],
+            "index": 0,
+            "correct": 0,
+            "total": 0,
+        }
+        user["grammar_review"] = gr
+        return gr
     gr = {
         "active": True,
         "level": level,
