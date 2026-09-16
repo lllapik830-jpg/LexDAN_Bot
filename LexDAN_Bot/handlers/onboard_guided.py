@@ -505,6 +505,9 @@ async def finish_guided_after_topic(m: Message, uid: str) -> None:
     users = load_users()
     user = get_user(users, uid)
     complete_guided_path(user)
+    from services.funnel_track import record_event
+
+    record_event(user, "onboard_done")
     save_users(users, only=uid)
     set_mode(uid, MODE_MENU)
     await m.answer(PATH_DONE_HTML, parse_mode="HTML")
@@ -514,3 +517,7 @@ async def finish_guided_after_topic(m: Message, uid: str) -> None:
         reply_markup=main_menu(user, user_id=uid),
         parse_mode="HTML",
     )
+    # Следующий шаг воронки — inline CTA в Общаться
+    from handlers.onboard_funnel import send_chat_cta
+
+    await send_chat_cta(m, uid)

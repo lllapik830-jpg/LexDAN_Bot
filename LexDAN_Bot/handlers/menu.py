@@ -92,6 +92,13 @@ async def open_chat(m: Message):
         await m.answer(ban_remaining_text(user), parse_mode="HTML")
         return
 
+    from services.funnel_track import ensure_funnel, record_event
+
+    f = ensure_funnel(user)
+    if f.get("chat_cta_sent"):
+        f["chat_opened_after_cta"] = True
+        record_event(user, "chat_opened")
+
     # новая сессия — историю сбрасываем, но помним последнюю тему
     last_topic = (user.get("chat_last_user_text") or "").strip()
     user["chat_recent_turns"] = []

@@ -256,11 +256,35 @@ async def _finish_test(m: Message, user_id: str, final: str, note: str = ""):
     users = load_users()
     user = get_user(users, user_id)
     ensure_live_onboard(user)
+    # Снимок теста до очистки assessment (для воронки / рекламы)
+    import time as _time
+    from services.funnel_track import note_placement, record_event
+
+    a_pre = dict(user.get("assessment") or {})
+    note_placement(
+        user,
+        level=final,
+        translate_estimate=a_pre.get("translate_estimate") or final,
+        translate_source=a_pre.get("translate_source_en") or "",
+        vocab_level=a_pre.get("vocab_level") or "",
+        listen_level=a_pre.get("listen_level") or "",
+        finished_at=_time.time(),
+    )
+    record_event(user, "assessment_done", level=final)
     save_users(users, only=user_id)
 
     finish_assessment(user_id, final)
     users = load_users()
     user = get_user(users, user_id)
+    # finish_assessment мог перезаписать карточку — вернём снимок
+    if not isinstance(user.get("placement"), dict) or not user["placement"].get("level"):
+        note_placement(
+            user,
+            level=final,
+            translate_estimate=a_pre.get("translate_estimate") or final,
+            translate_source=a_pre.get("translate_source_en") or "",
+            finished_at=_time.time(),
+        )
     ensure_growth(user)
     touch_activity(user)
     grant_reg_full_trial_if_active(user)
@@ -686,6 +710,25 @@ async def _handle_translate_answer(m: Message, user: dict, text: str):
     )
     score = int(result.get("score") or 0)
     final_est = level_from_translate_score(score)
+
+    from services.funnel_track import note_placement, record_event
+
+    note_placement(
+        user,
+        translate_score=score,
+        translate_estimate=final_est,
+        translate_source=a.get("translate_source_en") or "",
+        translate_answer=(text or "")[:200],
+    )
+    record_event(user, "translate_done", score=score, level=final_est)
+    from services.database import save_users, load_users, get_user as _gu
+
+    users = load_users()
+    u = _gu(users, str(m.from_user.id))
+    u["placement"] = user.get("placement") or {}
+    if isinstance(u.get("funnel"), dict) or user.get("funnel"):
+        u["funnel"] = user.get("funnel") or u.get("funnel")
+    save_users(users, only=str(m.from_user.id))
 
     set_translate_estimate(str(m.from_user.id), final_est)
     await _start_vocab_flow(m, final_est)

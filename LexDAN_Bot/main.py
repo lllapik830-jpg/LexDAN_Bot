@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher
 from flask import Flask, jsonify, request
 
 from config import BOT_TOKEN, PUBLIC_BASE_URL
-from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_street, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews, a0_course, onboard_guided, path_course, notify
+from handlers import start, common, voice, chat, lessons, lessons_grammar, lessons_vocabulary, lessons_listening, lessons_reading, lessons_street, lessons_sections, profile, collection, menu, payments, secret_missions, daily_fire, exclusive_rico, admin, courses, daily_reviews, a0_course, onboard_guided, onboard_funnel, path_course, notify
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +30,7 @@ dp.update.middleware(TimingMiddleware())
 dp.include_routers(
     start.router,
     onboard_guided.router,  # /imit_start · слайды to be до catch-all
+    onboard_funnel.router,  # inline CTA Общаться / Listening после онбординга
     admin.router,  # админ-команды до catch-all
     exclusive_rico.router,  # /test_winners + эксклюзив паки
     common.router,
@@ -58,10 +59,74 @@ dp.include_routers(
 app = Flask(__name__)
 _loop: asyncio.AbstractEventLoop | None = None
 
+# Голоса, разрешённые для веб-теста уровня (CHAT_VOICES без Rico)
+_WEB_TTS_VOICE_IDS = frozenset(
+    {
+        "NfUrCNRReUL9RXS9upG1",  # Scotty
+        "nDJIICjR9zfJExIFeSCN",  # Emmaline
+        "av1BMOR1GPgThz9p4fLo",  # Joe
+        "dHd5gvgSOzSfduK4CvEg",  # Ed
+        "wSqOdjeNqDrHcoK0zorF",  # Lucas
+        "TC0Zp7WVFzhA8zpTlRqV",  # Aria
+        "YLbQE9U7P1K6rBNJWNSv",  # Jimbo
+        "b8gbDO0ybjX1VA89pBdX",  # Ruby
+    }
+)
+
+
+def _cors(resp):
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return resp
+
 
 @app.route("/")
 def home():
     return "LexDAN is running!"
+
+
+@app.route("/api/tts", methods=["POST", "OPTIONS"])
+def api_tts():
+    """Озвучка для веб-теста уровня (ElevenLabs, как в боте)."""
+    if request.method == "OPTIONS":
+        return _cors(app.make_response(("", 204)))
+
+    data = request.get_json(silent=True) or {}
+    text = str(data.get("text") or "").strip()
+    voice_id = str(data.get("voice_id") or "").strip()
+
+    if not text:
+        return _cors(jsonify({"error": "empty text"})), 400
+    if len(text) > 500:
+        return _cors(jsonify({"error": "text too long"})), 400
+    if voice_id not in _WEB_TTS_VOICE_IDS:
+        return _cors(jsonify({"error": "invalid voice"})), 400
+
+    try:
+        from flask import Response
+        from services.elevenlabs import elevenlabs_tts
+
+        audio = elevenlabs_tts(text, voice_id=voice_id, timeout=12)
+    except Exception as e:
+        logging.error(f"/api/tts error: {e}")
+        return _cors(jsonify({"error": "tts failed"})), 502
+
+    if not audio:
+        return _cors(jsonify({"error": "tts unavailable"})), 502
+
+    resp = Response(audio, mimetype="audio/mpeg")
+    return _cors(resp)
+
+
+@app.route("/web/", defaults={"filename": "index.html"})
+@app.route("/web/<path:filename>")
+def website_static(filename):
+    """Раздача лендинга с того же хоста (тест уровня → /api/tts без CORS-мучений)."""
+    from flask import send_from_directory
+
+    root = os.path.join(os.path.dirname(__file__), "website")
+    return send_from_directory(root, filename)
 
 
 @app.route("/yookassa/webhook", methods=["POST"])

@@ -16,11 +16,15 @@ router = Router()
 
 @router.message(F.text == "🔙 Вернуться в меню")
 async def back_to_main(m: Message):
-    from services.database import load_users, get_user, save_users
+    from services.database import load_users, get_user, save_users, MODE_CHAT
     from services.growth import ensure_growth
     from handlers.trial_notify import flush_trial_ended
 
     user_id = str(m.from_user.id)
+    users = load_users()
+    user = get_user(users, user_id)
+    prev_mode = (user.get("mode") or "").strip()
+
     clear_assessment_phase(user_id)
     clear_lesson(user_id)
     try:
@@ -53,3 +57,8 @@ async def back_to_main(m: Message):
         section_emoji="🏠",
         reply_markup=main_menu(user),
     )
+    # Пост-онбординг: вышли из Общаться → предложить Listening
+    if prev_mode == MODE_CHAT:
+        from handlers.onboard_funnel import maybe_send_listen_cta
+
+        await maybe_send_listen_cta(m, user_id, force_leave=True)

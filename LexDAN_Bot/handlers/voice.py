@@ -46,6 +46,10 @@ async def voice_in_chat(m: Message, bot: Bot):
         await m.answer("👇", reply_markup=chat_limit_inline_kb())
         return
 
+    from handlers.onboard_funnel import on_chat_message_counted
+
+    await on_chat_message_counted(m, str(m.from_user.id), user, users)
+
     import asyncio
 
     from services.tg_out import status

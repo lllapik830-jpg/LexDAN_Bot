@@ -319,6 +319,9 @@ async def chat_text(m: Message):
                 reply_markup=chat_menu(),
                 parse_mode="HTML",
             )
+            from handlers.onboard_funnel import on_chat_message_counted
+
+            await on_chat_message_counted(m, str(m.from_user.id), user, users)
         # голос после статуса — не держим «✨ …» на время TTS
         asyncio.create_task(
             send_voice_reply(
@@ -339,6 +342,10 @@ async def chat_text(m: Message):
         )
         await m.answer("👇", reply_markup=chat_limit_inline_kb())
         return
+
+    from handlers.onboard_funnel import on_chat_message_counted
+
+    await on_chat_message_counted(m, str(m.from_user.id), user, users)
 
     from services.tg_out import status
 
